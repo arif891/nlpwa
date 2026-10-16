@@ -1,0 +1,42 @@
+/**
+ * Convert a glob pattern to a RegExp.
+ *
+ * Supported syntax:
+ *   **   matches anything, including path separators  e.g. /assets/**
+ *   *    matches anything except /                    e.g. /pages/*
+ *   ?    matches a single character except /
+ *
+ * @param {string} pattern
+ * @returns {RegExp}
+ */
+export function globToRegex(pattern) {
+  const regexStr = pattern
+    // Escape all regex special chars except our glob chars (* ?)
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    // Replace ** before * to avoid double-processing
+    .replace(/\*\*/g, '\x00GLOBSTAR\x00')
+    // * → match anything except /
+    .replace(/\*/g, '[^/]*')
+    // ? → match single char except /
+    .replace(/\?/g, '[^/]')
+    // Restore ** → match anything including /
+    .replace(/\x00GLOBSTAR\x00/g, '.*');
+
+  return new RegExp('^' + regexStr + '$');
+}
+
+/**
+ * Test if a full URL's pathname matches a glob pattern.
+ *
+ * @param {string} pattern  glob pattern, e.g. '/api/**'
+ * @param {string} url      full URL string, e.g. 'https://example.com/api/user'
+ * @returns {boolean}
+ */
+export function matchGlob(pattern, url) {
+  try {
+    const { pathname } = new URL(url, 'http://localhost');
+    return globToRegex(pattern).test(pathname);
+  } catch {
+    return false;
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "nlpwa",
+  "version": "0.1.0",
+  "description": "Native-like PWA framework with install-time caching and OTA hash-based delta updates",
+  "type": "module",
+  "exports": {
+    "./sw":     "./build/sw.js",
+    "./client": "./build/client.js"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "dev":   "rollup -c --watch"
+  },
+  "devDependencies": {
+    "rollup": "^4.0.0"
+  },
+  "keywords": ["pwa", "service-worker", "offline", "cache", "ota-update"],
+  "license": "MIT"
+}

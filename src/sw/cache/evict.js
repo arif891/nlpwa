@@ -1,0 +1,74 @@
+import { getConfig } from '../config/index.js';
+import { matchGlob } from '../../shared/glob.js';
+import { CACHING_CAPABLE_STRATEGIES } from '../../shared/constants.js';
+
+/**
+ * Determine if a URL should remain in any cache.
+ *
+ * A URL is "cacheable" if the first matching route in config.routes uses
+ * a caching-capable strategy (cache-first, network-first, stale-while-revalidate,
+ * or cache-only). network-only routes are not cacheable.
+ *
+ * If no route matches, the defaultStrategy is used as the fallback.
+ *
+ * @param {string} url  full URL string
+ * @returns {boolean}
+ */
+function isCacheableUrl(url) {
+  const { routes, defaultStrategy } = getConfig();
+
+  for (const route of routes) {
+    if (matchGlob(route.match, url)) {
+      return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
+    }
+  }
+
+  // No route matched — fall back to defaultStrategy
+  return CACHING_CAPABLE_STRATEGIES.has(defaultStrategy);
+}
+
+/**
+ * Evict all entries from an opened Cache whose URLs are no longer cacheable
+ * according to the current route config.
+ *
+ * @param {Cache}  cache
+ * @param {string} cacheName  for logging
+ * @param {string} [manifestCachePath]  path to skip (internal manifest entry)
+ */
+async function evictNonCacheable(cache, cacheName, manifestCachePath) {
+  const keys = await cache.keys();
+
+  await Promise.all(
+    keys.map(async (request) => {
+      const { pathname } = new URL(request.url);
+
+      // Never evict the internal manifest snapshot
+      if (pathname === manifestCachePath) return;
+
+      if (!isCacheableUrl(request.url)) {
+        await cache.delete(request);
+        console.log(`[NLPWA] Evicted (route no longer cacheable) [${cacheName}]: ${pathname}`);
+      }
+    })
+  );
+}
+
+/**
+ * Run route-aware eviction on both offline and runtime caches.
+ *
+ * Called after every successful update to clean up entries whose routes
+ * have been removed or changed to network-only in the latest config.
+ */
+export async function evictByRoute() {
+  const { caches: cacheNames, manifestCachePath } = getConfig();
+
+  const [offlineCache, runtimeCache] = await Promise.all([
+    caches.open(cacheNames.offline),
+    caches.open(cacheNames.runtime),
+  ]);
+
+  await Promise.all([
+    evictNonCacheable(offlineCache, cacheNames.offline, manifestCachePath),
+    evictNonCacheable(runtimeCache, cacheNames.runtime, manifestCachePath),
+  ]);
+}

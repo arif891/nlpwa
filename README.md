@@ -14,7 +14,7 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 - **Hash-based OTA delta updates** — only changed files are re-fetched
 - **Route-aware cache eviction** — stale entries removed automatically on route change
 - **Self-healing cache** — failed fetches retry on next update check
-- **Three drop-in files** — `sw.js` (core engine), `config.js` (routes/settings), and `register.js` (client)
+- **Three drop-in files** — `sw.js` (core engine), `config.js` (routes/settings), and `client.js` (runtime SDK)
 
 ---
 
@@ -27,7 +27,7 @@ your-app/
 ├── sw.js           ← your Service Worker entry (calls initSW)
 ├── config.js       ← your app config (routes, precache, endpoints)
 ├── nlpwa.sw.js     ← build/sw.js  (core engine)
-├── nlpwa.register.js ← build/register.js  (client)
+├── nlpwa.client.js ← build/client.js  (client SDK)
 └── index.html
 ```
 
@@ -102,7 +102,7 @@ This generates:
 
 ```html
 <!-- In index.html, before closing </body> -->
-<script src="/nlpwa.register.js"></script>
+<script src="/nlpwa.client.js"></script>
 <script>
   NLPWAClient.register('/sw.js', {
     onUpdateReady: ({ version }) => {

@@ -23,11 +23,11 @@ export default async () => {
     plugins,
   },
 
-  // ── Client Registration bundle ────────────────────────────────────────────
+  // ── Client bundle ─────────────────────────────────────────────────────────
   {
     input: 'src/client/register.js',
     output: {
-      file:    'build/register.js',
+      file:    'build/client.js',
       format:  'iife',
       name:    'NLPWAClient',
       banner:  '/* NLPWA Client — https://github.com/arif891/nlpwa */',

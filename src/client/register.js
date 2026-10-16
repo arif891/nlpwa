@@ -70,3 +70,6 @@ export async function register(swUrl = '/sw.js', options = {}) {
 
   return { registration, unsubscribe };
 }
+
+export { onUpdateReady, applyUpdate } from './update-ui.js';
+export { requestUpdateCheck, sendToSW } from './messaging.js';

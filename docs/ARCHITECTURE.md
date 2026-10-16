@@ -7,7 +7,7 @@ NLPWA is a Service Worker framework with a decoupled architecture:
 |---|---|---|
 | Service Worker thread | `build/sw.js` | Intercepts fetches, manages caches, applies delta updates |
 | Runtime Configuration | `config.js` → `config.json` | Dynamic route rules & precache list; stored in `offline` cache |
-| Main thread (browser) | `build/register.js` | Registers the SW, listens for updates, shows update UI |
+| Main thread (browser) | `build/client.js` | Registers the SW, listens for updates, shows update UI |
 | Build Tool / CLI | `bin/nlpwa.js` / Rollup | Auto-increments patch version, tracks offline files & config, emits update API |
 
 The Service Worker thread and client communicate via `postMessage`.
@@ -45,13 +45,13 @@ src/
 │       ├── apply.js                applyDiff(diff, newManifest) — updates caches, reloads dynamic config
 │       └── index.js                checkForUpdate() with two-tier checks and concurrency lock
 │
-├── client/                         ← Runs in main browser thread (built to build/register.js)
-│   ├── register.js                 register(swUrl, options) — SW registration
+├── client/                         ← Runs in main browser thread (built to build/client.js)
+│   ├── register.js                 register(swUrl, options) — SW registration & client SDK entry
 │   ├── messaging.js                sendToSW(), onSWMessage(), requestUpdateCheck()
 │   └── update-ui.js                onUpdateReady() → callback + CustomEvent, applyUpdate()
 │
 ├── rollup-plugin.js                ← Bundler plugin for Vite / Rollup integration
-└── config.template.js              ← Starter config template (built to build/config.js)
+└── config.js                       ← Starter config template (built to build/config.js)
 ```
 
 ---

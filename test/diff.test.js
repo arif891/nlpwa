@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeDiff } from '../src/sw/update/diff.js';
+import { computeDiff, computeRefreshDiff } from '../src/sw/update/diff.js';
 
 test('computeDiff: fresh install (oldFiles is null)', () => {
   const newFiles = [
@@ -45,4 +45,20 @@ test('computeDiff: rejects cross-origin and scheme-relative paths', () => {
   assert.deepEqual(diff.added, ['/config.json']);
   assert.deepEqual(diff.modified, []);
   assert.deepEqual(diff.removed, []);
+});
+
+
+test('computeRefreshDiff: refetches everything but still reports orphans as removed', () => {
+  const diff = computeRefreshDiff(
+    [{ path: '/a.js', hash: '1' }, { path: '/b.js', hash: '2' }],
+    [{ path: '/a.js', hash: '1' }, { path: '/gone.js', hash: '9' }],
+  );
+  assert.deepEqual(diff.added.sort(), ['/a.js', '/b.js']);
+  assert.deepEqual(diff.modified, []);
+  assert.deepEqual(diff.removed, ['/gone.js']);
+});
+
+test('computeRefreshDiff: null old snapshot has nothing to remove', () => {
+  const diff = computeRefreshDiff([{ path: '/a.js', hash: '1' }], null);
+  assert.deepEqual(diff, { added: ['/a.js'], modified: [], removed: [] });
 });

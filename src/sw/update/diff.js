@@ -48,3 +48,19 @@ export function computeDiff(newFiles, oldFiles) {
 
   return { added, modified, removed };
 }
+
+/**
+ * Diff used when the SW engine version changes: every file in the new manifest
+ * is re-fetched (`added`), but files that existed in the previous snapshot and
+ * are no longer in the manifest are still reported as `removed`, so orphans
+ * don't linger in the offline cache.
+ *
+ * @param {Array<{ path: string, hash: string }>} newFiles
+ * @param {Array<{ path: string, hash: string }>|null} oldFiles
+ * @returns {{ added: string[], modified: string[], removed: string[] }}
+ */
+export function computeRefreshDiff(newFiles, oldFiles) {
+  const { added } = computeDiff(newFiles, null);
+  const { removed } = computeDiff(newFiles, oldFiles ?? null);
+  return { added, modified: [], removed };
+}

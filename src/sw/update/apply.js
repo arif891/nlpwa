@@ -1,6 +1,7 @@
 import { getConfig, loadConfigFromCache } from '../config/index.js';
 import { putInOffline, deleteFromOffline, evictFromRuntime, evictByRoute } from '../cache/index.js';
 import { loadCachedSnapshot, saveCachedSnapshot } from './manifest.js';
+import { MAX_RETRY_ATTEMPTS } from '../../shared/constants.js';
 
 /**
  * Apply a computed diff to the caches, then run eviction and save the snapshot.
@@ -18,7 +19,7 @@ import { loadCachedSnapshot, saveCachedSnapshot } from './manifest.js';
  *
  * @param {{ added: string[], modified: string[], removed: string[] }} diff
  * @param {{ version: string, files: Array<{ path: string, hash: string }> }} newManifest
- * @returns {Promise<{ success: boolean, failed: string[] }>}
+ * @returns {Promise<{ success: boolean, failed: string[], applied: number, gaveUp: boolean }>}
  */
 export async function applyDiff(diff, newManifest) {
   const previousSnapshot = await loadCachedSnapshot();
@@ -88,20 +89,40 @@ export async function applyDiff(diff, newManifest) {
   }
 
   const hasFailures = failedFetches.size > 0;
+
+  // Count consecutive failed attempts; after MAX_RETRY_ATTEMPTS stop retrying
+  // on every check. Failed files keep their old hash (or are omitted), so the
+  // next app version bump will pick them up again naturally.
+  const attempts = hasFailures
+    ? (previousSnapshot?.needsRetry ? (previousSnapshot.retryCount ?? 0) : 0) + 1
+    : 0;
+  const gaveUp = hasFailures && attempts >= MAX_RETRY_ATTEMPTS;
+  const needsRetry = hasFailures && !gaveUp;
+
   await saveCachedSnapshot({
     ...newManifest,
     files: snapshotFiles,
-    needsRetry: hasFailures,
+    needsRetry,
+    ...(needsRetry ? { retryCount: attempts } : {}),
   });
+
+  if (gaveUp) {
+    console.error(
+      `[NLPWA] Giving up retrying ${failedFetches.size} file(s) after ${attempts} attempts: ` +
+      Array.from(failedFetches).join(', ')
+    );
+  }
 
   console.log(
     `[NLPWA] Update applied → v${newManifest.version} ` +
     `(+${successfulFetches.size} updated, -${diff.removed.length} removed` +
-    (hasFailures ? `, ${failedFetches.size} failed — will retry)` : ')')
+    (hasFailures ? `, ${failedFetches.size} failed${needsRetry ? ' — will retry' : ''})` : ')')
   );
 
   return {
     success: !hasFailures,
     failed: Array.from(failedFetches),
+    applied: successfulFetches.size + diff.removed.length,
+    gaveUp,
   };
 }

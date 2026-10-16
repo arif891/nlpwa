@@ -37,7 +37,7 @@ function safePutInRuntime(request, response, event) {
   }
 }
 
-// ── cache-first ──────────────────────────────────────────────────────────────
+// ── cache-first ──────────────────────────────────────────────────────────
 
 /**
  * Serve from offline cache first, then runtime cache.
@@ -66,7 +66,7 @@ export async function cacheFirst(request, event, options = {}) {
   return tagResponse(response, CACHE_STATUS.NETWORK);
 }
 
-// ── network-first ────────────────────────────────────────────────────────────
+// ── network-first ──────────────────────────────────────────────────────────
 
 /**
  * Try network first. On failure or timeout, fall back to cache (offline → runtime).
@@ -86,32 +86,63 @@ export async function networkFirst(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const timeoutMs = options.networkTimeoutMs ?? getConfig().networkTimeoutMs ?? 0;
 
-  try {
-    let fetchPromise = fetch(request);
-
-    if (timeoutMs > 0) {
-      let timerId;
-      const timeoutPromise = new Promise((_, reject) => {
-        timerId = setTimeout(() => reject(new Error('Network timeout')), timeoutMs);
-      });
-      fetchPromise = Promise.race([
-        fetchPromise.then((res) => {
-          clearTimeout(timerId);
-          return res;
-        }),
-        timeoutPromise,
-      ]);
-    }
-
-    const response = await fetchPromise;
-    safePutInRuntime(request, response, event);
-    return tagResponse(response, CACHE_STATUS.NETWORK);
-  } catch {
+  /** Look in offline then runtime cache; returns a tagged Response or null. */
+  const lookupCache = async () => {
     const offlineCached = await getFromOffline(request, matchOptions);
     if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
 
     const runtimeCached = await getFromRuntime(request, matchOptions);
     if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+
+    return null;
+  };
+
+  const networkPromise = fetch(request);
+
+  try {
+    let response;
+
+    if (timeoutMs > 0) {
+      const TIMED_OUT = Symbol('timeout');
+      let timerId;
+      const timeout = new Promise((resolve) => {
+        timerId = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+      });
+
+      let result;
+      try {
+        result = await Promise.race([networkPromise, timeout]);
+      } finally {
+        clearTimeout(timerId);
+      }
+
+      if (result === TIMED_OUT) {
+        // Only give up on the network if we actually have something to serve.
+        // With nothing cached, a slow response is better than a synthetic 503,
+        // so keep waiting for the original request.
+        const cached = await lookupCache();
+        if (cached) {
+          // Let the slow request finish in the background so the cache is
+          // refreshed for next time.
+          const refresh = networkPromise
+            .then((res) => { safePutInRuntime(request, res, event); })
+            .catch(() => {});
+          if (event && typeof event.waitUntil === 'function') event.waitUntil(refresh);
+          return cached;
+        }
+        response = await networkPromise;
+      } else {
+        response = result;
+      }
+    } else {
+      response = await networkPromise;
+    }
+
+    safePutInRuntime(request, response, event);
+    return tagResponse(response, CACHE_STATUS.NETWORK);
+  } catch {
+    const cached = await lookupCache();
+    if (cached) return cached;
 
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate') {
@@ -133,7 +164,7 @@ export async function networkFirst(request, event, options = {}) {
   }
 }
 
-// ── network-only ─────────────────────────────────────────────────────────────
+// ── network-only ──────────────────────────────────────────────────────────
 
 /**
  * Always fetch from network. Never read from or write to any cache.
@@ -168,27 +199,27 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const cached = (await getFromRuntime(request, matchOptions)) ?? (await getFromOffline(request, matchOptions));
 
-  // Kick off background revalidation (fire-and-forget, but extended into SW lifetime)
-  const revalidate = fetch(request)
-    .then((response) => {
-      safePutInRuntime(request, response, event);
-    })
-    .catch(() => {/* Network error during revalidation is silently ignored */});
+  // Single network request, shared by the background refresh and the
+  // cache-miss path (previously a miss issued two identical fetches).
+  const revalidate = fetch(request).then((response) => {
+    // clone() happens synchronously here, before the caller consumes the body
+    safePutInRuntime(request, response, event);
+    return response;
+  });
 
   if (cached) {
-    if (event && typeof event.waitUntil === 'function') {
-      event.waitUntil(revalidate);
-    }
+    // Serve stale immediately; keep the SW alive for the background refresh.
+    const settled = revalidate.catch(() => {/* offline during revalidation is fine */});
+    if (event && typeof event.waitUntil === 'function') event.waitUntil(settled);
     return tagResponse(cached, CACHE_STATUS.STALE);
   }
 
-  // No cache — wait for network
-  const response = await fetch(request);
-  safePutInRuntime(request, response, event);
+  // No cache — wait for the same request
+  const response = await revalidate;
   return tagResponse(response, CACHE_STATUS.NETWORK);
 }
 
-// ── cache-only ───────────────────────────────────────────────────────────────
+// ── cache-only ──────────────────────────────────────────────────────────
 
 /**
  * Serve exclusively from cache. Never hit the network.

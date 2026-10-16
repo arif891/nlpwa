@@ -36,3 +36,10 @@ export const CACHING_CAPABLE_STRATEGIES = new Set([
   STRATEGIES.STALE_WHILE_REVALIDATE,
   STRATEGIES.CACHE_ONLY,
 ]);
+
+/**
+ * How many consecutive update checks may retry files that failed to download
+ * before giving up until the next app version bump. Prevents a permanently
+ * missing file (e.g. a typo in `precache`) from being retried forever.
+ */
+export const MAX_RETRY_ATTEMPTS = 5;

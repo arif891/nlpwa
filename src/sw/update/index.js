@@ -1,9 +1,8 @@
 import { getConfig } from '../config/index.js';
 import { fetchServerVersion, fetchServerManifest, loadCachedManifest, saveCachedManifest } from './manifest.js';
-import { computeDiff } from './diff.js';
+import { computeDiff, computeRefreshDiff } from './diff.js';
 import { applyDiff } from './apply.js';
-import { clearAllCaches, precacheFiles } from '../cache/index.js';
-import { isNewer } from '../../shared/version.js';
+import { precacheFiles } from '../cache/index.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 
 /**
@@ -85,7 +84,8 @@ export async function checkForUpdate() {
     if (swVersionChanged) {
       console.log(`[NLPWA] SW engine version changed: v${cachedManifest.swVersion} → v${config.version}. Updating cache.`);
       await precacheFiles();
-      const diff = computeDiff(serverManifest.files, null);
+      // Re-fetch everything, but still drop files that no longer exist in the manifest
+      const diff = computeRefreshDiff(serverManifest.files, cachedManifest.files);
       await applyDiff(diff, serverManifest);
       const { caches: cacheNames } = config;
       await caches.delete(cacheNames.runtime);
@@ -118,7 +118,7 @@ export async function checkForUpdate() {
     const hasChanges = diff.added.length + diff.modified.length + diff.removed.length > 0;
 
     // ── Step 4: Apply diff ─────────────────────────────────────────────────
-    let applyResult = { success: true };
+    let applyResult = { success: true, applied: 0 };
     if (hasChanges) {
       applyResult = await applyDiff(diff, serverManifest);
     } else {
@@ -127,14 +127,18 @@ export async function checkForUpdate() {
     }
 
     // ── Step 5: Notify clients ─────────────────────────────────────────────
-    if (applyResult.success) {
+    // Notify on full success, and also on partial success: files that did
+    // download are already live in the cache, so clients should know to reload.
+    const somethingApplied = applyResult.success || applyResult.applied > 0;
+    if (somethingApplied) {
       await broadcast({
         type:    MESSAGE_TYPES.UPDATE_READY,
         version: serverManifest.version,
+        partial: !applyResult.success,
       });
     }
 
-    return { updated: applyResult.success, version: serverManifest.version };
+    return { updated: somethingApplied, version: serverManifest.version };
 
   } finally {
     _updateInProgress = false;

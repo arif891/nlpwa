@@ -20,13 +20,16 @@ export function globToRegex(pattern) {
   const regexStr = pattern
     // Escape all regex special chars except our glob chars (* ?)
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    // Replace ** before * to avoid double-processing
+    // Handle /**/ to allow matching 0 or more directory levels (e.g. /**/foo.js matches /foo.js and /a/b/foo.js)
+    .replace(/\/\*\*\//g, '\x00GLOBSTARSLASH\x00')
+    // Replace standalone **
     .replace(/\*\*/g, '\x00GLOBSTAR\x00')
     // * → match anything except /
     .replace(/\*/g, '[^/]*')
     // ? → match single char except /
     .replace(/\?/g, '[^/]')
-    // Restore ** → match anything including /
+    // Restore placeholders AFTER single * has been replaced
+    .replace(/\x00GLOBSTARSLASH\x00/g, '/(?:.*/)?')
     .replace(/\x00GLOBSTAR\x00/g, '.*');
 
   const regex = new RegExp('^' + regexStr + '$');

@@ -1,32 +1,33 @@
 import { getConfig, loadConfigFromCache } from '../config/index.js';
 import { putInOffline, deleteFromOffline, evictFromRuntime, evictByRoute } from '../cache/index.js';
-import { saveCachedSnapshot } from './manifest.js';
+import { loadCachedSnapshot, saveCachedSnapshot } from './manifest.js';
 
 /**
  * Apply a computed diff to the caches, then run eviction and save the snapshot.
  *
  * Strategy:
  *   - added/modified  → fetch fresh and store in offline cache
- *     (individual failures are skipped with a warning; stale version stays)
+ *     (individual failures leave the old cached version in place)
  *   - removed         → delete from offline cache
- *   - runtime cache   → evict entries whose hash changed or that were removed
- *     (they will be re-fetched fresh on the next browser request)
+ *   - runtime cache   → evict ONLY entries whose hash changed or that were removed
+ *     (preserves lazily-cached images/data)
  *   - route eviction  → evict offline + runtime entries no longer matching
  *     a caching-capable route
- *   - snapshot        → write new snapshot as /_nlpwa/snapshot.json
- *
- * There is intentionally no rollback. Failed fetches leave the old cached
- * file in place. The update system is self-healing: on the next check, the
- * diff will catch any still-stale files and retry.
+ *   - snapshot        → write new snapshot with only successfully applied hashes;
+ *     failed files keep old hashes and flag needsRetry for self-healing.
  *
  * @param {{ added: string[], modified: string[], removed: string[] }} diff
  * @param {{ version: string, files: Array<{ path: string, hash: string }> }} newManifest
+ * @returns {Promise<{ success: boolean, failed: string[] }>}
  */
 export async function applyDiff(diff, newManifest) {
-  const { caches: cacheNames } = getConfig();
+  const previousSnapshot = await loadCachedSnapshot();
+  const prevFileMap = new Map(previousSnapshot?.files?.map(f => [f.path, f.hash]) ?? []);
 
   // ── 1. Fetch and store added + modified files ───────────────────────────
   const toFetch = [...diff.added, ...diff.modified];
+  const successfulFetches = new Set();
+  const failedFetches = new Set();
 
   await Promise.all(
     toFetch.map(async (path) => {
@@ -34,11 +35,14 @@ export async function applyDiff(diff, newManifest) {
         const response = await fetch(path, { cache: 'no-store' });
         if (response.ok) {
           await putInOffline(path, response);
+          successfulFetches.add(path);
           console.log(`[NLPWA] Cached: ${path}`);
         } else {
+          failedFetches.add(path);
           console.warn(`[NLPWA] Skip (HTTP ${response.status}): ${path}`);
         }
       } catch (err) {
+        failedFetches.add(path);
         console.warn(`[NLPWA] Skip (network error): ${path}`, err.message);
       }
     })
@@ -52,24 +56,15 @@ export async function applyDiff(diff, newManifest) {
     })
   );
 
-  // ── 3. Evict stale/removed entries from runtime cache ───────────────────
-  //    Modified files: evict so fresh version is fetched on next request.
-  //    Removed files:  evict so deleted resource stops being served.
+  // ── 3. Evict ONLY stale/removed entries from runtime cache ──────────────
+  // Only evict modified and removed files — lazily cached runtime entries
+  // (images, articles, feeds) remain intact.
   const runtimeEvictions = [...diff.modified, ...diff.removed];
   await evictFromRuntime(runtimeEvictions);
 
-  // Also evict runtime entries not present in the new manifest at all.
-  // Use the original Request objects (not extracted pathnames) so cache.delete()
-  // matches by the full URL — pathname-only strings would fail for cross-origin entries.
-  const newPaths = new Set(newManifest.files.map(f => f.path));
-  const runtimeCache = await caches.open(cacheNames.runtime);
-  const runtimeKeys  = await runtimeCache.keys();
-  const unknownRequests = runtimeKeys.filter(r => !newPaths.has(new URL(r.url).pathname));
-  await Promise.all(unknownRequests.map(r => runtimeCache.delete(r)));
-
-  // If config file was updated, reload in-memory config so new routes apply immediately
+  // If config file was updated and fetched, reload in-memory config so new routes apply immediately
   const configPath = getConfig().configPath || '/config.json';
-  if (toFetch.includes(configPath)) {
+  if (successfulFetches.has(configPath)) {
     await loadConfigFromCache();
     console.log('[NLPWA] Reloaded updated config into active router');
   }
@@ -77,12 +72,36 @@ export async function applyDiff(diff, newManifest) {
   // ── 4. Route-aware eviction on both caches ──────────────────────────────
   await evictByRoute();
 
-  // ── 5. Persist new snapshot ─────────────────────────────────────────────
-  await saveCachedSnapshot(newManifest);
+  // ── 5. Persist new snapshot (self-healing) ──────────────────────────────
+  // Files that failed to fetch keep their old hash from previous snapshot
+  // (or are omitted if newly added), so computeDiff will retry them next time.
+  const snapshotFiles = [];
+  for (const file of newManifest.files) {
+    if (failedFetches.has(file.path)) {
+      const oldHash = prevFileMap.get(file.path);
+      if (oldHash) {
+        snapshotFiles.push({ path: file.path, hash: oldHash });
+      }
+    } else {
+      snapshotFiles.push(file);
+    }
+  }
+
+  const hasFailures = failedFetches.size > 0;
+  await saveCachedSnapshot({
+    ...newManifest,
+    files: snapshotFiles,
+    needsRetry: hasFailures,
+  });
 
   console.log(
-    `[NLPWA] Update complete → v${newManifest.version} ` +
-    `(+${diff.added.length} added, ~${diff.modified.length} modified, ` +
-    `-${diff.removed.length} removed)`
+    `[NLPWA] Update applied → v${newManifest.version} ` +
+    `(+${successfulFetches.size} updated, -${diff.removed.length} removed` +
+    (hasFailures ? `, ${failedFetches.size} failed — will retry)` : ')')
   );
+
+  return {
+    success: !hasFailures,
+    failed: Array.from(failedFetches),
+  };
 }

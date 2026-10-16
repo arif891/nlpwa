@@ -8,10 +8,10 @@ import { getConfig } from '../config/index.js';
  * @param {Request|string} request
  * @returns {Promise<Response|undefined>}
  */
-export async function getFromOffline(request) {
+export async function getFromOffline(request, matchOptions) {
   const { caches: cacheNames } = getConfig();
   const cache = await caches.open(cacheNames.offline);
-  return cache.match(request);
+  return cache.match(request, matchOptions);
 }
 
 /**
@@ -46,10 +46,10 @@ export async function deleteFromOffline(request) {
  * @param {Request|string} request
  * @returns {Promise<Response|undefined>}
  */
-export async function getFromRuntime(request) {
+export async function getFromRuntime(request, matchOptions) {
   const { caches: cacheNames } = getConfig();
   const cache = await caches.open(cacheNames.runtime);
-  return cache.match(request);
+  return cache.match(request, matchOptions);
 }
 
 /**
@@ -101,6 +101,6 @@ export async function clearAllCaches() {
  * @param {Request|string} request
  * @returns {Promise<Response|undefined>}
  */
-export async function getFromCache(request) {
-  return (await getFromOffline(request)) ?? (await getFromRuntime(request));
+export async function getFromCache(request, matchOptions) {
+  return (await getFromOffline(request, matchOptions)) ?? (await getFromRuntime(request, matchOptions));
 }

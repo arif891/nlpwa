@@ -277,13 +277,14 @@ document.addEventListener('nlpwa:update-ready', (e) => {
 
 ## Update Triggers
 
-Updates are checked in three ways:
+Updates are checked in four complementary ways:
 
 | Trigger | Who | Frequency |
 |---|---|---|
 | Activation | SW | Every time the SW activates (app open / reload) |
-| Polling interval | SW | Every `config.updateCheckInterval` ms |
-| Tab focus | Client | Throttled by `options.focusThrottleMs` (default: 5 min) |
+| Active Tab Interval | Client | Every `options.pollIntervalMs` (default: 1 hr) while tab is open |
+| Tab focus / visibility | Client | Throttled by `options.focusThrottleMs` (default: 5 min) |
+| Periodic Background Sync | Browser | Periodically when supported by browser for installed PWAs |
 | Manual | Client | Via `postMessage({ type: 'CHECK_UPDATE' })` |
 
 A concurrency lock prevents two update runs from overlapping regardless of

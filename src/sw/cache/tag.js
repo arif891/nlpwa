@@ -41,9 +41,13 @@ export const CACHE_STATUS_HEADER = 'X-Cache-Status';
  * @returns {Response}
  */
 export function tagResponse(response, status) {
-  // Opaque responses (type === 'opaque') cannot be reconstructed —
-  // their body stream is locked and unreadable. Return them unchanged.
-  if (response.type === 'opaque') return response;
+  if (!response) return response;
+
+  // Opaque responses (opaque / opaqueredirect / status 0) cannot have their body
+  // read or reconstructed without throwing RangeError. Return them unchanged.
+  if (response.type === 'opaque' || response.type === 'opaqueredirect' || response.status === 0) {
+    return response;
+  }
 
   const headers = new Headers(response.headers);
   headers.set(CACHE_STATUS_HEADER, status);

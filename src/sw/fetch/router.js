@@ -29,11 +29,40 @@ const STRATEGY_FN = {
 export function resolveStrategy(request) {
   const { routes, defaultStrategy } = getConfig();
 
+  let requestUrl;
+  try {
+    requestUrl = new URL(request.url);
+  } catch {
+    return (req, event) => networkOnly(req, event);
+  }
+
+  const isSameOrigin = typeof self !== 'undefined' && self.location
+    ? requestUrl.origin === self.location.origin
+    : true;
+
   for (const route of routes) {
-    if (matchGlob(route.match, request.url)) {
-      return STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy];
+    // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
+    // match against that. Otherwise default to same-origin only.
+    if (route.origin) {
+      if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+        continue;
+      }
+    } else if (!isSameOrigin) {
+      // Unspecified origin matches ONLY same-origin requests
+      continue;
+    }
+
+    if (matchGlob(route.match, requestUrl.pathname)) {
+      const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
+      return (req, event) => fn(req, event, route);
     }
   }
 
-  return STRATEGY_FN[defaultStrategy];
+  // Cross-origin requests without an explicit origin route pass through without caching
+  if (!isSameOrigin) {
+    return (req, event) => networkOnly(req, event);
+  }
+
+  const defaultFn = STRATEGY_FN[defaultStrategy] ?? networkFirst;
+  return (req, event) => defaultFn(req, event);
 }

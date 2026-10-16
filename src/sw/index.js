@@ -48,4 +48,11 @@ export function initSW(userConfig = {}) {
       event.waitUntil(checkForUpdate());
     }
   });
+
+  // ── periodic background sync ───────────────────────────────────────────────
+  self.addEventListener('periodicsync', (event) => {
+    if (event.tag === 'nlpwa-update-check') {
+      event.waitUntil(checkForUpdate());
+    }
+  });
 }

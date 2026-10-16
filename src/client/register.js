@@ -29,9 +29,14 @@ export async function register(swUrl = '/sw.js', options = {}) {
     return null;
   }
 
+  const regOptions = {};
+  if (options.type) regOptions.type = options.type;
+  if (options.scope) regOptions.scope = options.scope;
+  if (options.updateViaCache) regOptions.updateViaCache = options.updateViaCache;
+
   let registration;
   try {
-    registration = await navigator.serviceWorker.register(swUrl);
+    registration = await navigator.serviceWorker.register(swUrl, regOptions);
     console.log('[NLPWA] SW registered:', registration.scope);
   } catch (err) {
     console.error('[NLPWA] SW registration failed:', err);
@@ -39,34 +44,69 @@ export async function register(swUrl = '/sw.js', options = {}) {
   }
 
   // ── Update-ready handler ───────────────────────────────────────────────────
-  const unsubscribe = onUpdateReady((data) => {
+  const unsubscribeUpdate = onUpdateReady((data) => {
     if (typeof options.onUpdateReady === 'function') {
       options.onUpdateReady(data);
     }
     if (options.autoReload) {
-      window.location.reload();
+      // Don't auto-reload if user is actively typing in an input to prevent data loss
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      const isEditing = activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.isContentEditable;
+      if (!isEditing) {
+        window.location.reload();
+      } else {
+        console.warn('[NLPWA] Auto-reload deferred: active input focused.');
+      }
     }
   });
 
   // ── Focus-triggered update check ──────────────────────────────────────────
-  // When a tab comes back into focus after a long time, check for updates.
   const focusCheck = options.checkOnFocus !== false;
+  let onVisibilityChange = null;
   if (focusCheck) {
     const throttleMs = options.focusThrottleMs ?? 5 * 60 * 1000; // 5 min
     let lastCheckAt = 0;
 
-    // visibilitychange fires when the user switches back to this tab, which is
-    // more reliable than 'focus' (which only fires when the window itself is
-    // focused, missing tab switches within the same window).
-    document.addEventListener('visibilitychange', () => {
+    onVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
       const now = Date.now();
       if (now - lastCheckAt > throttleMs) {
         lastCheckAt = now;
         requestUpdateCheck();
       }
-    });
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
   }
+
+  // ── Client-side update polling interval ───────────────────────────────────
+  // Service Workers can be terminated while idle, making setInterval inside the SW
+  // unreliable. Running periodic checks from active client tabs ensures updates are detected.
+  const pollIntervalMs = options.pollIntervalMs ?? 60 * 60 * 1000; // 1 hour default
+  let intervalTimer = null;
+  if (pollIntervalMs > 0) {
+    intervalTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        requestUpdateCheck();
+      }
+    }, pollIntervalMs);
+  }
+
+  // ── Periodic Background Sync (if supported by browser/PWA) ────────────────
+  if ('periodicSync' in registration) {
+    try {
+      await registration.periodicSync.register('nlpwa-update-check', {
+        minInterval: pollIntervalMs,
+      });
+    } catch {
+      // Periodic sync permission is granted by browser only for installed PWAs; ignore failure
+    }
+  }
+
+  const unsubscribe = () => {
+    unsubscribeUpdate();
+    if (intervalTimer) clearInterval(intervalTimer);
+    if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
+  };
 
   return { registration, unsubscribe };
 }

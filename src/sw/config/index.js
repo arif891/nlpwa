@@ -77,6 +77,21 @@ export function updateActiveConfig(runtimeConfig = {}) {
   return _config;
 }
 
+let _configReadyPromise = null;
+
+/**
+ * Ensure runtime config has been loaded from the offline cache before handling requests.
+ * Resolves immediately if already loaded or previously started.
+ *
+ * @returns {Promise<Object|null>}
+ */
+export function ensureConfigReady() {
+  if (!_configReadyPromise) {
+    _configReadyPromise = loadConfigFromCache();
+  }
+  return _configReadyPromise;
+}
+
 /**
  * Load the runtime config file from the offline cache.
  * Config is always read from the offline cache at runtime.

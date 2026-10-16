@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "description": "Native-like PWA framework with install-time caching and OTA hash-based delta updates",
   "type": "module",
-  "author": "",
+  "author": "Arif",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/arif891/nlpwa.git"
   },
-  "homepage": "",
-  "bugs": { "url": "" },
+  "homepage": "https://github.com/arif891/nlpwa#readme",
+  "bugs": { "url": "https://github.com/arif891/nlpwa/issues" },
   "files": [
     "out",
     "bin",
@@ -31,6 +31,7 @@
     "build":          "rollup -c",
     "build:prod":     "rollup -c --environment PROD",
     "dev":            "rollup -c --watch",
+    "test":           "node --test test/**/*.test.js",
     "nlpwa":          "node ./bin/nlpwa.js",
     "nlpwa:update":   "node ./bin/nlpwa.js update",
     "nlpwa:help":     "node ./bin/nlpwa.js --help"

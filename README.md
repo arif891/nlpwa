@@ -20,14 +20,25 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 
 ## Quick Start
 
-### 1. The Three Distribution Files
+### 1. Initialize in Your Project
 
+You can drop NLPWA into any project with a single command:
+
+```bash
+# Drop sw.js, client.js, and config.js into current directory
+npx nlpwa init
+
+# Or target a public directory
+npx nlpwa init --dir ./public
+```
+
+Your project now has:
 ```
 your-app/
-├── sw.js           ← your Service Worker entry (calls initSW)
-├── config.js       ← your app config (routes, precache, endpoints)
-├── nlpwa.sw.js     ← build/sw.js  (core engine)
-├── nlpwa.client.js ← build/client.js  (client SDK)
+├── sw.js         ← Standalone Service Worker engine
+├── client.js     ← Client SDK (exports NLPWAClient / register)
+├── config.js     ← Developer configuration (routes, precache, endpoints)
+├── config.json   ← Compiled runtime config (for offline cache)
 └── index.html
 ```
 
@@ -102,9 +113,11 @@ This generates:
 
 ```html
 <!-- In index.html, before closing </body> -->
-<script src="/nlpwa.client.js"></script>
-<script>
-  NLPWAClient.register('/sw.js', {
+<script type="module" src="/client.js"></script>
+<script type="module">
+  import { register, applyUpdate } from '/client.js';
+
+  register('/sw.js', {
     onUpdateReady: ({ version }) => {
       document.getElementById('update-banner').hidden = false;
     },
@@ -114,7 +127,7 @@ This generates:
 <!-- Example update banner -->
 <div id="update-banner" hidden>
   A new version is available.
-  <button onclick="NLPWAClient.applyUpdate()">Refresh</button>
+  <button onclick="window.NLPWAClient.applyUpdate()">Refresh</button>
 </div>
 ```
 
@@ -218,8 +231,10 @@ npm run dev
 ```
 
 Output:
-- `build/sw.js` — ES module Service Worker bundle
-- `build/client.js` — IIFE client bundle (`window.NLPWAClient`)
+- `out/sw.js` — Service Worker bundle (standalone core engine)
+- `out/client.js` — Client bundle (`NLPWAClient` & ES module exports)
+- `out/config.js` — Configuration template
+- `out/config.json` — Generated runtime config
 
 ---
 

@@ -56,11 +56,17 @@ export async function checkForUpdate() {
     const cachedManifest = await loadCachedManifest();
     const serverVersion = versionInfo?.version;
 
+    // Check if this is a fresh install (no snapshot stored yet)
+    const isFreshInstall = !cachedManifest;
+
     // Check if SW engine version changed (developer manually bumped config.version)
     const swVersionChanged = cachedManifest?.swVersion && cachedManifest.swVersion !== config.version;
 
-    // Short-circuit if app version is already up-to-date and SW engine has not changed
-    if (serverVersion && cachedManifest?.version && !isNewer(serverVersion, cachedManifest.version) && !swVersionChanged) {
+    // Check if previous update had failed fetches that need retry
+    const needsRetry = Boolean(cachedManifest?.needsRetry);
+
+    // Short-circuit if app version matches server, no SW change, and no retry needed
+    if (!isFreshInstall && !swVersionChanged && !needsRetry && serverVersion && serverVersion === cachedManifest.version) {
       console.log(`[NLPWA] App already up to date (v${cachedManifest.version})`);
       await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: cachedManifest.version });
       return { updated: false };
@@ -75,12 +81,14 @@ export async function checkForUpdate() {
       return { updated: false };
     }
 
+    // Handle SW engine version bump safely (populate new files before clearing old runtime)
     if (swVersionChanged) {
-      console.log(`[NLPWA] SW engine version changed: v${cachedManifest.swVersion} → v${config.version}. Rebuilding cache.`);
-      await clearAllCaches();
+      console.log(`[NLPWA] SW engine version changed: v${cachedManifest.swVersion} → v${config.version}. Updating cache.`);
       await precacheFiles();
       const diff = computeDiff(serverManifest.files, null);
       await applyDiff(diff, serverManifest);
+      const { caches: cacheNames } = config;
+      await caches.delete(cacheNames.runtime);
       await broadcast({
         type:    MESSAGE_TYPES.UPDATE_READY,
         version: serverManifest.version,
@@ -88,36 +96,45 @@ export async function checkForUpdate() {
       return { updated: true, version: serverManifest.version };
     }
 
-    // Check if App version is already up to date according to the fetched manifest
-    if (cachedManifest?.version && !isNewer(serverManifest.version, cachedManifest.version)) {
+    // Check if App version matches and no retry needed
+    if (!isFreshInstall && !needsRetry && cachedManifest?.version === serverManifest.version) {
       console.log(`[NLPWA] App already up to date (v${cachedManifest.version})`);
       await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: cachedManifest.version });
       return { updated: false };
     }
 
-    console.log(`[NLPWA] Update available: ${cachedManifest ? `v${cachedManifest.version}` : '(fresh install)'} → v${serverManifest.version}`);
+    // Fresh install: populate snapshot without showing "Update Available" banner
+    if (isFreshInstall) {
+      console.log(`[NLPWA] Initial installation: populating snapshot v${serverManifest.version}`);
+      const diff = computeDiff(serverManifest.files, null);
+      await applyDiff(diff, serverManifest);
+      return { updated: false, version: serverManifest.version, initial: true };
+    }
+
+    console.log(`[NLPWA] Update available: v${cachedManifest.version} → v${serverManifest.version}${needsRetry ? ' (retrying previous failures)' : ''}`);
 
     // ── Step 3: Hash diff ──────────────────────────────────────────────────
     const diff = computeDiff(serverManifest.files, cachedManifest?.files ?? null);
-
     const hasChanges = diff.added.length + diff.modified.length + diff.removed.length > 0;
 
-    // ── Step 4: Apply diff (or just save snapshot if only version changed) ─
+    // ── Step 4: Apply diff ─────────────────────────────────────────────────
+    let applyResult = { success: true };
     if (hasChanges) {
-      await applyDiff(diff, serverManifest);
+      applyResult = await applyDiff(diff, serverManifest);
     } else {
-      // Version bumped but all file hashes are identical → just save snapshot
       await saveCachedManifest(serverManifest);
       console.log(`[NLPWA] Version updated (no file changes): v${serverManifest.version}`);
     }
 
     // ── Step 5: Notify clients ─────────────────────────────────────────────
-    await broadcast({
-      type:    MESSAGE_TYPES.UPDATE_READY,
-      version: serverManifest.version,
-    });
+    if (applyResult.success) {
+      await broadcast({
+        type:    MESSAGE_TYPES.UPDATE_READY,
+        version: serverManifest.version,
+      });
+    }
 
-    return { updated: true, version: serverManifest.version };
+    return { updated: applyResult.success, version: serverManifest.version };
 
   } finally {
     _updateInProgress = false;

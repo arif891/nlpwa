@@ -10,10 +10,20 @@
  *                                                               (null = fresh install)
  * @returns {{ added: string[], modified: string[], removed: string[] }}
  */
+function isSafePath(path) {
+  if (typeof path !== 'string' || !path) return false;
+  // Reject absolute URLs with protocols (e.g. http:, https:, data:) and protocol-relative URLs (//)
+  if (path.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(path)) return false;
+  return true;
+}
+
 export function computeDiff(newFiles, oldFiles) {
+  const safeNewFiles = (newFiles ?? []).filter(f => isSafePath(f?.path));
+  const safeOldFiles = (oldFiles ?? []).filter(f => isSafePath(f?.path));
+
   // Build lookup maps for O(1) access
-  const oldMap = new Map((oldFiles ?? []).map(f => [f.path, f.hash]));
-  const newMap = new Map(newFiles.map(f => [f.path, f.hash]));
+  const oldMap = new Map(safeOldFiles.map(f => [f.path, f.hash]));
+  const newMap = new Map(safeNewFiles.map(f => [f.path, f.hash]));
 
   const added    = [];
   const modified = [];

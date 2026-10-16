@@ -42,7 +42,7 @@ export default async () => {
     output: {
       file:    'build/config.js',
       format:  'es',
-      banner:  '/* NLPWA Default Config — https://github.com/your-org/nlpwa */',
+      banner:  '/* NLPWA Default Config — https://github.com/arif891/nlpwa */',
     },
     plugins: [],
   },

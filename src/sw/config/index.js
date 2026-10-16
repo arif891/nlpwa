@@ -110,7 +110,6 @@ export async function loadConfigFromCache() {
  *
  * Supports both object: { version, info }
  * and array: [ { type: 'version', endpoint }, { type: 'info', endpoint } ]
- * as well as legacy manifestEndpoint.
  *
  * @returns {{ versionEndpoint: string, infoEndpoint: string }}
  */
@@ -129,8 +128,6 @@ export function getUpdateEndpoints() {
       if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
       if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
     }
-  } else if (config.manifestEndpoint) {
-    infoEndpoint = config.manifestEndpoint;
   }
 
   return { versionEndpoint, infoEndpoint };

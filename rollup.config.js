@@ -16,7 +16,7 @@ export default async () => {
   {
     input: 'src/sw/index.js',
     output: {
-      file:    'build/sw.js',
+      file:    'out/sw.js',
       format:  'es',
       banner:  '/* NLPWA Service Worker — https://github.com/arif891/nlpwa */',
     },
@@ -27,7 +27,7 @@ export default async () => {
   {
     input: 'src/client/register.js',
     output: {
-      file:    'build/client.js',
+      file:    'out/client.js',
       format:  'iife',
       name:    'NLPWAClient',
       banner:  '/* NLPWA Client — https://github.com/arif891/nlpwa */',
@@ -40,11 +40,20 @@ export default async () => {
   {
     input: 'src/config.js',
     output: {
-      file:    'build/config.js',
+      file:    'out/config.js',
       format:  'es',
       banner:  '/* NLPWA Default Config — https://github.com/arif891/nlpwa */',
     },
-    plugins: [],
+    plugins: [
+      {
+        name: 'emit-config-json',
+        async writeBundle() {
+          const { default: config } = await import('./src/config.js');
+          const { writeFileSync } = await import('node:fs');
+          writeFileSync('out/config.json', JSON.stringify(config, null, 2), 'utf8');
+        },
+      },
+    ],
   },
 ];
 };

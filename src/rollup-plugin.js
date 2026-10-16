@@ -177,16 +177,14 @@ export function nlpwaPlugin(options = {}) {
 
       const versionOut = getApiDiskPath(versionEndpoint);
       const infoOut = getApiDiskPath(infoEndpoint);
-      const manifestOut = resolve(distDir, 'manifest.json');
 
       mkdirSync(dirname(versionOut), { recursive: true });
       mkdirSync(dirname(infoOut), { recursive: true });
 
       writeFileSync(versionOut, JSON.stringify({ version: appVersion }, null, jsonIndent), 'utf8');
       writeFileSync(infoOut, JSON.stringify({ version: appVersion, files }, null, jsonIndent), 'utf8');
-      writeFileSync(manifestOut, JSON.stringify({ version: appVersion, files }, null, jsonIndent), 'utf8');
 
-      console.log(`[NLPWA] Emitted config.json, update API, and manifest (v${appVersion}, ${files.length} tracked offline files)`);
+      console.log(`[NLPWA] Emitted config.json and update API (v${appVersion}, ${files.length} tracked offline files)`);
     },
   };
 }

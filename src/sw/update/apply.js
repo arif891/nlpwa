@@ -1,6 +1,6 @@
 import { getConfig, loadConfigFromCache } from '../config/index.js';
 import { putInOffline, deleteFromOffline, evictFromRuntime, evictByRoute } from '../cache/index.js';
-import { saveCachedManifest } from './manifest.js';
+import { saveCachedSnapshot } from './manifest.js';
 
 /**
  * Apply a computed diff to the caches, then run eviction and save the snapshot.
@@ -13,7 +13,7 @@ import { saveCachedManifest } from './manifest.js';
  *     (they will be re-fetched fresh on the next browser request)
  *   - route eviction  → evict offline + runtime entries no longer matching
  *     a caching-capable route
- *   - snapshot        → write new manifest as /_nlpwa/manifest.json
+ *   - snapshot        → write new snapshot as /_nlpwa/snapshot.json
  *
  * There is intentionally no rollback. Failed fetches leave the old cached
  * file in place. The update system is self-healing: on the next check, the
@@ -77,8 +77,8 @@ export async function applyDiff(diff, newManifest) {
   // ── 4. Route-aware eviction on both caches ──────────────────────────────
   await evictByRoute();
 
-  // ── 5. Persist new manifest snapshot ────────────────────────────────────
-  await saveCachedManifest(newManifest);
+  // ── 5. Persist new snapshot ─────────────────────────────────────────────
+  await saveCachedSnapshot(newManifest);
 
   console.log(
     `[NLPWA] Update complete → v${newManifest.version} ` +

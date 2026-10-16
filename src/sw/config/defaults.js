@@ -14,8 +14,8 @@ export const DEFAULTS = {
    * Changing this triggers the browser's byte-level SW update, and
    * tells NLPWA to wipe old caches and do a clean install.
    *
-   * Note: The APP version is NOT configured here — it is auto-generated
-   * by the build tool and lives in manifest.json.
+   * Note: The APP version is NOT configured here — it is auto-incremented
+   * by the build tool and lives in config.json and update API endpoints.
    *
    * Example: '1', '2', 'v3'
    */

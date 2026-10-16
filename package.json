@@ -11,10 +11,17 @@
   },
   "homepage": "",
   "bugs": { "url": "" },
+  "files": [
+    "out",
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
-    "./sw":     "./build/sw.js",
-    "./client": "./build/client.js",
-    "./config": "./build/config.js",
+    "./sw":     "./out/sw.js",
+    "./client": "./out/client.js",
+    "./config": "./out/config.js",
     "./rollup": "./src/rollup-plugin.js"
   },
   "bin": {

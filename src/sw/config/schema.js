@@ -20,17 +20,15 @@ export function validateConfig(config) {
     errors.push('config.configPath must be a string (e.g. "/config.json")');
   }
 
-  // Support updateAPI (object or array) or legacy manifestEndpoint
-  if (config.updateAPI) {
-    if (Array.isArray(config.updateAPI)) {
-      if (config.updateAPI.length === 0) {
-        errors.push('config.updateAPI array must not be empty');
-      }
-    } else if (typeof config.updateAPI !== 'object') {
-      errors.push('config.updateAPI must be an object with { version, info } or an array');
+  // Validate updateAPI
+  if (!config.updateAPI) {
+    errors.push('config.updateAPI must be defined with { version, info }');
+  } else if (Array.isArray(config.updateAPI)) {
+    if (config.updateAPI.length === 0) {
+      errors.push('config.updateAPI array must not be empty');
     }
-  } else if (typeof config.manifestEndpoint !== 'string' || !config.manifestEndpoint) {
-    errors.push('config must provide either updateAPI or manifestEndpoint');
+  } else if (typeof config.updateAPI !== 'object') {
+    errors.push('config.updateAPI must be an object with { version, info } or an array');
   }
 
   if (typeof config.updateCheckInterval !== 'number' || config.updateCheckInterval < 0) {

@@ -3,22 +3,19 @@
  * nlpwa — CLI tool for the NLPWA framework
  *
  * Commands:
- *   nlpwa update  Scan a directory, hash every file, and emit a manifest JSON
- *                 that the NLPWA Service Worker can consume.
+ *   nlpwa init    Scaffold or drop NLPWA files (sw.js, client.js, config.js)
+ *                 into any target project directory.
+ *   nlpwa update  Reads config.js, auto-increments app patch version,
+ *                 generates runtime config.json, hashes ONLY tracked offline files,
+ *                 and emits update API endpoints (/api/update/version & info).
  *
  * Usage:
+ *   nlpwa init   [--dir <path>]
  *   nlpwa update [options]
- *
- * Options:
- *   --dir  <path>      Directory to scan          (default: ./dist)
- *   --out  <path>      Output file path            (default: ./manifest.json)
- *   --version <semver> Version to embed            (default: from package.json or 1.0.0)
- *   --pretty           Pretty-print the JSON output (default: false)
- *   --help, -h         Show this help message
  */
 
 import { createHash }                            from 'node:crypto';
-import { readFileSync, writeFileSync, statSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, relative, resolve, dirname }      from 'node:path';
 import { fileURLToPath, pathToFileURL }          from 'node:url';
 import { incrementPatch }                        from '../src/shared/version.js';
@@ -175,9 +172,14 @@ function printHelp() {
   nlpwa <command> [options]
 
 ${c.bold}COMMANDS${c.reset}
+  ${c.green}init${c.reset}     Scaffolds or copies sw.js, client.js, and config.js
+           into your target project directory for immediate drop-in use.
   ${c.green}update${c.reset}   Reads config.js, auto-increments app patch version,
            generates config.json, hashes ONLY tracked offline files,
            and emits update API endpoints (/api/update/version & info).
+
+${c.bold}OPTIONS (init)${c.reset}
+  ${c.cyan}--dir${c.reset}     <path>      Target directory to drop files into (default: ./)
 
 ${c.bold}OPTIONS (update)${c.reset}
   ${c.cyan}--config${c.reset}  <path>      Config file path            (default: auto-detect ./config.js)
@@ -187,15 +189,64 @@ ${c.bold}OPTIONS (update)${c.reset}
   ${c.cyan}--help, -h${c.reset}            Show this help message
 
 ${c.bold}EXAMPLES${c.reset}
-  # Auto-detect config.js, auto-increment patch version, output to ./dist
-  nlpwa update
+  # Drop NLPWA files into current project root
+  npx nlpwa init
 
-  # Explicit build directory and config file
-  nlpwa update --dir ./public --config ./config.js
+  # Drop NLPWA files into a public/ directory
+  npx nlpwa init --dir ./public
+
+  # Run after build to auto-increment app version and generate update endpoints
+  nlpwa update --dir ./dist
 `);
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
+
+async function cmdInit(args) {
+  printBanner();
+  console.log(`${c.bold}nlpwa init${c.reset}\n`);
+
+  const targetDir = resolve(args.dir ?? '.');
+  mkdirSync(targetDir, { recursive: true });
+
+  const outDir = resolve(__dirname, '../out');
+  const filesToCopy = [
+    { src: 'sw.js',        dest: 'sw.js',        required: true },
+    { src: 'client.js',    dest: 'client.js',    required: true },
+    { src: 'config.js',    dest: 'config.js',    required: false, checkExisting: true },
+    { src: 'config.json',  dest: 'config.json',  required: false, checkExisting: true },
+  ];
+
+  for (const item of filesToCopy) {
+    const srcPath = resolve(outDir, item.src);
+    const destPath = resolve(targetDir, item.dest);
+
+    if (item.checkExisting && existsSync(destPath)) {
+      console.log(`  ${c.dim}-${c.reset} ${c.yellow}Already exists, kept:${c.reset} ${item.dest}`);
+      continue;
+    }
+
+    if (existsSync(srcPath)) {
+      copyFileSync(srcPath, destPath);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Installed:${c.reset} ${item.dest}`);
+    } else if (item.required) {
+      console.error(`  ${c.red}X Source file missing:${c.reset} ${srcPath}`);
+    }
+  }
+
+  console.log(`
+${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
+
+  ${c.bold}Next steps:${c.reset}
+  1. Add the client script to your HTML:
+     ${c.cyan}<script type="module" src="/client.js"></script>${c.reset}
+
+  2. Configure routes & offline precache in ${c.bold}config.js${c.reset}
+
+  3. When deploying updates, run:
+     ${c.cyan}npx nlpwa update${c.reset}
+`);
+}
 
 async function cmdUpdate(args) {
   let configPath = null;
@@ -302,7 +353,6 @@ async function cmdUpdate(args) {
 
   const versionOut = getApiDiskPath(targetDir, versionEndpoint);
   const infoOut = getApiDiskPath(targetDir, infoEndpoint);
-  const manifestOut = resolve(targetDir, 'manifest.json');
 
   mkdirSync(dirname(versionOut), { recursive: true });
   mkdirSync(dirname(infoOut), { recursive: true });
@@ -315,7 +365,6 @@ async function cmdUpdate(args) {
 
   writeFileSync(versionOut, versionJson, 'utf8');
   writeFileSync(infoOut, infoJson, 'utf8');
-  writeFileSync(manifestOut, infoJson, 'utf8');
 
   // Also sync to workspace root api/ directory if it exists and targetDir is different
   const rootApiDir = resolve(process.cwd(), 'api');
@@ -352,6 +401,10 @@ if (!command || args.help) {
 }
 
 switch (command) {
+  case 'init':
+    await cmdInit(args);
+    break;
+
   case 'update':
     await cmdUpdate(args);
     break;

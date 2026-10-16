@@ -7,13 +7,19 @@
     "./sw":     "./build/sw.js",
     "./client": "./build/client.js"
   },
+  "bin": {
+    "nlpwa": "./bin/nlpwa.js"
+  },
   "scripts": {
-    "build": "rollup -c",
-    "dev":   "rollup -c --watch"
+    "build":          "rollup -c",
+    "dev":            "rollup -c --watch",
+    "nlpwa":          "node ./bin/nlpwa.js",
+    "nlpwa:update":   "node ./bin/nlpwa.js update",
+    "nlpwa:help":     "node ./bin/nlpwa.js --help"
   },
   "devDependencies": {
     "rollup": "^4.0.0"
   },
-  "keywords": ["pwa", "service-worker", "offline", "cache", "ota-update"],
+  "keywords": ["pwa", "service-worker", "offline", "cache", "ota-update", "cli"],
   "license": "MIT"
 }

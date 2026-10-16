@@ -18,7 +18,7 @@ export default async () => {
     output: {
       file:    'build/sw.js',
       format:  'es',
-      banner:  '/* NLPWA Service Worker — https://github.com/your-org/nlpwa */',
+      banner:  '/* NLPWA Service Worker — https://github.com/arif891/nlpwa */',
     },
     plugins,
   },
@@ -26,28 +26,19 @@ export default async () => {
   // ── Client Registration bundle ────────────────────────────────────────────
   {
     input: 'src/client/register.js',
-    output: [
-      {
-        file:    'build/register.js',
-        format:  'iife',
-        name:    'NLPWAClient',
-        banner:  '/* NLPWA Client — https://github.com/your-org/nlpwa */',
-        exports: 'named',
-      },
-      {
-        file:    'build/client.js',
-        format:  'iife',
-        name:    'NLPWAClient',
-        banner:  '/* NLPWA Client — https://github.com/your-org/nlpwa */',
-        exports: 'named',
-      },
-    ],
+    output: {
+      file:    'build/register.js',
+      format:  'iife',
+      name:    'NLPWAClient',
+      banner:  '/* NLPWA Client — https://github.com/arif891/nlpwa */',
+      exports: 'named',
+    },
     plugins,
   },
 
   // ── Config starter bundle ─────────────────────────────────────────────────
   {
-    input: 'src/config.template.js',
+    input: 'src/config.js',
     output: {
       file:    'build/config.js',
       format:  'es',

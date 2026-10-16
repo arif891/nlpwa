@@ -1,5 +1,5 @@
 /**
- * NLPWA Configuration Template
+ * NLPWA Configuration
  *
  * Edit this file to configure offline caching and route fetch strategies.
  * The NLPWA build tool (nlpwa update / rollup plugin) reads this file,

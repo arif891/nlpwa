@@ -58,14 +58,14 @@ export async function applyDiff(diff, newManifest) {
   const runtimeEvictions = [...diff.modified, ...diff.removed];
   await evictFromRuntime(runtimeEvictions);
 
-  // Also evict runtime entries that are not present in the new manifest at all
+  // Also evict runtime entries not present in the new manifest at all.
+  // Use the original Request objects (not extracted pathnames) so cache.delete()
+  // matches by the full URL — pathname-only strings would fail for cross-origin entries.
   const newPaths = new Set(newManifest.files.map(f => f.path));
   const runtimeCache = await caches.open(cacheNames.runtime);
   const runtimeKeys  = await runtimeCache.keys();
-  const unknownEvictions = runtimeKeys
-    .map(r => new URL(r.url).pathname)
-    .filter(p => !newPaths.has(p));
-  await evictFromRuntime(unknownEvictions);
+  const unknownRequests = runtimeKeys.filter(r => !newPaths.has(new URL(r.url).pathname));
+  await Promise.all(unknownRequests.map(r => runtimeCache.delete(r)));
 
   // ── 4. Route-aware eviction on both caches ──────────────────────────────
   await evictByRoute();

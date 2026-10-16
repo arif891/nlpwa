@@ -7,6 +7,9 @@ import { resolveStrategy } from './router.js';
  *   - Non-GET requests pass through (POST/PUT/DELETE handled natively)
  *   - Non-HTTP(S) URLs pass through (chrome-extension://, etc.)
  *
+ * The `event` is forwarded to the strategy so that stale-while-revalidate
+ * can extend the SW lifetime via event.waitUntil() for its background fetch.
+ *
  * @param {FetchEvent} event
  */
 export function handleFetch(event) {
@@ -19,5 +22,5 @@ export function handleFetch(event) {
   if (!request.url.startsWith('http')) return;
 
   const strategyFn = resolveStrategy(request);
-  event.respondWith(strategyFn(request));
+  event.respondWith(strategyFn(request, event));
 }

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * nlpwa — CLI tool for the NLPWA framework
  *
@@ -53,17 +53,22 @@ function walkDir(dir) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...walkDir(fullPath));
-    } else if (entry.isFile()) {
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      // Include symlinked files so dist directories with symlinks are hashed correctly
       results.push(fullPath);
     }
   }
   return results;
 }
 
-/** Resolve the package.json version from the nearest package.json */
+/**
+ * Resolve the version from the consuming project's package.json.
+ * Searches from process.cwd() (the user's project root), NOT from __dirname
+ * (which would resolve to nlpwa's own package.json).
+ */
 function resolvePackageVersion() {
   try {
-    const pkgPath = resolve(__dirname, '..', 'package.json');
+    const pkgPath = resolve(process.cwd(), 'package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
     return pkg.version ?? null;
   } catch {
@@ -83,12 +88,15 @@ function parseArgs(argv) {
     } else if (arg.startsWith('--')) {
       const key = arg.slice(2);
       const next = argv[i + 1];
-      if (next && !next.startsWith('--')) {
+      if (next && !next.startsWith('-')) {
         args[key] = next;
         i++;
       } else {
         args[key] = true;
       }
+    } else if (arg.startsWith('-')) {
+      // Unknown single-dash flag — warn rather than silently treating as a sub-command
+      console.warn(`${c.yellow}Warning: Unknown flag "${arg}" — did you mean "--${arg.slice(1)}"?${c.reset}`);
     } else {
       args._.push(arg);
     }

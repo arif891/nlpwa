@@ -14,6 +14,10 @@ export async function precacheFiles() {
 
   const cache = await caches.open(cacheNames.offline);
 
+  // cache.addAll() would abort the entire install on any single failure.
+  // Promise.allSettled + individual cache.add() calls give us partial success:
+  // failed URLs are logged as warnings and retried on the next update check
+  // (self-healing), while successfully cached files remain in place.
   const results = await Promise.allSettled(
     precache.map(url => cache.add(url))
   );

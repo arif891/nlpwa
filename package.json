@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Native-like PWA framework with install-time caching and OTA hash-based delta updates",
   "type": "module",
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "homepage": "",
+  "bugs": { "url": "" },
   "exports": {
     "./sw":     "./build/sw.js",
     "./client": "./build/client.js"
@@ -12,14 +20,15 @@
   },
   "scripts": {
     "build":          "rollup -c",
+    "build:prod":     "rollup -c --environment PROD",
     "dev":            "rollup -c --watch",
     "nlpwa":          "node ./bin/nlpwa.js",
     "nlpwa:update":   "node ./bin/nlpwa.js update",
     "nlpwa:help":     "node ./bin/nlpwa.js --help"
   },
   "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.0",
     "rollup": "^4.0.0"
   },
-  "keywords": ["pwa", "service-worker", "offline", "cache", "ota-update", "cli"],
-  "license": "MIT"
+  "keywords": ["pwa", "service-worker", "offline", "cache", "ota-update", "cli"]
 }

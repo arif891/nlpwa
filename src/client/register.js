@@ -55,7 +55,11 @@ export async function register(swUrl = '/sw.js', options = {}) {
     const throttleMs = options.focusThrottleMs ?? 5 * 60 * 1000; // 5 min
     let lastCheckAt = 0;
 
-    window.addEventListener('focus', () => {
+    // visibilitychange fires when the user switches back to this tab, which is
+    // more reliable than 'focus' (which only fires when the window itself is
+    // focused, missing tab switches within the same window).
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
       const now = Date.now();
       if (now - lastCheckAt > throttleMs) {
         lastCheckAt = now;

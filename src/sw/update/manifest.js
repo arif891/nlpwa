@@ -18,7 +18,22 @@ export async function fetchServerManifest() {
     throw new Error(`[NLPWA] Manifest fetch failed: HTTP ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    throw new Error(`[NLPWA] Manifest response is not valid JSON (is the endpoint returning HTML?): ${err.message}`);
+  }
+
+  // Validate the expected shape before passing to computeDiff / applyDiff
+  if (typeof data.version !== 'string' || !data.version) {
+    throw new Error('[NLPWA] Manifest missing or invalid "version" field (expected a non-empty string)');
+  }
+  if (!Array.isArray(data.files)) {
+    throw new Error('[NLPWA] Manifest missing "files" array');
+  }
+
+  return data;
 }
 
 /**

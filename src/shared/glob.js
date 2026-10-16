@@ -1,3 +1,6 @@
+/** Compiled regex cache — avoids recompiling the same glob on every fetch event */
+const _regexCache = new Map();
+
 /**
  * Convert a glob pattern to a RegExp.
  *
@@ -6,10 +9,14 @@
  *   *    matches anything except /                    e.g. /pages/*
  *   ?    matches a single character except /
  *
+ * Results are memoized per pattern string.
+ *
  * @param {string} pattern
  * @returns {RegExp}
  */
 export function globToRegex(pattern) {
+  if (_regexCache.has(pattern)) return _regexCache.get(pattern);
+
   const regexStr = pattern
     // Escape all regex special chars except our glob chars (* ?)
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -22,7 +29,9 @@ export function globToRegex(pattern) {
     // Restore ** → match anything including /
     .replace(/\x00GLOBSTAR\x00/g, '.*');
 
-  return new RegExp('^' + regexStr + '$');
+  const regex = new RegExp('^' + regexStr + '$');
+  _regexCache.set(pattern, regex);
+  return regex;
 }
 
 /**

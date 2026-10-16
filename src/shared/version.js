@@ -1,12 +1,17 @@
 /**
  * Parse a semver string into its numeric components.
- * Non-numeric pre-release suffixes are ignored.
  *
- * @param {string} version  e.g. '1.4.0'
+ * Pre-release labels (e.g. "-beta", "-rc.1") are stripped before parsing.
+ * This means "1.0.0-beta" compares as equal to "1.0.0" — full pre-release
+ * ordering (e.g. alpha < beta < rc < release) is not supported.
+ *
+ * @param {string} version  e.g. '1.4.0' or '2.0.0-beta.1'
  * @returns {{ major: number, minor: number, patch: number }}
  */
 function parse(version) {
-  const parts = String(version).split('.').map(s => parseInt(s, 10) || 0);
+  // Strip pre-release label before splitting (e.g. '1.0.0-beta.1' → '1.0.0')
+  const base = String(version).split('-')[0];
+  const parts = base.split('.').map(s => parseInt(s, 10) || 0);
   return {
     major: parts[0] ?? 0,
     minor: parts[1] ?? 0,

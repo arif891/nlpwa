@@ -29,6 +29,17 @@ async function broadcast(message) {
  *
  * @returns {Promise<{ updated: boolean, version?: string }>}
  */
+/**
+ * Module-level lock that prevents overlapping update runs.
+ *
+ * This is safe within a single SW lifetime: if a check is already running,
+ * subsequent calls (e.g. from the polling interval AND a tab-focus trigger
+ * firing at the same time) are dropped.
+ *
+ * Note: this flag resets to false on every SW restart. If the browser kills
+ * the SW mid-update, the next wake-up starts fresh — which is intentional,
+ * since the self-healing diff will catch any incomplete changes on the next check.
+ */
 let _updateInProgress = false;
 
 export async function checkForUpdate() {

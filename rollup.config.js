@@ -1,5 +1,7 @@
 // rollup.config.js
 
+import terser from '@rollup/plugin-terser';
+
 /**
  * Builds two drop-in bundles:
  *
@@ -19,7 +21,14 @@
  *   <script>
  *     NLPWAClient.register('/sw.js', { onUpdateReady: ({ version }) => ... });
  *   </script>
+ *
+ * Build modes:
+ *   npm run build       — readable output (development)
+ *   npm run build:prod  — minified output via terser (production)
  */
+
+const isProd = Boolean(process.env.PROD);
+const plugins = isProd ? [terser()] : [];
 
 export default [
   // ── Service Worker bundle ─────────────────────────────────────────────────
@@ -30,6 +39,7 @@ export default [
       format:  'es',
       banner:  '/* NLPWA Service Worker — https://github.com/your-org/nlpwa */',
     },
+    plugins,
   },
 
   // ── Client bundle ─────────────────────────────────────────────────────────
@@ -42,5 +52,6 @@ export default [
       banner:  '/* NLPWA Client — https://github.com/your-org/nlpwa */',
       exports: 'named',
     },
+    plugins,
   },
 ];

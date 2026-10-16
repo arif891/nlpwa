@@ -1,7 +1,8 @@
 import { getConfig } from '../config/index.js';
-import { fetchServerManifest, loadCachedManifest, saveCachedManifest } from './manifest.js';
+import { fetchServerVersion, fetchServerManifest, loadCachedManifest, saveCachedManifest } from './manifest.js';
 import { computeDiff } from './diff.js';
 import { applyDiff } from './apply.js';
+import { clearAllCaches, precacheFiles } from '../cache/index.js';
 import { isNewer } from '../../shared/version.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 
@@ -16,29 +17,20 @@ async function broadcast(message) {
 }
 
 /**
- * Run a complete update check cycle:
+ * Run a complete two-tier update check cycle:
  *
- *   1. Fetch /api/manifest/latest
- *   2. Version comparison (short-circuit if up to date)
- *   3. Hash diff against cached manifest
- *   4. Apply diff (fetch changed, delete removed, evict stale)
- *   5. Broadcast UPDATE_READY to all clients
+ *   1. Tier 1: Lightweight version check (/api/update/version)
+ *   2. Check if App version is newer than cached manifest (stop early if not)
+ *   3. Check if SW engine version changed
+ *   4. Tier 2: Fetch full file manifest (/api/update/info)
+ *   5. Hash diff against cached manifest
+ *   6. Apply diff (fetch changed files & config.json, delete removed, evict stale)
+ *   7. Broadcast UPDATE_READY to all clients
  *
  * This function is safe to call concurrently — a module-level lock
  * prevents overlapping update runs.
  *
  * @returns {Promise<{ updated: boolean, version?: string }>}
- */
-/**
- * Module-level lock that prevents overlapping update runs.
- *
- * This is safe within a single SW lifetime: if a check is already running,
- * subsequent calls (e.g. from the polling interval AND a tab-focus trigger
- * firing at the same time) are dropped.
- *
- * Note: this flag resets to false on every SW restart. If the browser kills
- * the SW mid-update, the next wake-up starts fresh — which is intentional,
- * since the self-healing diff will catch any incomplete changes on the next check.
  */
 let _updateInProgress = false;
 
@@ -53,7 +45,28 @@ export async function checkForUpdate() {
   try {
     const config = getConfig();
 
-    // ── Step 1: Fetch server manifest ──────────────────────────────────────
+    // ── Tier 1: Lightweight version check ──────────────────────────────────
+    let versionInfo;
+    try {
+      versionInfo = await fetchServerVersion();
+    } catch (err) {
+      console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest if available:', err.message);
+    }
+
+    const cachedManifest = await loadCachedManifest();
+    const serverVersion = versionInfo?.version;
+
+    // Check if SW engine version changed (developer manually bumped config.version)
+    const swVersionChanged = cachedManifest?.swVersion && cachedManifest.swVersion !== config.version;
+
+    // Short-circuit if app version is already up-to-date and SW engine has not changed
+    if (serverVersion && cachedManifest?.version && !isNewer(serverVersion, cachedManifest.version) && !swVersionChanged) {
+      console.log(`[NLPWA] App already up to date (v${cachedManifest.version})`);
+      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: cachedManifest.version });
+      return { updated: false };
+    }
+
+    // ── Tier 2: Fetch server manifest ──────────────────────────────────────
     let serverManifest;
     try {
       serverManifest = await fetchServerManifest();
@@ -62,17 +75,29 @@ export async function checkForUpdate() {
       return { updated: false };
     }
 
-    // ── Step 2: Version check ──────────────────────────────────────────────
-    if (!isNewer(serverManifest.version, config.version)) {
-      console.log(`[NLPWA] Already up to date (v${config.version})`);
-      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: config.version });
+    if (swVersionChanged) {
+      console.log(`[NLPWA] SW engine version changed: v${cachedManifest.swVersion} → v${config.version}. Rebuilding cache.`);
+      await clearAllCaches();
+      await precacheFiles();
+      const diff = computeDiff(serverManifest.files, null);
+      await applyDiff(diff, serverManifest);
+      await broadcast({
+        type:    MESSAGE_TYPES.UPDATE_READY,
+        version: serverManifest.version,
+      });
+      return { updated: true, version: serverManifest.version };
+    }
+
+    // Check if App version is already up to date according to the fetched manifest
+    if (cachedManifest?.version && !isNewer(serverManifest.version, cachedManifest.version)) {
+      console.log(`[NLPWA] App already up to date (v${cachedManifest.version})`);
+      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: cachedManifest.version });
       return { updated: false };
     }
 
-    console.log(`[NLPWA] Update available: v${config.version} → v${serverManifest.version}`);
+    console.log(`[NLPWA] Update available: ${cachedManifest ? `v${cachedManifest.version}` : '(fresh install)'} → v${serverManifest.version}`);
 
     // ── Step 3: Hash diff ──────────────────────────────────────────────────
-    const cachedManifest = await loadCachedManifest();
     const diff = computeDiff(serverManifest.files, cachedManifest?.files ?? null);
 
     const hasChanges = diff.added.length + diff.modified.length + diff.removed.length > 0;

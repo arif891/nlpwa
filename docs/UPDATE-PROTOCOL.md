@@ -1,38 +1,49 @@
 # NLPWA — Update Protocol
 
-This document specifies the server-side manifest format and the client-side
-update algorithm. Follow this if you are:
-
-- Building a server to work with NLPWA
-- Implementing a manifest generation tool for your build pipeline
-- Debugging update behaviour
+This document specifies the server-side update endpoints and the client-side delta update algorithm.
 
 ---
 
-## Manifest Endpoint
+## Two-Tier Update API Endpoints
+
+NLPWA uses a **two-tier** update protocol to minimize network overhead on mobile devices:
+
+### Tier 1: Lightweight Version Check
 
 ```
-GET /api/manifest/latest
+GET /api/update/version
 ```
 
-The server exposes **one endpoint** that always returns the **complete current
-state** of all files. There is no server-side diff or delta computation — NLPWA
-does all comparison on the client.
+Returned periodically or on tab focus to determine if an update is available.
 
-### Response
-
-**Status:** `200 OK`
-**Content-Type:** `application/json`
-
+**Response:** `200 OK`, `application/json` (~20 bytes)
 ```json
 {
-  "version": "1.4.2",
+  "version": "1.0.1"
+}
+```
+
+If the returned `version` is not newer than the currently cached app version, the update check **stops immediately** without downloading any file lists.
+
+---
+
+### Tier 2: Full Manifest & Hashes
+
+```
+GET /api/update/info
+```
+
+Fetched **only** if Tier 1 reports a strictly newer version. Contains the complete list of tracked offline files with their SHA-256 hashes.
+
+**Response:** `200 OK`, `application/json`
+```json
+{
+  "version": "1.0.1",
   "files": [
+    { "path": "/config.json",       "hash": "15142550" },
+    { "path": "/index.html",        "hash": "d7e8f9a0" },
     { "path": "/app.js",            "hash": "a1b2c3d4" },
-    { "path": "/styles/main.css",   "hash": "e5f6a7b8" },
-    { "path": "/assets/logo.png",   "hash": "c9d0e1f2" },
-    { "path": "/pages/about.html",  "hash": "f3a4b5c6" },
-    { "path": "/index.html",        "hash": "d7e8f9a0" }
+    { "path": "/styles/main.css",   "hash": "e5f6a7b8" }
   ]
 }
 ```
@@ -41,53 +52,24 @@ does all comparison on the client.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `version` | `string` | ✅ | Semantic version of the current deployment |
-| `files` | `array` | ✅ | Complete list of all cacheable files |
+| `version` | `string` | ✅ | Semantic version of the deployment (auto-incremented by build tool) |
+| `files` | `array` | ✅ | List of tracked offline files and their hashes |
 | `files[].path` | `string` | ✅ | URL pathname starting with `/` |
-| `files[].hash` | `string` | ✅ | Stable content identifier for this file |
-
-### `version` format
-
-Use semantic versioning: `MAJOR.MINOR.PATCH`
-
-```
-1.0.0  →  1.0.1  →  1.1.0  →  2.0.0
-```
-
-NLPWA compares versions numerically. A client on `1.0.0` will update
-when the server returns any version where the numeric comparison is greater:
-`1.0.1`, `1.1.0`, `2.0.0`, etc.
-
-### `hash` format
-
-The hash is any stable, deterministic string that changes when the file content
-changes. Recommended options:
-
-| Method | Example value | Notes |
-|---|---|---|
-| SHA-256 (truncated) | `a1b2c3d4` | Best — true content hash |
-| MD5 | `d41d8cd9` | Widely available, not cryptographic |
-| ETag | `"abc-123"` | Use the raw ETag value from your CDN/server |
-| Build hash | `abc123` | Hash injected by your bundler (Webpack, Vite, etc.) |
-
-The hash does **not** need to be cryptographically secure — it is only used for
-equality comparison.
+| `files[].hash` | `string` | ✅ | Stable content hash (SHA-256 first 8 hex characters) |
 
 ---
 
-## What Files to Include
+## What Files Are Tracked
 
-Include **every file that NLPWA should manage in its caches**:
+The build tool tracks **only offline cached files and the config file**:
 
-✅ Include:
-- All files in `config.precache`
-- All static assets served to the browser (JS, CSS, HTML, images, fonts)
-- Any file that a fetch strategy might cache at runtime
+✅ **Tracked in Manifest:**
+- `/config.json` (runtime configuration file)
+- All files declared in `config.precache` (the app shell)
 
-❌ Do not include:
-- API responses (dynamic, user-specific)
-- Server-side resources not directly served to the browser
-- The manifest itself (`/api/manifest/latest`)
+❌ **Not Tracked in Manifest:**
+- Runtime-cached assets (fonts, images, lazy routes) — these are cached dynamically when requested according to route fetch strategies.
+- API endpoints & backend responses.
 
 ---
 

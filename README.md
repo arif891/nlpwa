@@ -6,37 +6,50 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 
 ## Features
 
-- **App shell pre-caching** at install time
+- **Decoupled SW vs. App versioning** — SW engine version is managed manually; App version is auto-incremented by build tool
+- **Dynamic runtime configuration** — write routes in `config.js`; SW reads from `offline` cache for instant updates without SW reinstall
+- **Only offline files tracked** — build tool tracks & hashes only `config.json` and precached app shell files
+- **Two-tier update check** — lightweight version check first (~20 bytes); full manifest only downloaded when an update exists
 - **5 fetch strategies** per URL pattern (glob routing)
-- **Hash-based OTA updates** — only changed files are re-fetched
-- **Route-aware cache eviction** — stale entries removed automatically
+- **Hash-based OTA delta updates** — only changed files are re-fetched
+- **Route-aware cache eviction** — stale entries removed automatically on route change
 - **Self-healing cache** — failed fetches retry on next update check
-- **No rollback complexity** — graceful degradation, not transactions
-- **Two drop-in files** — `sw.js` + `client.js`, no build pipeline required for consumers
+- **Three drop-in files** — `sw.js` (core engine), `config.js` (routes/settings), and `register.js` (client)
 
 ---
 
 ## Quick Start
 
-### 1. Copy the built files into your app
+### 1. The Three Distribution Files
 
 ```
 your-app/
-├── sw.js           ← your Service Worker (you write this)
-├── nlpwa.sw.js     ← build/sw.js  (copy here)
-├── nlpwa.client.js ← build/client.js  (copy here)
+├── sw.js           ← your Service Worker entry (calls initSW)
+├── config.js       ← your app config (routes, precache, endpoints)
+├── nlpwa.sw.js     ← build/sw.js  (core engine)
+├── nlpwa.register.js ← build/register.js  (client)
 └── index.html
 ```
 
-### 2. Create your `sw.js`
+### 2. Configure Your App in `config.js`
+
+Developers edit `config.js` directly:
 
 ```js
-import { initSW } from '/nlpwa.sw.js';
-
-initSW({
+export default {
+  // App version (auto-incremented by `nlpwa update`)
   version: '1.0.0',
 
-  // Files to cache immediately at install time (app shell)
+  // Two-tier update endpoints
+  updateAPI: {
+    version: '/api/update/version',
+    info:    '/api/update/info',
+  },
+
+  // Check for updates every hour
+  updateCheckInterval: 60 * 60 * 1000,
+
+  // App shell files to track and offline-cache
   precache: [
     '/',
     '/index.html',
@@ -45,7 +58,7 @@ initSW({
     '/assets/icons/icon-192.png',
   ],
 
-  // Per-route fetch strategies (matched top-to-bottom)
+  // Per-route fetch strategies (evaluated top-to-bottom)
   routes: [
     { match: '/api/**',       strategy: 'network-only'           },
     { match: '/assets/**',    strategy: 'cache-first'            },
@@ -53,24 +66,46 @@ initSW({
     { match: '/_feeds/**',    strategy: 'stale-while-revalidate' },
     { match: '**',            strategy: 'network-first'          },
   ],
+};
+```
 
-  // Endpoint that returns the current file tree manifest
-  manifestEndpoint: '/api/manifest/latest',
+### 3. Initialize the Service Worker (`sw.js`)
 
-  // Check for updates every hour
-  updateCheckInterval: 60 * 60 * 1000,
+Your `sw.js` is the core engine. You only need to touch it when changing the low-level Service Worker engine version:
+
+```js
+import { initSW } from '/nlpwa.sw.js';
+
+initSW({
+  // SW engine version (managed manually by dev)
+  version: '1',
+  // Path to runtime config (always read from and stored in offline cache)
+  configPath: '/config.json',
 });
 ```
 
-### 3. Register from your HTML
+### 4. Build and Update with CLI
+
+Run the build tool to auto-increment the patch version, compile `config.js` into `config.json`, hash offline files, and emit the update API endpoints:
+
+```bash
+# Auto-increments patch version (1.0.0 → 1.0.1) and outputs to ./dist
+npx nlpwa update --dir ./dist
+```
+
+This generates:
+- `dist/config.json` (runtime config for the SW offline cache)
+- `dist/api/update/version/index.json` (`{ "version": "1.0.1" }`)
+- `dist/api/update/info/index.json` (`{ "version": "1.0.1", "files": [...] }`)
+
+### 5. Register from your HTML
 
 ```html
 <!-- In index.html, before closing </body> -->
-<script src="/nlpwa.client.js"></script>
+<script src="/nlpwa.register.js"></script>
 <script>
   NLPWAClient.register('/sw.js', {
     onUpdateReady: ({ version }) => {
-      // Show your own UI — a banner, toast, modal, etc.
       document.getElementById('update-banner').hidden = false;
     },
   });
@@ -83,23 +118,6 @@ initSW({
 </div>
 ```
 
-### 4. Serve a manifest endpoint from your server
-
-```json
-GET /api/manifest/latest
-
-{
-  "version": "1.0.0",
-  "files": [
-    { "path": "/app.js",          "hash": "a1b2c3d4" },
-    { "path": "/styles/main.css", "hash": "e5f6a7b8" },
-    { "path": "/index.html",      "hash": "c9d0e1f2" }
-  ]
-}
-```
-
-The `hash` is any stable content hash per file (e.g. SHA-256 truncated to 8 hex chars, or an ETag). The server never needs to compute diffs — NLPWA does that entirely on the client.
-
 ---
 
 ## Cache Storage
@@ -108,28 +126,29 @@ NLPWA uses exactly **two** named caches:
 
 | Cache | Purpose |
 |---|---|
-| `offline` | App shell (precache) + internal manifest snapshot at `/_nlpwa/manifest.json` |
+| `offline` | App shell (`precache`) + runtime `config.json` + internal snapshot `/_nlpwa/manifest.json` |
 | `runtime` | Assets cached lazily on first request; evicted when stale |
 
-No versioned caches. No meta cache. The manifest snapshot inside `offline` is the single source of truth for what's currently installed.
+The config file and manifest snapshot inside `offline` are the single source of truth for what's currently active.
 
 ---
 
-## Update Flow
+## Two-Tier Update Flow
 
 ```
-1. SW active → triggers update check (on activate + every N ms + on tab focus)
-2. GET /api/manifest/latest  →  { version, files: [{path, hash}] }
-3. Compare server version vs config.version  →  same? stop.
-4. Load /_nlpwa/manifest.json from offline cache  →  previous hash map
-5. Hash diff: added | modified | removed
-6. Fetch & store added/modified in offline cache  (failures skip, self-heal next check)
-7. Delete removed from offline cache
-8. Evict runtime entries whose hash changed or file was removed
-9. Route-aware eviction: evict cached files whose URL no longer matches
-   a caching-capable route (cache-first | network-first | SWR | cache-only)
-10. Save new manifest snapshot
-11. postMessage UPDATE_READY → client shows update prompt
+1. SW active → triggers check (on activate + every interval + tab focus)
+2. Tier 1: GET /api/update/version → { version }
+3. Compare against cached app version → already up to date? STOP immediately.
+4. Tier 2: GET /api/update/info → { version, files: [{path, hash}] }
+5. Load previous manifest snapshot from offline cache
+6. Hash diff: added | modified | removed
+7. Fetch & store added/modified in offline cache
+   - If /config.json was modified: updates offline cache & reloads routes dynamically!
+8. Delete removed files from offline cache
+9. Evict stale runtime entries
+10. Route-aware eviction: clean entries no longer matching cacheable routes
+11. Save new manifest snapshot
+12. postMessage UPDATE_READY → client shows update prompt
 ```
 
 ---

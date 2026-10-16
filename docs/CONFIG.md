@@ -1,60 +1,92 @@
 # NLPWA — Configuration Reference
 
-Pass your config to `initSW()` inside your Service Worker file:
+NLPWA separates **Service Worker engine configuration** (`sw.js`) from **Application configuration** (`config.js`).
+
+---
+
+## 1. Service Worker Initialization (`sw.js`)
+
+In your `sw.js`, call `initSW()` with the SW engine version:
 
 ```js
 import { initSW } from '/nlpwa.sw.js';
 
 initSW({
-  version: '1.0.0',
-  // ... see options below
+  // SW engine logic version — managed manually by the developer
+  version: '1',
+
+  // Path to runtime config file (read from and stored in offline cache)
+  configPath: '/config.json',
 });
 ```
 
 ---
 
-## All Options
+## 2. Application Configuration (`config.js`)
 
-### `version` · `string` · **required**
-
-The current version of your application. Compared against the `version` field
-in the server manifest to decide whether an update is available.
+Developers define routes, precached shell files, and update settings in `config.js`. The build tool compiles this into `/config.json`, which the Service Worker stores and reads from the `offline` cache.
 
 ```js
-version: '1.4.2'
-```
+export default {
+  // Application version (auto-incremented on build/update)
+  version: '1.0.0',
 
-Uses semantic versioning (`major.minor.patch`). Non-numeric pre-release suffixes
-are ignored in comparisons.
+  // Two-tier update endpoints
+  updateAPI: {
+    version: '/api/update/version',
+    info:    '/api/update/info',
+  },
+
+  // Update check polling interval
+  updateCheckInterval: 60 * 60 * 1000,
+
+  // App shell files to track & offline-cache
+  precache: [
+    '/',
+    '/index.html',
+    '/app.js',
+    '/styles/main.css',
+  ],
+
+  // Per-route fetch strategies
+  routes: [
+    { match: '/api/**',    strategy: 'network-only' },
+    { match: '/assets/**', strategy: 'cache-first' },
+    { match: '**',         strategy: 'network-first' },
+  ],
+};
+```
 
 ---
 
-### `manifestEndpoint` · `string` · default: `'/api/manifest/latest'`
+## Configuration Options
 
-URL of the server endpoint that returns the current file tree manifest.
+### `version` · `string`
+The deployed version of your web application.
+- Uses semantic versioning (`major.minor.patch`).
+- Auto-incremented by the build tool (`nlpwa update`) when building/deploying.
+- The Service Worker compares this version during update checks.
+
+---
+
+### `configPath` · `string` · default: `'/config.json'`
+The URL pathname where `config.json` is served and cached in the `offline` store.
+
+---
+
+### `updateAPI` · `object` | `Array`
+Defines the two-tier update check endpoints:
+- `version`: Lightweight endpoint returning `{ "version": "1.0.1" }` (~20 bytes). Polled periodically or on focus.
+- `info`: Full manifest endpoint returning `{ "version": "1.0.1", "files": [ { "path": "/config.json", "hash": "..." }, ... ] }`. Only downloaded when a newer version exists.
 
 ```js
-manifestEndpoint: '/api/manifest/latest'
-```
-
-The endpoint must return JSON in this shape:
-
-```json
-{
-  "version": "1.4.2",
-  "files": [
-    { "path": "/app.js",        "hash": "a1b2c3d4" },
-    { "path": "/index.html",    "hash": "e5f6a7b8" }
-  ]
+updateAPI: {
+  version: '/api/update/version',
+  info:    '/api/update/info',
 }
 ```
 
-- `version` — the current deployed version string
-- `files` — complete list of all cacheable files with their content hashes
-- `path` — URL pathname (must start with `/`)
-- `hash` — any stable content identifier (SHA-256 hex truncated, ETag, build hash, etc.)
-
-The server **never** needs to compute diffs. NLPWA compares hashes client-side.
+*(Also supports array format: `[{ type: 'version', endpoint: '...' }, { type: 'info', endpoint: '...' }]` or legacy `manifestEndpoint`).*
 
 ---
 

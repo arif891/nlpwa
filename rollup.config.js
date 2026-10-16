@@ -1,36 +1,17 @@
-// rollup.config.js
+export default async () => {
+  const isProd = Boolean(process.env.PROD);
+  const plugins = [];
 
-import terser from '@rollup/plugin-terser';
+  if (isProd) {
+    try {
+      const { default: terser } = await import('@rollup/plugin-terser');
+      plugins.push(terser());
+    } catch {
+      console.warn('[NLPWA] @rollup/plugin-terser not found, skipping minification. Run `npm install` to enable.');
+    }
+  }
 
-/**
- * Builds two drop-in bundles:
- *
- *   build/sw.js      — Service Worker (ES module, use with `import`)
- *   build/client.js  — Client-side registration (IIFE, use with <script>)
- *
- * The SW is built as ES module format because modern browsers support
- * `type: 'module'` in ServiceWorker.register(). This keeps the output
- * readable and avoids IIFE wrapper issues with SW global scope.
- *
- * Usage in the app's own sw.js:
- *   import { initSW } from '/build/sw.js';
- *   initSW({ version: '1.0.0', precache: [...], routes: [...] });
- *
- * Usage in HTML:
- *   <script src="/build/client.js"></script>
- *   <script>
- *     NLPWAClient.register('/sw.js', { onUpdateReady: ({ version }) => ... });
- *   </script>
- *
- * Build modes:
- *   npm run build       — readable output (development)
- *   npm run build:prod  — minified output via terser (production)
- */
-
-const isProd = Boolean(process.env.PROD);
-const plugins = isProd ? [terser()] : [];
-
-export default [
+  return [
   // ── Service Worker bundle ─────────────────────────────────────────────────
   {
     input: 'src/sw/index.js',
@@ -42,16 +23,37 @@ export default [
     plugins,
   },
 
-  // ── Client bundle ─────────────────────────────────────────────────────────
+  // ── Client Registration bundle ────────────────────────────────────────────
   {
     input: 'src/client/register.js',
-    output: {
-      file:    'build/client.js',
-      format:  'iife',
-      name:    'NLPWAClient',
-      banner:  '/* NLPWA Client — https://github.com/your-org/nlpwa */',
-      exports: 'named',
-    },
+    output: [
+      {
+        file:    'build/register.js',
+        format:  'iife',
+        name:    'NLPWAClient',
+        banner:  '/* NLPWA Client — https://github.com/your-org/nlpwa */',
+        exports: 'named',
+      },
+      {
+        file:    'build/client.js',
+        format:  'iife',
+        name:    'NLPWAClient',
+        banner:  '/* NLPWA Client — https://github.com/your-org/nlpwa */',
+        exports: 'named',
+      },
+    ],
     plugins,
   },
+
+  // ── Config starter bundle ─────────────────────────────────────────────────
+  {
+    input: 'src/config.template.js',
+    output: {
+      file:    'build/config.js',
+      format:  'es',
+      banner:  '/* NLPWA Default Config — https://github.com/your-org/nlpwa */',
+    },
+    plugins: [],
+  },
 ];
+};

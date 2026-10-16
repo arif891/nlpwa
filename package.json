@@ -12,8 +12,11 @@
   "homepage": "",
   "bugs": { "url": "" },
   "exports": {
-    "./sw":     "./build/sw.js",
-    "./client": "./build/client.js"
+    "./sw":       "./build/sw.js",
+    "./register": "./build/register.js",
+    "./client":   "./build/register.js",
+    "./config":   "./build/config.js",
+    "./rollup":   "./src/rollup-plugin.js"
   },
   "bin": {
     "nlpwa": "./bin/nlpwa.js"

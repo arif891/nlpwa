@@ -6,6 +6,7 @@ export {
   getFromRuntime,
   putInRuntime,
   evictFromRuntime,
+  clearAllCaches,
   getFromCache,
 } from './runtime.js';
 export { evictByRoute } from './evict.js';

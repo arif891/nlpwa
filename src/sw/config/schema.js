@@ -13,11 +13,24 @@ export function validateConfig(config) {
   const errors = [];
 
   if (typeof config.version !== 'string' || !config.version) {
-    errors.push('config.version must be a non-empty string (e.g. "1.0.0")');
+    errors.push('config.version must be a non-empty string (e.g. "1", "2", "v3")');
   }
 
-  if (typeof config.manifestEndpoint !== 'string' || !config.manifestEndpoint) {
-    errors.push('config.manifestEndpoint must be a non-empty string');
+  if (config.configPath && typeof config.configPath !== 'string') {
+    errors.push('config.configPath must be a string (e.g. "/config.json")');
+  }
+
+  // Support updateAPI (object or array) or legacy manifestEndpoint
+  if (config.updateAPI) {
+    if (Array.isArray(config.updateAPI)) {
+      if (config.updateAPI.length === 0) {
+        errors.push('config.updateAPI array must not be empty');
+      }
+    } else if (typeof config.updateAPI !== 'object') {
+      errors.push('config.updateAPI must be an object with { version, info } or an array');
+    }
+  } else if (typeof config.manifestEndpoint !== 'string' || !config.manifestEndpoint) {
+    errors.push('config must provide either updateAPI or manifestEndpoint');
   }
 
   if (typeof config.updateCheckInterval !== 'number' || config.updateCheckInterval < 0) {

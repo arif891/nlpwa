@@ -1,4 +1,4 @@
-import { getConfig } from '../config/index.js';
+import { getConfig, loadConfigFromCache } from '../config/index.js';
 import { putInOffline, deleteFromOffline, evictFromRuntime, evictByRoute } from '../cache/index.js';
 import { saveCachedManifest } from './manifest.js';
 
@@ -66,6 +66,13 @@ export async function applyDiff(diff, newManifest) {
   const runtimeKeys  = await runtimeCache.keys();
   const unknownRequests = runtimeKeys.filter(r => !newPaths.has(new URL(r.url).pathname));
   await Promise.all(unknownRequests.map(r => runtimeCache.delete(r)));
+
+  // If config file was updated, reload in-memory config so new routes apply immediately
+  const configPath = getConfig().configPath || '/config.json';
+  if (toFetch.includes(configPath)) {
+    await loadConfigFromCache();
+    console.log('[NLPWA] Reloaded updated config into active router');
+  }
 
   // ── 4. Route-aware eviction on both caches ──────────────────────────────
   await evictByRoute();

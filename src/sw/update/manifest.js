@@ -1,15 +1,40 @@
-import { getConfig } from '../config/index.js';
+import { getConfig, getUpdateEndpoints } from '../config/index.js';
 
 /**
- * Fetch the latest file tree manifest from the server.
+ * Fetch lightweight app version from the server (Tier 1 check).
+ *
+ * @returns {Promise<{ version: string }>}
+ */
+export async function fetchServerVersion() {
+  const { versionEndpoint } = getUpdateEndpoints();
+
+  const response = await fetch(versionEndpoint, {
+    cache: 'no-store',
+    headers: { 'Accept': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`[NLPWA] Version check failed: HTTP ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  if (typeof data.version !== 'string' || !data.version) {
+    throw new Error('[NLPWA] Version check response missing valid "version"');
+  }
+
+  return data;
+}
+
+/**
+ * Fetch the latest file tree manifest from the server (Tier 2 fetch).
  * Always bypasses browser cache (cache: 'no-store') to get the true current state.
  *
  * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }>}
  */
 export async function fetchServerManifest() {
-  const { manifestEndpoint } = getConfig();
+  const { infoEndpoint } = getUpdateEndpoints();
 
-  const response = await fetch(manifestEndpoint, {
+  const response = await fetch(infoEndpoint, {
     cache: 'no-store',
     headers: { 'Accept': 'application/json' },
   });
@@ -61,10 +86,15 @@ export async function loadCachedManifest() {
  * @param {{ version: string, files: Array<{ path: string, hash: string }> }} manifest
  */
 export async function saveCachedManifest(manifest) {
-  const { caches: cacheNames, manifestCachePath } = getConfig();
+  const { caches: cacheNames, manifestCachePath, version: swVersion } = getConfig();
   const cache = await caches.open(cacheNames.offline);
 
-  const response = new Response(JSON.stringify(manifest), {
+  const snapshot = {
+    ...manifest,
+    swVersion,
+  };
+
+  const response = new Response(JSON.stringify(snapshot), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   });

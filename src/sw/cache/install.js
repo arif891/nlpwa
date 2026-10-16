@@ -1,25 +1,46 @@
-import { getConfig } from '../config/index.js';
+import { getConfig, updateActiveConfig, loadConfigFromCache } from '../config/index.js';
 
 /**
  * Pre-cache all files listed in config.precache into the offline cache.
  * Called during the SW `install` event via event.waitUntil().
  *
- * Uses Promise.allSettled so a single failed fetch doesn't abort the install.
- * Failed URLs are logged as warnings and will be retried on the next update check.
+ * First fetches and caches the runtime config file (e.g. /config.json)
+ * in the offline cache, then precaches the app shell files.
  */
 export async function precacheFiles() {
-  const { caches: cacheNames, precache } = getConfig();
+  const config = getConfig();
+  const cacheNames = config.caches;
+  const configPath = config.configPath || '/config.json';
+  const offlineCache = await caches.open(cacheNames.offline);
+
+  // 1. Fetch & store config file in offline cache
+  try {
+    const configRes = await fetch(configPath, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+    });
+    if (configRes.ok) {
+      await offlineCache.put(configPath, configRes.clone());
+      const runtimeConfig = await configRes.json();
+      updateActiveConfig(runtimeConfig);
+      console.log(`[NLPWA] Runtime config cached: ${configPath}`);
+    } else {
+      console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
+      await loadConfigFromCache();
+    }
+  } catch (err) {
+    console.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
+    await loadConfigFromCache();
+  }
+
+  // 2. Precache files defined in config.precache
+  const activeConfig = getConfig();
+  const precache = activeConfig.precache || [];
 
   if (!precache.length) return;
 
-  const cache = await caches.open(cacheNames.offline);
-
-  // cache.addAll() would abort the entire install on any single failure.
-  // Promise.allSettled + individual cache.add() calls give us partial success:
-  // failed URLs are logged as warnings and retried on the next update check
-  // (self-healing), while successfully cached files remain in place.
   const results = await Promise.allSettled(
-    precache.map(url => cache.add(url))
+    precache.map(url => offlineCache.add(url))
   );
 
   results.forEach((result, i) => {

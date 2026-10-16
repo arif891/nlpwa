@@ -79,6 +79,22 @@ export async function evictFromRuntime(paths) {
 }
 
 /**
+ * Delete both the offline and runtime caches entirely.
+ *
+ * Called when swVersion changes — the developer has changed SW logic
+ * (routes, strategies, precache list), so all existing cached data
+ * is considered stale and must be fully rebuilt from the server manifest.
+ */
+export async function clearAllCaches() {
+  const { caches: cacheNames } = getConfig();
+  await Promise.all([
+    caches.delete(cacheNames.offline),
+    caches.delete(cacheNames.runtime),
+  ]);
+  console.log('[NLPWA] All caches cleared (SW version change)');
+}
+
+/**
  * Convenience: look up a request from offline first, then runtime.
  * Returns the first match found, or undefined if neither has it.
  *

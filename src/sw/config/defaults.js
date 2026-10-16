@@ -5,11 +5,37 @@ import { CACHE_NAMES, MANIFEST_CACHE_PATH, STRATEGIES } from '../../shared/const
  * All fields are overridable by the user via initConfig(userConfig).
  */
 export const DEFAULTS = {
-  /** Installed app version — compared against server manifest version */
-  version: '0.0.0',
+  /**
+   * Service Worker version — set MANUALLY by the developer.
+   *
+   * Bump this when you make structural changes to the SW itself:
+   * routes, strategies, or precache list.
+   *
+   * Changing this triggers the browser's byte-level SW update, and
+   * tells NLPWA to wipe old caches and do a clean install.
+   *
+   * Note: The APP version is NOT configured here — it is auto-generated
+   * by the build tool and lives in manifest.json.
+   *
+   * Example: '1', '2', 'v3'
+   */
+  version: '1',
 
-  /** Server endpoint that returns the full file tree manifest */
-  manifestEndpoint: '/api/manifest/latest',
+  /**
+   * Path to the runtime config.json file (stored in and read from offline cache).
+   * Default: '/config.json'
+   */
+  configPath: '/config.json',
+
+  /**
+   * Server endpoints for two-tier update checks:
+   * - version: lightweight check returning { version: 'x.y.z' }
+   * - info: full manifest returning { version: 'x.y.z', files: [...] }
+   */
+  updateAPI: {
+    version: '/api/update/version',
+    info: '/api/update/info',
+  },
 
   /**
    * How often (ms) to automatically check for updates.

@@ -43,3 +43,14 @@ export function compare(a, b) {
 export function isNewer(serverVersion, clientVersion) {
   return compare(serverVersion, clientVersion) > 0;
 }
+
+/**
+ * Auto-increment the patch component of a semver string (x.y.z -> x.y.(z+1)).
+ *
+ * @param {string} version
+ * @returns {string}
+ */
+export function incrementPatch(version) {
+  const { major, minor, patch } = parse(version || '1.0.0');
+  return `${major}.${minor}.${patch + 1}`;
+}

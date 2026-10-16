@@ -18,10 +18,10 @@
  */
 
 import { createHash }                            from 'node:crypto';
-import { readFileSync, writeFileSync, statSync }  from 'node:fs';
-import { readdirSync }                           from 'node:fs';
+import { readFileSync, writeFileSync, statSync, existsSync, mkdirSync } from 'node:fs';
 import { join, relative, resolve, dirname }      from 'node:path';
-import { fileURLToPath }                         from 'node:url';
+import { fileURLToPath, pathToFileURL }          from 'node:url';
+import { incrementPatch }                        from '../src/shared/version.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,31 +40,14 @@ const c = {
   blue:   isTTY ? '\x1b[34m' : '',
 };
 
-/** SHA-256 first 8 hex chars — matches the recommended format in UPDATE-PROTOCOL.md */
+/** SHA-256 first 8 hex chars — matches UPDATE-PROTOCOL.md */
 function hashFile(filePath) {
   const content = readFileSync(filePath);
   return createHash('sha256').update(content).digest('hex').slice(0, 8);
 }
 
-/** Recursively walk a directory and return all file paths */
-function walkDir(dir) {
-  const results = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...walkDir(fullPath));
-    } else if (entry.isFile() || entry.isSymbolicLink()) {
-      // Include symlinked files so dist directories with symlinks are hashed correctly
-      results.push(fullPath);
-    }
-  }
-  return results;
-}
-
 /**
- * Resolve the version from the consuming project's package.json.
- * Searches from process.cwd() (the user's project root), NOT from __dirname
- * (which would resolve to nlpwa's own package.json).
+ * Resolve project version from package.json in current working directory.
  */
 function resolvePackageVersion() {
   try {
@@ -73,6 +56,73 @@ function resolvePackageVersion() {
     return pkg.version ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Locate developer configuration file (config.js, nlpwa.config.js, config.json).
+ */
+function findConfigFile(explicitPath) {
+  if (explicitPath) {
+    const resolved = resolve(explicitPath);
+    if (existsSync(resolved)) return resolved;
+    throw new Error(`Specified config file not found: ${explicitPath}`);
+  }
+
+  const candidates = [
+    './config.js',
+    './nlpwa.config.js',
+    './src/config.js',
+    './config.json',
+    './nlpwa.config.json',
+  ];
+
+  for (const candidate of candidates) {
+    const resolved = resolve(process.cwd(), candidate);
+    if (existsSync(resolved)) return resolved;
+  }
+
+  return null;
+}
+
+/**
+ * Load configuration from a JS or JSON file.
+ */
+async function loadConfig(configPath) {
+  if (!configPath) return {};
+
+  if (configPath.endsWith('.json')) {
+    const raw = readFileSync(configPath, 'utf8');
+    return JSON.parse(raw);
+  }
+
+  // Dynamic import for .js / .mjs config files
+  const fileUrl = pathToFileURL(configPath).href;
+  const mod = await import(fileUrl);
+  return mod.default ?? mod;
+}
+
+/**
+ * Update version string inside config.js or config.json source file.
+ */
+function syncSourceConfigVersion(configPath, newVersion) {
+  if (!configPath || !existsSync(configPath)) return;
+
+  try {
+    const content = readFileSync(configPath, 'utf8');
+    if (configPath.endsWith('.json')) {
+      const parsed = JSON.parse(content);
+      parsed.version = newVersion;
+      writeFileSync(configPath, JSON.stringify(parsed, null, 2), 'utf8');
+    } else {
+      // Regex replace version: '...' or version: "..."
+      const updated = content.replace(/(version\s*:\s*['"])([^'"]+)(['"])/, `$1${newVersion}$3`);
+      if (updated !== content) {
+        writeFileSync(configPath, updated, 'utf8');
+      }
+    }
+  } catch (err) {
+    console.warn(`${c.yellow}Could not sync version to source config: ${err.message}${c.reset}`);
   }
 }
 
@@ -95,7 +145,6 @@ function parseArgs(argv) {
         args[key] = true;
       }
     } else if (arg.startsWith('-')) {
-      // Unknown single-dash flag — warn rather than silently treating as a sub-command
       console.warn(`${c.yellow}Warning: Unknown flag "${arg}" — did you mean "--${arg.slice(1)}"?${c.reset}`);
     } else {
       args._.push(arg);
@@ -126,95 +175,168 @@ function printHelp() {
   nlpwa <command> [options]
 
 ${c.bold}COMMANDS${c.reset}
-  ${c.green}update${c.reset}   Scan a directory, compute SHA-256 file hashes, and write a
-           manifest JSON compatible with the NLPWA Service Worker.
+  ${c.green}update${c.reset}   Reads config.js, auto-increments app patch version,
+           generates config.json, hashes ONLY tracked offline files,
+           and emits update API endpoints (/api/update/version & info).
 
 ${c.bold}OPTIONS (update)${c.reset}
-  ${c.cyan}--dir${c.reset}  <path>      Directory to scan          (default: ./dist)
-  ${c.cyan}--out${c.reset}  <path>      Output manifest file path  (default: ./manifest.json)
-  ${c.cyan}--version${c.reset} <semver> Version string to embed    (default: package.json version or 1.0.0)
-  ${c.cyan}--pretty${c.reset}           Pretty-print JSON output   (4-space indent)
-  ${c.cyan}--help, -h${c.reset}         Show this help message
+  ${c.cyan}--config${c.reset}  <path>      Config file path            (default: auto-detect ./config.js)
+  ${c.cyan}--dir${c.reset}     <path>      Target build directory      (default: ./dist or ./)
+  ${c.cyan}--version${c.reset} <semver>    Explicit version override   (default: auto-increment patch)
+  ${c.cyan}--pretty${c.reset}              Pretty-print JSON output    (2-space indent)
+  ${c.cyan}--help, -h${c.reset}            Show this help message
 
 ${c.bold}EXAMPLES${c.reset}
-  # Scan ./dist, write manifest.json with version from package.json
+  # Auto-detect config.js, auto-increment patch version, output to ./dist
   nlpwa update
 
-  # Scan a custom directory and write to a specific path
-  nlpwa update --dir ./public --out ./api/manifest.json
-
-  # Set version explicitly and pretty-print
-  nlpwa update --dir ./dist --version 2.1.0 --pretty
+  # Explicit build directory and config file
+  nlpwa update --dir ./public --config ./config.js
 `);
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-function cmdUpdate(args) {
-  const dir     = resolve(args.dir     ?? './dist');
-  const outFile = resolve(args.out     ?? './manifest.json');
-  const pretty  = Boolean(args.pretty);
-
-  const version = args.version
-    ?? resolvePackageVersion()
-    ?? '1.0.0';
-
-  let dirStat;
+async function cmdUpdate(args) {
+  let configPath = null;
   try {
-    dirStat = statSync(dir);
-  } catch {
-    console.error(`${c.red}X Directory not found:${c.reset} ${dir}`);
-    console.error(`  Run with ${c.cyan}--dir <path>${c.reset} to specify a directory to scan.`);
+    configPath = findConfigFile(args.config);
+  } catch (err) {
+    console.error(`${c.red}X ${err.message}${c.reset}`);
     process.exit(1);
   }
 
-  if (!dirStat.isDirectory()) {
-    console.error(`${c.red}X Not a directory:${c.reset} ${dir}`);
-    process.exit(1);
-  }
+  const rawConfig = await loadConfig(configPath);
+  const targetDir = resolve(args.dir ?? (existsSync('./dist') ? './dist' : '.'));
+
+  // Version resolution & auto-increment patch
+  const prevVersion = rawConfig.version ?? resolvePackageVersion() ?? '1.0.0';
+  const newVersion = args.version ?? incrementPatch(prevVersion);
 
   printBanner();
   console.log(`${c.bold}nlpwa update${c.reset}\n`);
-  console.log(`  ${c.dim}Scanning:${c.reset} ${c.cyan}${dir}${c.reset}`);
-  console.log(`  ${c.dim}Output  :${c.reset} ${c.cyan}${outFile}${c.reset}`);
-  console.log(`  ${c.dim}Version :${c.reset} ${c.green}${version}${c.reset}\n`);
+  if (configPath) {
+    console.log(`  ${c.dim}Config  :${c.reset} ${c.cyan}${configPath}${c.reset}`);
+  }
+  console.log(`  ${c.dim}Target  :${c.reset} ${c.cyan}${targetDir}${c.reset}`);
+  console.log(`  ${c.dim}Version :${c.reset} ${c.yellow}v${prevVersion}${c.reset} → ${c.green}${c.bold}v${newVersion}${c.reset} (patch auto-increment)\n`);
 
-  const allFiles  = walkDir(dir);
-  const fileCount = allFiles.length;
-
-  if (fileCount === 0) {
-    console.warn(`${c.yellow}Warning: No files found in:${c.reset} ${dir}`);
+  // Update source config file if version was auto-incremented
+  if (!args.version && configPath) {
+    syncSourceConfigVersion(configPath, newVersion);
   }
 
+  // Prepare runtime config object
+  const runtimeConfig = {
+    ...rawConfig,
+    version: newVersion,
+    configPath: rawConfig.configPath || '/config.json',
+    updateAPI: rawConfig.updateAPI || {
+      version: '/api/update/version',
+      info: '/api/update/info',
+    },
+    precache: rawConfig.precache || [],
+    routes: rawConfig.routes || [],
+  };
+
+  mkdirSync(targetDir, { recursive: true });
+
+  // 1. Write runtime config.json into target directory
+  const configJsonPath = resolve(targetDir, 'config.json');
+  const compact = Boolean(args.compact || args.minify);
+  const jsonIndent = compact ? 0 : 2;
+  writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
+  console.log(`  ${c.green}+${c.reset} ${c.cyan}/config.json${c.reset} (generated from config.js)`);
+
+  // 2. Track ONLY offline cached files and the config file
+  const trackedUrlPaths = Array.from(new Set([
+    runtimeConfig.configPath,
+    ...(runtimeConfig.precache || []),
+  ]));
+
   const startMs = Date.now();
+  const files = [];
 
-  const files = allFiles.map((absPath) => {
-    const urlPath = '/' + relative(dir, absPath).replace(/\\/g, '/');
-    const hash    = hashFile(absPath);
-    console.log(`  ${c.green}+${c.reset} ${c.dim}${urlPath}${c.reset}  ${c.blue}${hash}${c.reset}`);
-    return { path: urlPath, hash };
-  });
+  for (const urlPath of trackedUrlPaths) {
+    // Map URL path to file path on disk
+    let relPath = urlPath.startsWith('/') ? urlPath.slice(1) : urlPath;
+    if (relPath === '' || relPath.endsWith('/')) {
+      relPath += 'index.html';
+    }
 
-  const manifest = { version, files };
-  const json     = pretty
-    ? JSON.stringify(manifest, null, 4)
-    : JSON.stringify(manifest);
+    const diskPath = resolve(targetDir, relPath);
 
-  try {
-    writeFileSync(outFile, json, 'utf8');
-  } catch (err) {
-    console.error(`\n${c.red}X Failed to write output file:${c.reset} ${outFile}`);
-    console.error(`  ${err.message}`);
-    process.exit(1);
+    if (existsSync(diskPath)) {
+      const hash = hashFile(diskPath);
+      files.push({ path: urlPath, hash });
+      console.log(`  ${c.green}+${c.reset} ${c.dim}${urlPath.padEnd(25)}${c.reset} ${c.blue}${hash}${c.reset}`);
+    } else {
+      console.warn(`  ${c.yellow}! Offline file not found on disk:${c.reset} ${diskPath} (${urlPath})`);
+    }
+  }
+
+  // 3. Emit update API outputs
+  let versionEndpoint = '/api/update/version';
+  let infoEndpoint = '/api/update/info';
+
+  if (runtimeConfig.updateAPI) {
+    if (typeof runtimeConfig.updateAPI === 'object' && !Array.isArray(runtimeConfig.updateAPI)) {
+      versionEndpoint = runtimeConfig.updateAPI.version || versionEndpoint;
+      infoEndpoint = runtimeConfig.updateAPI.info || infoEndpoint;
+    } else if (Array.isArray(runtimeConfig.updateAPI)) {
+      const v = runtimeConfig.updateAPI.find(e => e.type === 'version');
+      const i = runtimeConfig.updateAPI.find(e => e.type === 'info');
+      if (v?.endpoint) versionEndpoint = v.endpoint;
+      if (i?.endpoint) infoEndpoint = i.endpoint;
+    }
+  }
+
+  // Helper to resolve API output file path
+  function getApiDiskPath(baseDir, endpoint) {
+    let clean = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+    if (clean.endsWith('.json')) {
+      return resolve(baseDir, clean);
+    }
+    return resolve(baseDir, clean, 'index.json');
+  }
+
+  const versionOut = getApiDiskPath(targetDir, versionEndpoint);
+  const infoOut = getApiDiskPath(targetDir, infoEndpoint);
+  const manifestOut = resolve(targetDir, 'manifest.json');
+
+  mkdirSync(dirname(versionOut), { recursive: true });
+  mkdirSync(dirname(infoOut), { recursive: true });
+
+  const versionPayload = { version: newVersion };
+  const infoPayload = { version: newVersion, files };
+
+  const versionJson = JSON.stringify(versionPayload, null, jsonIndent);
+  const infoJson = JSON.stringify(infoPayload, null, jsonIndent);
+
+  writeFileSync(versionOut, versionJson, 'utf8');
+  writeFileSync(infoOut, infoJson, 'utf8');
+  writeFileSync(manifestOut, infoJson, 'utf8');
+
+  // Also sync to workspace root api/ directory if it exists and targetDir is different
+  const rootApiDir = resolve(process.cwd(), 'api');
+  if (targetDir !== process.cwd() && existsSync(rootApiDir)) {
+    const rootVersionOut = getApiDiskPath(process.cwd(), versionEndpoint);
+    const rootInfoOut = getApiDiskPath(process.cwd(), infoEndpoint);
+    mkdirSync(dirname(rootVersionOut), { recursive: true });
+    mkdirSync(dirname(rootInfoOut), { recursive: true });
+    writeFileSync(rootVersionOut, versionJson, 'utf8');
+    writeFileSync(rootInfoOut, infoJson, 'utf8');
   }
 
   const elapsedMs = Date.now() - startMs;
 
   console.log(`
-${c.bold}${c.green}  Manifest written${c.reset}
-  ${c.dim}Files   :${c.reset} ${fileCount}
-  ${c.dim}Time    :${c.reset} ${elapsedMs}ms
-  ${c.dim}Output  :${c.reset} ${outFile}
+${c.bold}${c.green}  Update outputs written successfully${c.reset}
+  ${c.dim}Tracked Offline Files :${c.reset} ${files.length}
+  ${c.dim}Runtime Config        :${c.reset} ${configJsonPath}
+  ${c.dim}Version API Endpoint  :${c.reset} ${versionOut}
+  ${c.dim}Info API Endpoint     :${c.reset} ${infoOut}
+  ${c.dim}Elapsed Time          :${c.reset} ${elapsedMs}ms
 `);
 }
 
@@ -231,7 +353,7 @@ if (!command || args.help) {
 
 switch (command) {
   case 'update':
-    cmdUpdate(args);
+    await cmdUpdate(args);
     break;
 
   default:

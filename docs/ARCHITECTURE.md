@@ -1,15 +1,17 @@
 # NLPWA — Architecture
-
 ## Overview
 
-NLPWA is a Service Worker framework. It runs in two contexts:
+NLPWA is a Service Worker framework with a decoupled architecture:
 
 | Context | File | Role |
 |---|---|---|
-| Service Worker thread | `build/sw.js` | Intercepts fetches, manages caches, applies updates |
-| Main thread (browser) | `build/client.js` | Registers the SW, polls for updates, shows update UI |
+| Service Worker thread | `build/sw.js` | Intercepts fetches, manages caches, applies delta updates |
+| Runtime Configuration | `config.js` → `config.json` | Dynamic route rules & precache list; stored in `offline` cache |
+| Main thread (browser) | `build/register.js` | Registers the SW, listens for updates, shows update UI |
+| Build Tool / CLI | `bin/nlpwa.js` / Rollup | Auto-increments patch version, tracks offline files & config, emits update API |
 
-The two contexts communicate exclusively via `postMessage`.
+The Service Worker thread and client communicate via `postMessage`.
+Runtime configuration is completely decoupled from `sw.js` and loaded dynamically from the `offline` cache.
 
 ---
 
@@ -17,36 +19,39 @@ The two contexts communicate exclusively via `postMessage`.
 
 ```
 src/
-├── shared/                         ← Shared by both SW and client
+├── shared/                         ← Shared by both SW, client, and build tool
 │   ├── constants.js                Cache names, message types, strategy names
 │   ├── glob.js                     Glob URL pattern matching (*, **, ?)
-│   └── version.js                  Semver comparison (isNewer, compare)
+│   └── version.js                  Semver comparison & incrementPatch (isNewer, compare)
 │
 ├── sw/                             ← Runs in Service Worker thread
 │   ├── index.js                    Entry: initSW(config) — wires all lifecycle events
 │   ├── config/
-│   │   ├── defaults.js             Default config values
+│   │   ├── defaults.js             Default config values (SW version, endpoints, paths)
 │   │   ├── schema.js               Config validation (returns error strings)
-│   │   └── index.js                initConfig() / getConfig() singleton
+│   │   └── index.js                loadConfigFromCache(), updateActiveConfig(), getUpdateEndpoints()
 │   ├── cache/
-│   │   ├── install.js              precacheFiles() — pre-caches precache[] at install
-│   │   ├── runtime.js              get/put/delete helpers for offline + runtime caches
-│   │   ├── evict.js                evictByRoute() — route-aware eviction (Option A)
+│   │   ├── install.js              precacheFiles() — fetches config.json, then precaches app shell
+│   │   ├── runtime.js              get/put/delete helpers for offline + runtime caches, clearAllCaches()
+│   │   ├── evict.js                evictByRoute() — route-aware eviction on route changes
 │   │   └── index.js                Barrel re-export
 │   ├── fetch/
-│   │   ├── strategies.js           5 strategy functions
+│   │   ├── strategies.js           5 strategy functions (tagged with X-Cache-Status)
 │   │   ├── router.js               resolveStrategy(request) — glob route matching
 │   │   └── index.js                handleFetch(event) — SW fetch event handler
 │   └── update/
-│       ├── manifest.js             fetchServerManifest / loadCachedManifest / saveCachedManifest
+│       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerManifest (Tier 2), save snapshot
 │       ├── diff.js                 computeDiff(newFiles, oldFiles) → { added, modified, removed }
-│       ├── apply.js                applyDiff(diff, newManifest) — updates caches
-│       └── index.js                checkForUpdate() with lock, startUpdatePolling()
+│       ├── apply.js                applyDiff(diff, newManifest) — updates caches, reloads dynamic config
+│       └── index.js                checkForUpdate() with two-tier checks and concurrency lock
 │
-└── client/                         ← Runs in main browser thread
-    ├── register.js                 register(swUrl, options) — SW registration
-    ├── messaging.js                sendToSW(), onSWMessage(), requestUpdateCheck()
-    └── update-ui.js                onUpdateReady() → callback + CustomEvent, applyUpdate()
+├── client/                         ← Runs in main browser thread (built to build/register.js)
+│   ├── register.js                 register(swUrl, options) — SW registration
+│   ├── messaging.js                sendToSW(), onSWMessage(), requestUpdateCheck()
+│   └── update-ui.js                onUpdateReady() → callback + CustomEvent, applyUpdate()
+│
+├── rollup-plugin.js                ← Bundler plugin for Vite / Rollup integration
+└── config.template.js              ← Starter config template (built to build/config.js)
 ```
 
 ---
@@ -55,19 +60,17 @@ src/
 
 ```
 CacheStorage
-├── offline                         App shell (precached files)
+├── offline                         App shell + runtime config + manifest
+│   ├── /config.json                Active runtime config (routes, precache, endpoints)
 │   └── /_nlpwa/manifest.json       Internal: last-applied manifest snapshot
 └── runtime                         Lazily cached responses (filled by fetch strategies)
 ```
 
-### Why store the manifest inside `offline`?
+### Why store the config & manifest inside `offline`?
 
-The manifest snapshot at `/_nlpwa/manifest.json` is a `Response` object stored in the `offline` cache using `cache.put()`. This approach:
-
-- Requires no IndexedDB or localStorage
-- Survives SW restarts (persisted in CacheStorage)
-- Is excluded from route-aware eviction (path is checked before eviction runs)
-- Is never served to the browser (only read internally by the update system)
+- **Zero network roundtrips at fetch time**: The SW loads `/config.json` directly from `offline` cache.
+- **OTA Route updates**: Updating `config.js` does NOT require a byte-level reinstall of `sw.js`. The update engine downloads the new `config.json` into the `offline` cache and updates routes on the fly.
+- **Persistence**: Survives SW restarts without requiring IndexedDB.
 
 ---
 
@@ -78,9 +81,10 @@ The manifest snapshot at `/_nlpwa/manifest.json` is a `Response` object stored i
 ```
 install event
   └─ precacheFiles()
-       └─ caches.open('offline')
-            └─ cache.add(url) for each url in config.precache
-                 (allSettled — soft failures, not fatal)
+       └─ fetch('/config.json', { cache: 'no-store' })
+            └─ caches.open('offline').put('/config.json', response)
+            └─ updateActiveConfig(runtimeConfig)  ← hydrates routes & precache
+       └─ cache.add(url) for each url in config.precache
   └─ self.skipWaiting()
 ```
 
@@ -89,8 +93,9 @@ install event
 ```
 activate event
   └─ self.clients.claim()
+  └─ loadConfigFromCache()    ← ensures in-memory routes are ready
   └─ startUpdatePolling()     ← sets interval timer
-  └─ checkForUpdate()         ← immediate check on first activate
+  └─ checkForUpdate()         ← runs initial two-tier check
 ```
 
 ### 3. Fetch Interception
@@ -98,38 +103,37 @@ activate event
 ```
 fetch event (GET, http/https only)
   └─ resolveStrategy(request)
-       └─ iterate config.routes top-to-bottom
+       └─ iterate active config.routes (hydrated from offline cache) top-to-bottom
             └─ matchGlob(route.match, request.url)
                  └─ first match → return strategy function
                  └─ no match   → return defaultStrategy function
   └─ event.respondWith(strategyFn(request))
 ```
 
-### 4. Update Check
+### 4. Two-Tier Update Check
 
 ```
 checkForUpdate()
   │
   ├─ [guard] _updateInProgress lock — prevents concurrent runs
   │
-  ├─ fetchServerManifest()
-  │    └─ GET /api/manifest/latest  { cache: 'no-store' }
+  ├─ Tier 1: fetchServerVersion()
+  │    └─ GET /api/update/version  { cache: 'no-store' }
+  │    └─ isNewer(server.version, cached.version)?
+  │         └─ false & no SW engine change: STOP (no heavy downloads)
   │
-  ├─ isNewer(server.version, config.version)  →  false? return early
-  │
-  ├─ loadCachedManifest()
-  │    └─ offline['/_nlpwa/manifest.json']  →  previous { version, files }
-  │    └─ null on fresh install
+  ├─ Tier 2: fetchServerManifest()
+  │    └─ GET /api/update/info  { cache: 'no-store' }
   │
   ├─ computeDiff(server.files, cached.files)
-  │    └─ Map-based O(n) comparison → { added[], modified[], removed[] }
+  │    └─ Map-based comparison → { added[], modified[], removed[] }
   │
   ├─ applyDiff(diff, serverManifest)
-  │    ├─ fetch added + modified → putInOffline()  (skip on failure)
+  │    ├─ fetch added + modified → putInOffline()
+  │    │    └─ if /config.json in diff: reload in-memory routes dynamically!
   │    ├─ deleteFromOffline() for removed
   │    ├─ evictFromRuntime() for modified + removed
-  │    ├─ evict runtime entries not in new manifest
-  │    ├─ evictByRoute() on both caches
+  │    ├─ evictByRoute() using updated routes
   │    └─ saveCachedManifest(newManifest)
   │
   └─ broadcast({ type: 'UPDATE_READY', version })
@@ -183,9 +187,13 @@ The SW is single-threaded, but `checkForUpdate()` is async. A boolean lock (`_up
 
 | Decision | Choice | Why |
 |---|---|---|
+| SW vs. App Versioning | Separated (SW manual, App build-managed) | App updates don't cause browser byte-level SW reinstalls |
+| Dynamic Config | `config.js` → `config.json` in `offline` cache | Route and strategy changes update OTA without touching SW code |
+| File Tracking Scope | Offline files (`config.precache`) + `config.json` only | Runtime assets are cached lazily; keeps manifest tiny & focused |
+| Two-Tier Update API | `/version` (check) + `/info` (manifest) | Polling costs ~20 bytes instead of pulling full file trees |
 | Cache layout | `offline` + `runtime` only | No versioned cache proliferation |
 | Manifest storage | Cache entry at `/_nlpwa/manifest.json` | No IndexedDB; survives SW restarts |
-| Diff computation | Client-side (SW) | Server stays stateless; one endpoint |
+| Diff computation | Client-side (SW) | Server stays stateless; no complex delta calculations |
 | Eviction rule | Route-strategy-aware | Routes define cacheability; not file presence |
 | Update failure | Skip & log (no rollback) | Self-healing on next check; simpler code |
 | SW format | ES module (`type: 'module'`) | Modern browsers support it; readable output |

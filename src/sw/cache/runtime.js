@@ -73,7 +73,23 @@ export async function putInRuntime(request, response) {
       }
       if (!headers.has('X-NLPWA-Content-Length')) {
         const cl = headers.get('Content-Length');
-        if (cl) headers.set('X-NLPWA-Content-Length', cl);
+        if (cl) {
+          headers.set('X-NLPWA-Content-Length', cl);
+        } else {
+          try {
+            const buf = await response.clone().arrayBuffer();
+            headers.set('X-NLPWA-Content-Length', String(buf.byteLength));
+            responseToStore = new Response(buf, {
+              status: response.status,
+              statusText: response.statusText,
+              headers,
+            });
+            await cache.put(request, responseToStore);
+            return;
+          } catch {
+            // fallback
+          }
+        }
       }
       responseToStore = new Response(responseToStore.body, {
         status: response.status,

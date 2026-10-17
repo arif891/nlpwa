@@ -20,8 +20,8 @@ import { getConfig } from '../config/index.js';
  * @param {FetchEvent} [event]
  */
 function safePutInRuntime(request, response, event) {
-  if (!response || !response.ok || response.status === 206) return;
-  if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return;
+  if (!response || !response.ok || response.status === 206) return Promise.resolve();
+  if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return Promise.resolve();
 
   try {
     const clone = response.clone();
@@ -32,8 +32,10 @@ function safePutInRuntime(request, response, event) {
     if (event && typeof event.waitUntil === 'function') {
       event.waitUntil(writePromise);
     }
+    return writePromise;
   } catch (err) {
     console.warn('[NLPWA] Could not clone response for runtime cache:', err.message);
+    return Promise.resolve();
   }
 }
 
@@ -61,9 +63,29 @@ export async function cacheFirst(request, event, options = {}) {
   const runtimeCached = await getFromRuntime(request, matchOptions);
   if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
 
-  const response = await fetch(request);
-  safePutInRuntime(request, response, event);
-  return tagResponse(response, CACHE_STATUS.NETWORK);
+  try {
+    const response = await fetch(request);
+    safePutInRuntime(request, response, event);
+    return tagResponse(response, CACHE_STATUS.NETWORK);
+  } catch {
+    // Navigation fallback for SPAs or offline pages
+    if (request.mode === 'navigate') {
+      const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+      const fallbackRes = await getFromCache(fallbackUrl);
+      if (fallbackRes) {
+        return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+      }
+    }
+
+    // Return a typed offline error response instead of throwing
+    return tagResponse(
+      new Response('Offline — no cached version available.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+      CACHE_STATUS.OFFLINE_FALLBACK,
+    );
+  }
 }
 
 // ── network-first ──────────────────────────────────────────────────────────
@@ -125,7 +147,7 @@ export async function networkFirst(request, event, options = {}) {
           // Let the slow request finish in the background so the cache is
           // refreshed for next time.
           const refresh = networkPromise
-            .then((res) => { safePutInRuntime(request, res, event); })
+            .then((res) => safePutInRuntime(request, res, event))
             .catch(() => {});
           if (event && typeof event.waitUntil === 'function') event.waitUntil(refresh);
           return cached;
@@ -177,7 +199,17 @@ export async function networkFirst(request, event, options = {}) {
  * @returns {Promise<Response>}
  */
 export async function networkOnly(request) {
-  return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
+  try {
+    return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
+  } catch {
+    return tagResponse(
+      new Response('Offline — network request failed.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+      CACHE_STATUS.OFFLINE_FALLBACK,
+    );
+  }
 }
 
 // ── stale-while-revalidate ───────────────────────────────────────────────────
@@ -203,7 +235,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
   const revalidate = (async () => {
     const response = await fetch(request);
-    safePutInRuntime(request, response, event);
+    await safePutInRuntime(request, response, event);
     return response;
   })();
 

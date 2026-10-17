@@ -44,6 +44,11 @@
       "import": "./out/rollup-plugin.js",
       "default": "./out/rollup-plugin.js"
     },
+    "./vite": {
+      "types": "./types/rollup.d.ts",
+      "import": "./out/rollup-plugin.js",
+      "default": "./out/rollup-plugin.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

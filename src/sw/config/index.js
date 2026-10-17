@@ -2,15 +2,20 @@ import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
 import { openActive } from '../cache/store.js';
 
-let _intervalChangeHandler = null;
+const _intervalChangeHandlers = new Set();
 
 /**
  * Register a callback to be notified if updateCheckInterval changes at runtime.
  *
  * @param {(newInterval: number) => void} handler
+ * @returns {() => void} Unsubscribe function
  */
 export function onUpdateIntervalChange(handler) {
-  _intervalChangeHandler = handler;
+  if (typeof handler === 'function') {
+    _intervalChangeHandlers.add(handler);
+    return () => _intervalChangeHandlers.delete(handler);
+  }
+  return () => {};
 }
 
 /** Singleton config instance, set by initConfig() */
@@ -128,8 +133,12 @@ export async function loadConfigFromCache() {
 
     // Restart update polling if the interval changed after hydrating from cache
     if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
-      if (typeof _intervalChangeHandler === 'function') {
-        _intervalChangeHandler(runtimeJson.updateCheckInterval);
+      for (const handler of _intervalChangeHandlers) {
+        try {
+          handler(runtimeJson.updateCheckInterval);
+        } catch (err) {
+          console.error('[NLPWA] Interval change handler error:', err);
+        }
       }
     }
     return runtimeJson;

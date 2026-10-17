@@ -4,11 +4,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isCacheableUrl } from '../src/sw/cache/evict.js';
-import { initConfig, updateActiveConfig, loadConfigFromCache } from '../src/sw/config/index.js';
+import { initConfig, updateActiveConfig, loadConfigFromCache, onUpdateIntervalChange } from '../src/sw/config/index.js';
 import { startUpdatePolling, stopUpdatePolling } from '../src/sw/update/index.js';
 import { nlpwaPlugin } from '../src/rollup-plugin.js';
 import { setupEnv, req } from './helpers/fake-env.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
+import { findConfigFile, syncSourceConfigVersion } from '../bin/build-utils.js';
 
 test('isCacheableUrl: cross-origin route matching respects route.origin', () => {
   globalThis.self = {
@@ -120,4 +121,64 @@ test('precacheWithoutManifest: guards against HTML soft-404 responses', async ()
   const offlineCache = await caches.open('offline');
   const storedConfig = await offlineCache.match('/config.json');
   assert.equal(storedConfig, undefined);
+});
+
+test('onUpdateIntervalChange: supports multiple subscribers and unsubscribe', async () => {
+  const eventsA = [];
+  const eventsB = [];
+
+  const unsubA = onUpdateIntervalChange((val) => eventsA.push(val));
+  const unsubB = onUpdateIntervalChange((val) => eventsB.push(val));
+
+  const caches = setupEnv(async () => new Response('ok'));
+  await (await caches.open('offline')).put(
+    req('/config.json'),
+    new Response(JSON.stringify({ version: '1.0.0', updateCheckInterval: 15000 }), {
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+
+  initConfig({ updateCheckInterval: 5000 });
+  await loadConfigFromCache();
+
+  assert.deepEqual(eventsA, [15000]);
+  assert.deepEqual(eventsB, [15000]);
+
+  // Unsubscribe A, change again
+  unsubA();
+  await (await caches.open('offline')).put(
+    req('/config.json'),
+    new Response(JSON.stringify({ version: '1.0.0', updateCheckInterval: 30000 }), {
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+  await loadConfigFromCache();
+
+  assert.deepEqual(eventsA, [15000]); // didn't receive second event
+  assert.deepEqual(eventsB, [15000, 30000]);
+
+  unsubB();
+  stopUpdatePolling();
+});
+
+test('build-utils: findConfigFile discovers nlpwa.config.json', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-find-'));
+  const configPath = join(root, 'nlpwa.config.json');
+  writeFileSync(configPath, JSON.stringify({ version: '1.2.3' }));
+
+  const found = findConfigFile(null, root);
+  assert.equal(found, configPath);
+});
+
+test('build-utils: syncSourceConfigVersion does not overwrite version in comments', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-sync-'));
+  const configPath = join(root, 'config.js');
+  const initialContent = `// Comment with version: '0.0.1' should not be changed\nexport default {\n  version: '1.0.0',\n};\n`;
+  writeFileSync(configPath, initialContent);
+
+  syncSourceConfigVersion(configPath, '1.0.1');
+
+  const updated = readFileSync(configPath, 'utf8');
+  assert.ok(updated.includes(`// Comment with version: '0.0.1'`));
+  assert.ok(updated.includes(`version: '1.0.1'`));
 });

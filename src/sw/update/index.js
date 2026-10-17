@@ -146,6 +146,9 @@ export function startUpdatePolling() {
   _pollTimer = setInterval(() => {
     checkForUpdate().catch(err => console.error('[NLPWA] Update check error:', err));
   }, intervalMs);
+  if (_pollTimer && typeof _pollTimer.unref === 'function') {
+    _pollTimer.unref();
+  }
 }
 
 // Re-invoke polling if updateCheckInterval changes at runtime

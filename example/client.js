@@ -6,11 +6,15 @@ var NLPWAClient = (function (exports) {
 
   /** postMessage type identifiers (SW ↔ client) */
   const MESSAGE_TYPES = {
-    UPDATE_READY:   'UPDATE_READY',   // SW → client: new version available
-    CHECK_UPDATE:   'CHECK_UPDATE',   // client → SW: trigger manual check
-    UPDATE_APPLIED: 'UPDATE_APPLIED', // SW → client: reply to APPLY_UPDATE ({ applied })
-    NO_UPDATE:      'NO_UPDATE',      // SW → client: already up to date
-    APPLY_UPDATE:   'APPLY_UPDATE',   // client → SW: switch to the staged update now
+    UPDATE_READY:    'UPDATE_READY',    // SW → client: new version available
+    CHECK_UPDATE:    'CHECK_UPDATE',    // client → SW: trigger manual check
+    UPDATE_APPLIED:  'UPDATE_APPLIED',  // SW → client: reply to APPLY_UPDATE ({ applied })
+    NO_UPDATE:       'NO_UPDATE',       // SW → client: already up to date
+    APPLY_UPDATE:    'APPLY_UPDATE',    // client → SW: switch to the staged update now
+    GET_CACHE_INFO:  'GET_CACHE_INFO',  // client → SW: request storage quota & cache metrics
+    CACHE_INFO:      'CACHE_INFO',      // SW → client: reply with quota & cache metrics
+    CLEANUP_RUNTIME: 'CLEANUP_RUNTIME', // client → SW: request runtime cache cleanup
+    RUNTIME_CLEANED: 'RUNTIME_CLEANED', // SW → client: reply with cleanup results
   };
 
   /**
@@ -82,6 +86,34 @@ var NLPWAClient = (function (exports) {
   }
 
   /**
+   * Register a handler to be called when the SW signals that the app is already up to date.
+   *
+   * Also fires a `nlpwa:no-update` CustomEvent on `document` so any part
+   * of the app can listen without importing this module directly:
+   *
+   *   document.addEventListener('nlpwa:no-update', (e) => {
+   *     console.log('Already on latest version:', e.detail.version);
+   *   });
+   *
+   * @param {(data: { version: string }) => void} [callback]
+   * @returns {Function}  unsubscribe
+   */
+  function onNoUpdate(callback) {
+    return onSWMessage(MESSAGE_TYPES.NO_UPDATE, (data) => {
+      document.dispatchEvent(
+        new CustomEvent('nlpwa:no-update', {
+          bubbles: true,
+          detail: { version: data.version },
+        })
+      );
+
+      if (typeof callback === 'function') {
+        callback({ version: data.version });
+      }
+    });
+  }
+
+  /**
    * Switch to the staged update, then reload the page.
    *
    * The SW builds updates in the background and only makes them live on a page
@@ -107,7 +139,141 @@ var NLPWAClient = (function (exports) {
     } catch {
       // no service worker available - fall through to the reload
     }
+    document.dispatchEvent(
+      new CustomEvent('nlpwa:update-applied', { bubbles: true })
+    );
     window.location.reload();
+  }
+
+  /**
+   * Send a request message to the active Service Worker and await a response.
+   * Uses MessageChannel when supported for dedicated 1-to-1 reply, with fallback
+   * to navigator.serviceWorker message event listener.
+   *
+   * @param {string} type
+   * @param {Object} [payload]
+   * @param {string} [replyType]
+   * @param {number} [timeoutMs]
+   * @returns {Promise<any>}
+   */
+  async function requestFromSW(type, payload = {}, replyType = '', timeoutMs = 5000) {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      throw new Error('[NLPWA] Service Workers are not supported in this environment.');
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const sw = navigator.serviceWorker.controller || registration.active;
+    if (!sw) {
+      throw new Error('[NLPWA] No active Service Worker controller found.');
+    }
+
+    const requestId = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    // 1. MessageChannel for direct 1-to-1 reply (standard in modern browsers)
+    if (typeof MessageChannel !== 'undefined') {
+      return new Promise((resolve, reject) => {
+        const channel = new MessageChannel();
+        const timer = setTimeout(() => {
+          channel.port1.close();
+          reject(new Error(`[NLPWA] Request timed out after ${timeoutMs}ms (${type})`));
+        }, timeoutMs);
+
+        channel.port1.onmessage = (event) => {
+          clearTimeout(timer);
+          channel.port1.close();
+          if (event.data?.error) {
+            reject(new Error(event.data.error));
+          } else {
+            resolve(event.data?.data ?? event.data);
+          }
+        };
+
+        sw.postMessage({ type, requestId, ...payload }, [channel.port2]);
+      });
+    }
+
+    // 2. Fallback via global navigator.serviceWorker message event listener
+    return new Promise((resolve, reject) => {
+      let timer;
+      const listener = (event) => {
+        if (
+          (event.data?.type === replyType || event.data?.type === type) &&
+          (!event.data?.requestId || event.data.requestId === requestId)
+        ) {
+          clearTimeout(timer);
+          navigator.serviceWorker.removeEventListener('message', listener);
+          if (event.data?.error) {
+            reject(new Error(event.data.error));
+          } else {
+            resolve(event.data?.data ?? event.data);
+          }
+        }
+      };
+
+      timer = setTimeout(() => {
+        navigator.serviceWorker.removeEventListener('message', listener);
+        reject(new Error(`[NLPWA] Request timed out after ${timeoutMs}ms (${type})`));
+      }, timeoutMs);
+
+      navigator.serviceWorker.addEventListener('message', listener);
+      sw.postMessage({ type, requestId, ...payload });
+    });
+  }
+
+  /**
+   * Request storage quota and runtime cache usage metrics from the Service Worker.
+   *
+   * @param {{ timeoutMs?: number }} [options]
+   * @returns {Promise<{
+   *   quota: number|null,
+   *   usage: number|null,
+   *   percentUsed: number|null,
+   *   remaining: number|null,
+   *   runtimeEntries: number,
+   *   runtimeBytes: number,
+   *   largestEntries: Array<{ url: string, size: number, cachedAt: number }>
+   * }>}
+   */
+  async function getCacheInfo({ timeoutMs = 3000 } = {}) {
+    return requestFromSW(MESSAGE_TYPES.GET_CACHE_INFO, {}, MESSAGE_TYPES.CACHE_INFO, timeoutMs);
+  }
+
+  /**
+   * Request cleanup on the runtime cache.
+   *
+   * Supported options:
+   * - strategy: 'largest' | 'lru' | 'max-age' | 'quota' | 'pattern' | 'all' (default: 'lru')
+   * - maxItemBytes: evict any individual file larger than this byte size
+   * - minItemBytes: evict any individual file with size >= this byte size
+   * - maxTotalBytes: evict entries until total runtime cache size is <= this limit
+   * - maxEntries: evict entries until total remaining count is <= this limit
+   * - maxAgeMs: evict entries older than this age in ms
+   * - maxQuotaPercent: for 'quota' strategy, evict until usage percentage is <= this value
+   * - maxQuotaBytes: for 'quota' strategy, evict until total usage is <= this value
+   * - preferLargest: for 'quota' strategy, evict largest entries first (default: true)
+   * - match: glob pattern to match URLs to evict (for 'pattern' strategy)
+   * - count: limit maximum number of items to evict
+   *
+   * @param {Object} [cleanupOptions]
+   * @param {{ timeoutMs?: number }} [options]
+   * @returns {Promise<{
+   *   success: boolean,
+   *   strategy: string,
+   *   evictedCount: number,
+   *   evictedUrls: string[],
+   *   freedBytes: number,
+   *   remainingEntries: number,
+   *   remainingBytes: number,
+   *   quota: Object
+   * }>}
+   */
+  async function cleanupRuntimeCache(cleanupOptions = {}, { timeoutMs = 10000 } = {}) {
+    return requestFromSW(
+      MESSAGE_TYPES.CLEANUP_RUNTIME,
+      { options: cleanupOptions },
+      MESSAGE_TYPES.RUNTIME_CLEANED,
+      timeoutMs
+    );
   }
 
   /**
@@ -122,14 +288,18 @@ var NLPWAClient = (function (exports) {
    *     onUpdateReady: ({ version }) => {
    *       showBanner(`Version ${version} is ready — click to refresh.`);
    *     },
+   *     onNoUpdate: ({ version }) => {
+   *       console.log(`Already up to date at version ${version}`);
+   *     },
    *   });
    *
    * @param {string} swUrl  path to the bundled sw.js  (default: '/sw.js')
    * @param {Object} options
    * @param {Function} [options.onUpdateReady]   called when SW signals update ready
+   * @param {Function} [options.onNoUpdate]      called when SW signals already up to date
    * @param {boolean}  [options.autoReload]      automatically reload on update (default: false)
    * @param {boolean}  [options.checkOnFocus]    check for update when tab regains focus (default: true)
-   * @param {number}   [options.focusThrottleMs] min ms between focus-triggered checks (default: 5 min)
+   * @param {number}   [options.focusThrottleMs] min ms between focus-triggered checks (default: 1 hour)
    * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
    */
   async function register(swUrl = '/sw.js', options = {}) {
@@ -169,11 +339,17 @@ var NLPWAClient = (function (exports) {
       }
     });
 
+    // ── No-update handler ──────────────────────────────────────────────────────
+    let unsubscribeNoUpdate = null;
+    if (typeof options.onNoUpdate === 'function') {
+      unsubscribeNoUpdate = onNoUpdate(options.onNoUpdate);
+    }
+
     // ── Focus-triggered update check ──────────────────────────────────────────
     const focusCheck = options.checkOnFocus !== false;
     let onVisibilityChange = null;
     if (focusCheck) {
-      const throttleMs = options.focusThrottleMs ?? 5 * 60 * 1000; // 5 min
+      const throttleMs = options.focusThrottleMs ?? 60 * 60 * 1000; // 1 hour
       let lastCheckAt = 0;
 
       onVisibilityChange = () => {
@@ -203,6 +379,9 @@ var NLPWAClient = (function (exports) {
     // ── Periodic Background Sync (if supported by browser/PWA) ────────────────
     if ('periodicSync' in registration) {
       try {
+        if (pollIntervalMs < 86400000) {
+          console.warn('[NLPWA] Periodic Background Sync minInterval is set below 24h. Most browsers enforce a minimum interval of 12-24 hours for periodicSync.');
+        }
         await registration.periodicSync.register('nlpwa-update-check', {
           minInterval: pollIntervalMs,
         });
@@ -213,6 +392,7 @@ var NLPWAClient = (function (exports) {
 
     const unsubscribe = () => {
       unsubscribeUpdate();
+      if (unsubscribeNoUpdate) unsubscribeNoUpdate();
       if (intervalTimer) clearInterval(intervalTimer);
       if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
     };
@@ -221,6 +401,9 @@ var NLPWAClient = (function (exports) {
   }
 
   exports.applyUpdate = applyUpdate;
+  exports.cleanupRuntimeCache = cleanupRuntimeCache;
+  exports.getCacheInfo = getCacheInfo;
+  exports.onNoUpdate = onNoUpdate;
   exports.onUpdateReady = onUpdateReady;
   exports.register = register;
   exports.requestUpdateCheck = requestUpdateCheck;

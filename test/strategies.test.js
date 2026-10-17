@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setupEnv, req, fakeEvent, sleep } from './helpers/fake-env.js';
-import { networkFirst, staleWhileRevalidate } from '../src/sw/fetch/strategies.js';
+import { networkFirst, staleWhileRevalidate, cacheFirst, networkOnly } from '../src/sw/fetch/strategies.js';
 
 const text = (r) => r.text();
 
@@ -86,4 +86,70 @@ test('staleWhileRevalidate: offline cache miss for navigation returns navigation
   assert.equal(res.status, 200);
   assert.equal(await text(res), 'spa shell');
   assert.equal(res.headers.get('X-Cache-Status'), 'offline-cache');
+});
+
+test('cacheFirst: serves from offline cache when present', async () => {
+  const caches = setupEnv(async () => new Response('network'));
+  await (await caches.open('offline')).put(req('/assets/logo.png'), new Response('offline-logo'));
+  const res = await cacheFirst(req('/assets/logo.png'), fakeEvent());
+  assert.equal(res.status, 200);
+  assert.equal(await text(res), 'offline-logo');
+  assert.equal(res.headers.get('X-Cache-Status'), 'offline-cache');
+});
+
+test('cacheFirst: serves from runtime cache when offline cache misses', async () => {
+  const caches = setupEnv(async () => new Response('network'));
+  await (await caches.open('runtime')).put(req('/assets/avatar.png'), new Response('runtime-avatar'));
+  const res = await cacheFirst(req('/assets/avatar.png'), fakeEvent());
+  assert.equal(res.status, 200);
+  assert.equal(await text(res), 'runtime-avatar');
+  assert.equal(res.headers.get('X-Cache-Status'), 'runtime-cache');
+});
+
+test('cacheFirst: on cache miss fetches from network and stores in runtime cache', async () => {
+  const caches = setupEnv(async () => new Response('network-file'));
+  const event = fakeEvent();
+  const res = await cacheFirst(req('/assets/new.png'), event);
+  assert.equal(res.status, 200);
+  assert.equal(await text(res), 'network-file');
+  assert.equal(res.headers.get('X-Cache-Status'), 'network');
+  await event.settle();
+  const cached = await (await caches.open('runtime')).match(req('/assets/new.png'));
+  assert.ok(cached);
+  assert.equal(await text(cached), 'network-file');
+});
+
+test('cacheFirst: network failure returns offline 503 fallback without throwing', async () => {
+  setupEnv(async () => { throw new TypeError('Failed to fetch'); });
+  const event = fakeEvent();
+  const res = await cacheFirst(req('/assets/missing.png'), event);
+  assert.equal(res.status, 503);
+  assert.equal(res.headers.get('X-Cache-Status'), 'offline-fallback');
+});
+
+test('cacheFirst: offline navigation request falls back to navigationFallback', async () => {
+  const caches = setupEnv(async () => { throw new TypeError('Failed to fetch'); });
+  await (await caches.open('offline')).put(req('/index.html'), new Response('offline-fallback-app'));
+  const navReq = req('/assets/page');
+  Object.defineProperty(navReq, 'mode', { value: 'navigate' });
+  const event = fakeEvent();
+  const res = await cacheFirst(navReq, event, { navigationFallback: '/index.html' });
+  assert.equal(res.status, 200);
+  assert.equal(await text(res), 'offline-fallback-app');
+  assert.equal(res.headers.get('X-Cache-Status'), 'offline-cache');
+});
+
+test('networkOnly: returns network response tagged with network', async () => {
+  setupEnv(async () => new Response('data'));
+  const res = await networkOnly(req('/api/users'));
+  assert.equal(res.status, 200);
+  assert.equal(await text(res), 'data');
+  assert.equal(res.headers.get('X-Cache-Status'), 'network');
+});
+
+test('networkOnly: network failure returns 503 without throwing unhandled error', async () => {
+  setupEnv(async () => { throw new TypeError('Failed to fetch'); });
+  const res = await networkOnly(req('/api/users'));
+  assert.equal(res.status, 503);
+  assert.equal(res.headers.get('X-Cache-Status'), 'offline-fallback');
 });

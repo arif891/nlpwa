@@ -14,11 +14,25 @@
 
   /** postMessage type identifiers (SW ↔ client) */
   const MESSAGE_TYPES = {
-    UPDATE_READY:   'UPDATE_READY',   // SW → client: new version available
-    CHECK_UPDATE:   'CHECK_UPDATE',   // client → SW: trigger manual check
-    UPDATE_APPLIED: 'UPDATE_APPLIED', // SW → client: reply to APPLY_UPDATE ({ applied })
-    NO_UPDATE:      'NO_UPDATE',      // SW → client: already up to date
-    APPLY_UPDATE:   'APPLY_UPDATE',   // client → SW: switch to the staged update now
+    UPDATE_READY:    'UPDATE_READY',    // SW → client: new version available
+    CHECK_UPDATE:    'CHECK_UPDATE',    // client → SW: trigger manual check
+    UPDATE_APPLIED:  'UPDATE_APPLIED',  // SW → client: reply to APPLY_UPDATE ({ applied })
+    NO_UPDATE:       'NO_UPDATE',       // SW → client: already up to date
+    APPLY_UPDATE:    'APPLY_UPDATE',    // client → SW: switch to the staged update now
+    GET_CACHE_INFO:  'GET_CACHE_INFO',  // client → SW: request storage quota & cache metrics
+    CACHE_INFO:      'CACHE_INFO',      // SW → client: reply with quota & cache metrics
+    CLEANUP_RUNTIME: 'CLEANUP_RUNTIME', // client → SW: request runtime cache cleanup
+    RUNTIME_CLEANED: 'RUNTIME_CLEANED', // SW → client: reply with cleanup results
+  };
+
+  /** Runtime cache cleanup strategies */
+  const CLEANUP_STRATEGIES = {
+    LARGEST: 'largest', // Evict largest files first (or files above size threshold)
+    LRU:     'lru',     // Evict oldest / least-recently-cached first
+    MAX_AGE: 'max-age', // Evict files older than maxAgeMs
+    QUOTA:   'quota',   // Evict when quota usage exceeds threshold
+    PATTERN: 'pattern', // Evict files matching glob pattern
+    ALL:     'all',     // Wipe all runtime cache entries
   };
 
   /** Max parallel downloads while staging an update. */
@@ -322,15 +336,20 @@
     );
   }
 
-  let _intervalChangeHandler = null;
+  const _intervalChangeHandlers = new Set();
 
   /**
    * Register a callback to be notified if updateCheckInterval changes at runtime.
    *
    * @param {(newInterval: number) => void} handler
+   * @returns {() => void} Unsubscribe function
    */
   function onUpdateIntervalChange(handler) {
-    _intervalChangeHandler = handler;
+    if (typeof handler === 'function') {
+      _intervalChangeHandlers.add(handler);
+      return () => _intervalChangeHandlers.delete(handler);
+    }
+    return () => {};
   }
 
   /** Singleton config instance, set by initConfig() */
@@ -448,8 +467,12 @@
 
       // Restart update polling if the interval changed after hydrating from cache
       if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
-        if (typeof _intervalChangeHandler === 'function') {
-          _intervalChangeHandler(runtimeJson.updateCheckInterval);
+        for (const handler of _intervalChangeHandlers) {
+          try {
+            handler(runtimeJson.updateCheckInterval);
+          } catch (err) {
+            console.error('[NLPWA] Interval change handler error:', err);
+          }
         }
       }
       return runtimeJson;
@@ -868,7 +891,45 @@
   async function putInRuntime(request, response) {
     const { caches: cacheNames } = getConfig();
     const cache = await caches.open(cacheNames.runtime);
-    await cache.put(request, response.clone());
+
+    let responseToStore = response.clone();
+    if (response.type !== 'opaque') {
+      try {
+        const headers = new Headers(response.headers);
+        if (!headers.has('X-NLPWA-Cached-At')) {
+          headers.set('X-NLPWA-Cached-At', String(Date.now()));
+        }
+        if (!headers.has('X-NLPWA-Content-Length')) {
+          const cl = headers.get('Content-Length');
+          if (cl) {
+            headers.set('X-NLPWA-Content-Length', cl);
+          } else {
+            try {
+              const buf = await response.clone().arrayBuffer();
+              headers.set('X-NLPWA-Content-Length', String(buf.byteLength));
+              responseToStore = new Response(buf, {
+                status: response.status,
+                statusText: response.statusText,
+                headers,
+              });
+              await cache.put(request, responseToStore);
+              return;
+            } catch {
+              // fallback
+            }
+          }
+        }
+        responseToStore = new Response(responseToStore.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      } catch {
+        responseToStore = response.clone();
+      }
+    }
+
+    await cache.put(request, responseToStore);
   }
 
   /**
@@ -1188,6 +1249,365 @@
   }
 
   /**
+   * Extract size (bytes) and cached timestamp (ms) from a cached Response.
+   *
+   * @param {Response} res
+   * @returns {Promise<{ size: number, cachedAt: number }>}
+   */
+  async function getResponseMetadata(res) {
+    let size = 0;
+    const sizeHeader = res.headers?.get('X-NLPWA-Content-Length') || res.headers?.get('Content-Length');
+    if (sizeHeader) {
+      const parsed = parseInt(sizeHeader, 10);
+      if (!Number.isNaN(parsed) && parsed >= 0) size = parsed;
+    } else {
+      try {
+        const buf = await res.clone().arrayBuffer();
+        size = buf.byteLength;
+      } catch {
+        size = 0;
+      }
+    }
+
+    let cachedAt = 0;
+    const cachedAtHeader = res.headers?.get('X-NLPWA-Cached-At');
+    if (cachedAtHeader) {
+      const parsed = parseInt(cachedAtHeader, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) cachedAt = parsed;
+    } else {
+      const dateHeader = res.headers?.get('Date');
+      if (dateHeader) {
+        const parsed = new Date(dateHeader).getTime();
+        if (!Number.isNaN(parsed) && parsed > 0) cachedAt = parsed;
+      }
+    }
+
+    return { size, cachedAt };
+  }
+
+  /**
+   * Query current storage quota and runtime cache usage metrics.
+   *
+   * @returns {Promise<{
+   *   quota: number|null,
+   *   usage: number|null,
+   *   percentUsed: number|null,
+   *   remaining: number|null,
+   *   runtimeEntries: number,
+   *   runtimeBytes: number,
+   *   largestEntries: Array<{ url: string, size: number, cachedAt: number }>
+   * }>}
+   */
+  async function getStorageQuotaInfo() {
+    let quota = null;
+    let usage = null;
+    let percentUsed = null;
+    let remaining = null;
+
+    const storage =
+      (typeof self !== 'undefined' && self.navigator?.storage) ||
+      (typeof navigator !== 'undefined' && navigator?.storage);
+
+    if (storage && typeof storage.estimate === 'function') {
+      try {
+        const estimate = await storage.estimate();
+        quota = estimate.quota ?? null;
+        usage = estimate.usage ?? null;
+        if (quota && usage != null) {
+          percentUsed = Number(((usage / quota) * 100).toFixed(2));
+          remaining = Math.max(0, quota - usage);
+        }
+      } catch {
+        // Storage estimate not supported or denied
+      }
+    }
+
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    const requests = await cache.keys();
+
+    let runtimeBytes = 0;
+    const entries = [];
+
+    for (const req of requests) {
+      const res = await cache.match(req);
+      if (res) {
+        const meta = await getResponseMetadata(res);
+        runtimeBytes += meta.size;
+        entries.push({
+          url: typeof req === 'string' ? req : req.url,
+          size: meta.size,
+          cachedAt: meta.cachedAt,
+        });
+      }
+    }
+
+    // Top 5 largest entries
+    const largestEntries = [...entries]
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 5);
+
+    return {
+      quota,
+      usage,
+      percentUsed,
+      remaining,
+      runtimeEntries: requests.length,
+      runtimeBytes,
+      largestEntries,
+    };
+  }
+
+  /**
+   * Parse a size option accepting bytes, KB, MB, GB, or string (e.g. '50MB', '500KB').
+   *
+   * @param {number|string|undefined} bytesVal
+   * @param {number|undefined} mbVal
+   * @param {number|undefined} kbVal
+   * @returns {number|null}
+   */
+  function resolveByteSize(bytesVal, mbVal, kbVal) {
+    if (bytesVal != null) {
+      if (typeof bytesVal === 'string') {
+        const match = bytesVal.trim().match(/^([\d.]+)\s*(gb|mb|kb|b)?$/i);
+        if (match) {
+          const num = parseFloat(match[1]);
+          const unit = (match[2] || 'b').toLowerCase();
+          if (unit === 'gb') return Math.round(num * 1024 * 1024 * 1024);
+          if (unit === 'mb') return Math.round(num * 1024 * 1024);
+          if (unit === 'kb') return Math.round(num * 1024);
+          return Math.round(num);
+        }
+      }
+      const parsed = Number(bytesVal);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    if (mbVal != null) {
+      const parsed = Number(mbVal);
+      return Number.isNaN(parsed) ? null : Math.round(parsed * 1024 * 1024);
+    }
+    if (kbVal != null) {
+      const parsed = Number(kbVal);
+      return Number.isNaN(parsed) ? null : Math.round(parsed * 1024);
+    }
+    return null;
+  }
+
+  /**
+   * Execute cleanup on the runtime cache using one or more strategies.
+   *
+   * Supported options:
+   * - strategy: 'largest' | 'lru' | 'max-age' | 'quota' | 'pattern' | 'all' (default: 'lru')
+   * - maxItemMB / maxItemKB / maxItemBytes / maxItem: evict any individual file larger than this limit
+   * - minItemMB / minItemKB / minItemBytes / minItem: evict any individual file >= this limit
+   * - maxTotalMB / maxTotalKB / maxTotalBytes / maxTotal: evict items until total runtime cache is <= limit
+   * - maxEntries: evict items until total remaining count is <= limit
+   * - maxAgeMs: evict items older than this age in ms
+   * - match | pattern: glob pattern to match URLs to evict (for 'pattern' strategy)
+   * - maxQuotaPercent: for 'quota' strategy, evict until usage percentage is <= this value (default: 80)
+   * - maxQuotaMB / maxQuotaKB / maxQuotaBytes: for 'quota' strategy, evict until usage is <= limit
+   * - preferLargest: for 'quota' strategy, evict largest entries first (default: true)
+   * - count: limit number of items to evict
+   *
+   * @param {Object} [options]
+   * @returns {Promise<{
+   *   success: boolean,
+   *   strategy: string,
+   *   evictedCount: number,
+   *   evictedUrls: string[],
+   *   freedBytes: number,
+   *   remainingEntries: number,
+   *   remainingBytes: number,
+   *   quota: Object
+   * }>}
+   */
+  async function cleanRuntimeCache(options = {}) {
+    const strategy = options.strategy || CLEANUP_STRATEGIES.LRU;
+
+    const maxTotalBytes = resolveByteSize(options.maxTotalBytes ?? options.maxTotal, options.maxTotalMB, options.maxTotalKB);
+    const maxItemBytes = resolveByteSize(options.maxItemBytes ?? options.maxItem, options.maxItemMB, options.maxItemKB);
+    const minItemBytes = resolveByteSize(options.minItemBytes ?? options.minItem, options.minItemMB, options.minItemKB);
+    const maxQuotaBytes = resolveByteSize(options.maxQuotaBytes ?? options.maxQuota, options.maxQuotaMB, options.maxQuotaKB);
+
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    const requests = await cache.keys();
+
+    const allItems = [];
+    let totalBytes = 0;
+
+    for (const req of requests) {
+      const res = await cache.match(req);
+      if (res) {
+        const meta = await getResponseMetadata(res);
+        totalBytes += meta.size;
+        allItems.push({
+          req,
+          url: typeof req === 'string' ? req : req.url,
+          size: meta.size,
+          cachedAt: meta.cachedAt,
+        });
+      }
+    }
+
+    const toEvictSet = new Set();
+    let remainingBytes = totalBytes;
+
+    const markForEviction = (item) => {
+      if (!toEvictSet.has(item)) {
+        toEvictSet.add(item);
+        remainingBytes = Math.max(0, remainingBytes - item.size);
+      }
+    };
+
+    // 1. Filter: individual item size thresholds
+    if (maxItemBytes != null) {
+      for (const item of allItems) {
+        if (item.size > maxItemBytes) {
+          markForEviction(item);
+        }
+      }
+    }
+    if (minItemBytes != null) {
+      for (const item of allItems) {
+        if (item.size >= minItemBytes) {
+          markForEviction(item);
+        }
+      }
+    }
+
+    // 2. Filter: individual max age / TTL
+    if (options.maxAgeMs != null && strategy !== CLEANUP_STRATEGIES.MAX_AGE) {
+      const cutoff = Date.now() - options.maxAgeMs;
+      for (const item of allItems) {
+        if (item.cachedAt > 0 && item.cachedAt < cutoff) {
+          markForEviction(item);
+        }
+      }
+    }
+
+    // 3. Strategy evaluation on remaining items
+    const candidates = allItems.filter(item => !toEvictSet.has(item));
+
+    if (strategy === CLEANUP_STRATEGIES.ALL) {
+      for (const item of candidates) {
+        markForEviction(item);
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.PATTERN) {
+      const pattern = options.match || options.pattern;
+      if (pattern) {
+        for (const item of candidates) {
+          if (matchGlob(pattern, item.url)) {
+            markForEviction(item);
+          }
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.MAX_AGE) {
+      const maxAgeMs = options.maxAgeMs ?? (7 * 24 * 60 * 60 * 1000); // 7 days default
+      const cutoff = Date.now() - maxAgeMs;
+      for (const item of candidates) {
+        if (item.cachedAt > 0 && item.cachedAt < cutoff) {
+          markForEviction(item);
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.LARGEST) {
+      // Sort descending by size (largest files first)
+      candidates.sort((a, b) => b.size - a.size);
+
+      let currentRemainingCount = allItems.length - toEvictSet.size;
+
+      for (const item of candidates) {
+        const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
+        const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
+        const hitLimit = options.count != null && toEvictSet.size >= options.count;
+
+        if (hitLimit) break;
+        if (needsSizeEviction || needsCountEviction) {
+          markForEviction(item);
+          currentRemainingCount--;
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.LRU) {
+      // Sort ascending by cachedAt (oldest first)
+      candidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+
+      let currentRemainingCount = allItems.length - toEvictSet.size;
+
+      for (const item of candidates) {
+        const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
+        const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
+        const hitLimit = options.count != null && toEvictSet.size >= options.count;
+
+        if (hitLimit) break;
+        if (needsCountEviction || needsSizeEviction) {
+          markForEviction(item);
+          currentRemainingCount--;
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.QUOTA) {
+      const quotaInfo = await getStorageQuotaInfo();
+      const maxQuotaPercent = options.maxQuotaPercent ?? 80;
+
+      let currentUsage = quotaInfo.usage ?? totalBytes;
+      const quota = quotaInfo.quota;
+
+      const isOverQuota = () => {
+        if (quota && maxQuotaPercent != null) {
+          if ((currentUsage / quota) * 100 > maxQuotaPercent) return true;
+        }
+        if (maxQuotaBytes != null && currentUsage > maxQuotaBytes) return true;
+        return false;
+      };
+
+      if (isOverQuota()) {
+        // By default prefer evicting largest files to recover quota fastest
+        if (options.preferLargest !== false) {
+          candidates.sort((a, b) => b.size - a.size);
+        } else {
+          candidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+        }
+
+        for (const item of candidates) {
+          if (!isOverQuota()) break;
+          markForEviction(item);
+          currentUsage = Math.max(0, currentUsage - item.size);
+        }
+      }
+    }
+
+    // 4. Perform deletions
+    const evicted = [...toEvictSet];
+    let freedBytes = 0;
+
+    await Promise.all(
+      evicted.map(async (item) => {
+        freedBytes += item.size;
+        await cache.delete(item.req);
+      })
+    );
+
+    const finalRemainingEntries = allItems.length - evicted.length;
+    const finalRemainingBytes = Math.max(0, totalBytes - freedBytes);
+    const updatedQuota = await getStorageQuotaInfo();
+
+    console.log(
+      `[NLPWA] Runtime cache cleaned (${strategy}): ${evicted.length} evicted, ` +
+      `${(freedBytes / 1024).toFixed(1)} KB freed, ${finalRemainingEntries} remaining`
+    );
+
+    return {
+      success: true,
+      strategy,
+      evictedCount: evicted.length,
+      evictedUrls: evicted.map(item => item.url),
+      freedBytes,
+      remainingEntries: finalRemainingEntries,
+      remainingBytes: finalRemainingBytes,
+      quota: updatedQuota,
+    };
+  }
+
+  /**
    * Cache status values added to responses via the X-Cache-Status header.
    *
    * Clients can read this header from any intercepted response to determine
@@ -1263,8 +1683,8 @@
    * @param {FetchEvent} [event]
    */
   function safePutInRuntime(request, response, event) {
-    if (!response || !response.ok || response.status === 206) return;
-    if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return;
+    if (!response || !response.ok || response.status === 206) return Promise.resolve();
+    if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return Promise.resolve();
 
     try {
       const clone = response.clone();
@@ -1275,8 +1695,10 @@
       if (event && typeof event.waitUntil === 'function') {
         event.waitUntil(writePromise);
       }
+      return writePromise;
     } catch (err) {
       console.warn('[NLPWA] Could not clone response for runtime cache:', err.message);
+      return Promise.resolve();
     }
   }
 
@@ -1304,9 +1726,29 @@
     const runtimeCached = await getFromRuntime(request, matchOptions);
     if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
 
-    const response = await fetch(request);
-    safePutInRuntime(request, response, event);
-    return tagResponse(response, CACHE_STATUS.NETWORK);
+    try {
+      const response = await fetch(request);
+      safePutInRuntime(request, response, event);
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch {
+      // Navigation fallback for SPAs or offline pages
+      if (request.mode === 'navigate') {
+        const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+        const fallbackRes = await getFromCache(fallbackUrl);
+        if (fallbackRes) {
+          return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+        }
+      }
+
+      // Return a typed offline error response instead of throwing
+      return tagResponse(
+        new Response('Offline — no cached version available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
   }
 
   // ── network-first ──────────────────────────────────────────────────────────
@@ -1368,7 +1810,7 @@
             // Let the slow request finish in the background so the cache is
             // refreshed for next time.
             const refresh = networkPromise
-              .then((res) => { safePutInRuntime(request, res, event); })
+              .then((res) => safePutInRuntime(request, res, event))
               .catch(() => {});
             if (event && typeof event.waitUntil === 'function') event.waitUntil(refresh);
             return cached;
@@ -1420,7 +1862,17 @@
    * @returns {Promise<Response>}
    */
   async function networkOnly(request) {
-    return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
+    try {
+      return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
+    } catch {
+      return tagResponse(
+        new Response('Offline — network request failed.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
   }
 
   // ── stale-while-revalidate ───────────────────────────────────────────────────
@@ -1446,7 +1898,7 @@
     // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
     const revalidate = (async () => {
       const response = await fetch(request);
-      safePutInRuntime(request, response, event);
+      await safePutInRuntime(request, response, event);
       return response;
     })();
 
@@ -1757,6 +2209,9 @@
     _pollTimer = setInterval(() => {
       checkForUpdate().catch(err => console.error('[NLPWA] Update check error:', err));
     }, intervalMs);
+    if (_pollTimer && typeof _pollTimer.unref === 'function') {
+      _pollTimer.unref();
+    }
   }
 
   // Re-invoke polling if updateCheckInterval changes at runtime
@@ -1805,16 +2260,57 @@
     // Clients can trigger a manual update check via:
     //   navigator.serviceWorker.controller.postMessage({ type: 'CHECK_UPDATE' })
     self.addEventListener('message', (event) => {
-      if (event.data?.type === MESSAGE_TYPES.CHECK_UPDATE) {
-        event.waitUntil(checkForUpdate());
-      }
+      const port = event.ports?.[0];
+      const reply = (replyType, data, error) => {
+        const payload = {
+          type: replyType,
+          requestId: event.data?.requestId,
+          data: data ?? null,
+          error: error ? (error.message || String(error)) : undefined,
+        };
+        if (port) {
+          port.postMessage(payload);
+        } else {
+          event.source?.postMessage(payload);
+        }
+      };
 
-      // Client asked to switch to the staged update now, then it will reload.
-      if (event.data?.type === MESSAGE_TYPES.APPLY_UPDATE) {
-        event.waitUntil((async () => {
-          const applied = await commitIfReady().catch(() => false);
-          event.source?.postMessage({ type: MESSAGE_TYPES.UPDATE_APPLIED, applied });
-        })());
+      switch (event.data?.type) {
+        case MESSAGE_TYPES.CHECK_UPDATE:
+          event.waitUntil(checkForUpdate());
+          break;
+
+        case MESSAGE_TYPES.APPLY_UPDATE:
+          // Client asked to switch to the staged update now, then it will reload.
+          event.waitUntil((async () => {
+            const applied = await commitIfReady().catch(() => false);
+            reply(MESSAGE_TYPES.UPDATE_APPLIED, { applied });
+          })());
+          break;
+
+        case MESSAGE_TYPES.GET_CACHE_INFO:
+          // Client requests storage quota & cache metrics info
+          event.waitUntil((async () => {
+            try {
+              const info = await getStorageQuotaInfo();
+              reply(MESSAGE_TYPES.CACHE_INFO, info);
+            } catch (err) {
+              reply(MESSAGE_TYPES.CACHE_INFO, null, err);
+            }
+          })());
+          break;
+
+        case MESSAGE_TYPES.CLEANUP_RUNTIME:
+          // Client requests runtime cache cleanup
+          event.waitUntil((async () => {
+            try {
+              const result = await cleanRuntimeCache(event.data?.options || {});
+              reply(MESSAGE_TYPES.RUNTIME_CLEANED, result);
+            } catch (err) {
+              reply(MESSAGE_TYPES.RUNTIME_CLEANED, null, err);
+            }
+          })());
+          break;
       }
     });
 

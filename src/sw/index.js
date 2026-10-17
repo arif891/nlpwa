@@ -52,8 +52,7 @@ export function initSW(userConfig = {}) {
       const payload = {
         type: replyType,
         requestId: event.data?.requestId,
-        ...(data || {}),
-        data,
+        data: data ?? null,
         error: error ? (error.message || String(error)) : undefined,
       };
       if (port) {
@@ -63,40 +62,42 @@ export function initSW(userConfig = {}) {
       }
     };
 
-    if (event.data?.type === MESSAGE_TYPES.CHECK_UPDATE) {
-      event.waitUntil(checkForUpdate());
-    }
+    switch (event.data?.type) {
+      case MESSAGE_TYPES.CHECK_UPDATE:
+        event.waitUntil(checkForUpdate());
+        break;
 
-    // Client asked to switch to the staged update now, then it will reload.
-    if (event.data?.type === MESSAGE_TYPES.APPLY_UPDATE) {
-      event.waitUntil((async () => {
-        const applied = await commitIfReady().catch(() => false);
-        reply(MESSAGE_TYPES.UPDATE_APPLIED, { applied });
-      })());
-    }
+      case MESSAGE_TYPES.APPLY_UPDATE:
+        // Client asked to switch to the staged update now, then it will reload.
+        event.waitUntil((async () => {
+          const applied = await commitIfReady().catch(() => false);
+          reply(MESSAGE_TYPES.UPDATE_APPLIED, { applied });
+        })());
+        break;
 
-    // Client requests storage quota & cache metrics info
-    if (event.data?.type === MESSAGE_TYPES.GET_CACHE_INFO) {
-      event.waitUntil((async () => {
-        try {
-          const info = await getStorageQuotaInfo();
-          reply(MESSAGE_TYPES.CACHE_INFO, info);
-        } catch (err) {
-          reply(MESSAGE_TYPES.CACHE_INFO, null, err);
-        }
-      })());
-    }
+      case MESSAGE_TYPES.GET_CACHE_INFO:
+        // Client requests storage quota & cache metrics info
+        event.waitUntil((async () => {
+          try {
+            const info = await getStorageQuotaInfo();
+            reply(MESSAGE_TYPES.CACHE_INFO, info);
+          } catch (err) {
+            reply(MESSAGE_TYPES.CACHE_INFO, null, err);
+          }
+        })());
+        break;
 
-    // Client requests runtime cache cleanup
-    if (event.data?.type === MESSAGE_TYPES.CLEANUP_RUNTIME) {
-      event.waitUntil((async () => {
-        try {
-          const result = await cleanRuntimeCache(event.data?.options || {});
-          reply(MESSAGE_TYPES.RUNTIME_CLEANED, result);
-        } catch (err) {
-          reply(MESSAGE_TYPES.RUNTIME_CLEANED, null, err);
-        }
-      })());
+      case MESSAGE_TYPES.CLEANUP_RUNTIME:
+        // Client requests runtime cache cleanup
+        event.waitUntil((async () => {
+          try {
+            const result = await cleanRuntimeCache(event.data?.options || {});
+            reply(MESSAGE_TYPES.RUNTIME_CLEANED, result);
+          } catch (err) {
+            reply(MESSAGE_TYPES.RUNTIME_CLEANED, null, err);
+          }
+        })());
+        break;
     }
   });
 

@@ -64,3 +64,16 @@ test('cli update: output is compact unless --pretty is passed', () => {
   const pretty = readFileSync(join(prettyRoot, 'dist/api/update/info.json'), 'utf8');
   assert.ok(pretty.includes('\n  '), 'expected 2-space indented JSON');
 });
+
+test('cli build: acts as alias for update', () => {
+  const root = makeProject();
+  const res = spawnSync(
+    process.execPath,
+    [CLI, 'build', '--config', join(root, 'config.json'), '--dir', join(root, 'dist')],
+    { cwd: root, encoding: 'utf8' },
+  );
+  assert.equal(res.status, 0, res.stderr);
+
+  const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
+  assert.equal(version.version, '1.0.1');
+});

@@ -32,6 +32,34 @@ export function onUpdateReady(callback) {
 }
 
 /**
+ * Register a handler to be called when the SW signals that the app is already up to date.
+ *
+ * Also fires a `nlpwa:no-update` CustomEvent on `document` so any part
+ * of the app can listen without importing this module directly:
+ *
+ *   document.addEventListener('nlpwa:no-update', (e) => {
+ *     console.log('Already on latest version:', e.detail.version);
+ *   });
+ *
+ * @param {(data: { version: string }) => void} [callback]
+ * @returns {Function}  unsubscribe
+ */
+export function onNoUpdate(callback) {
+  return onSWMessage(MESSAGE_TYPES.NO_UPDATE, (data) => {
+    document.dispatchEvent(
+      new CustomEvent('nlpwa:no-update', {
+        bubbles: true,
+        detail: { version: data.version },
+      })
+    );
+
+    if (typeof callback === 'function') {
+      callback({ version: data.version });
+    }
+  });
+}
+
+/**
  * Switch to the staged update, then reload the page.
  *
  * The SW builds updates in the background and only makes them live on a page
@@ -57,5 +85,8 @@ export async function applyUpdate({ timeoutMs = 3000 } = {}) {
   } catch {
     // no service worker available - fall through to the reload
   }
+  document.dispatchEvent(
+    new CustomEvent('nlpwa:update-applied', { bubbles: true })
+  );
   window.location.reload();
 }

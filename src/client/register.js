@@ -1,4 +1,4 @@
-import { onUpdateReady, applyUpdate } from './update-ui.js';
+import { onUpdateReady, onNoUpdate, applyUpdate } from './update-ui.js';
 import { requestUpdateCheck } from './messaging.js';
 
 /**
@@ -13,14 +13,18 @@ import { requestUpdateCheck } from './messaging.js';
  *     onUpdateReady: ({ version }) => {
  *       showBanner(`Version ${version} is ready — click to refresh.`);
  *     },
+ *     onNoUpdate: ({ version }) => {
+ *       console.log(`Already up to date at version ${version}`);
+ *     },
  *   });
  *
  * @param {string} swUrl  path to the bundled sw.js  (default: '/sw.js')
  * @param {Object} options
  * @param {Function} [options.onUpdateReady]   called when SW signals update ready
+ * @param {Function} [options.onNoUpdate]      called when SW signals already up to date
  * @param {boolean}  [options.autoReload]      automatically reload on update (default: false)
  * @param {boolean}  [options.checkOnFocus]    check for update when tab regains focus (default: true)
- * @param {number}   [options.focusThrottleMs] min ms between focus-triggered checks (default: 5 min)
+ * @param {number}   [options.focusThrottleMs] min ms between focus-triggered checks (default: 1 hour)
  * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
  */
 export async function register(swUrl = '/sw.js', options = {}) {
@@ -60,6 +64,12 @@ export async function register(swUrl = '/sw.js', options = {}) {
     }
   });
 
+  // ── No-update handler ──────────────────────────────────────────────────────
+  let unsubscribeNoUpdate = null;
+  if (typeof options.onNoUpdate === 'function') {
+    unsubscribeNoUpdate = onNoUpdate(options.onNoUpdate);
+  }
+
   // ── Focus-triggered update check ──────────────────────────────────────────
   const focusCheck = options.checkOnFocus !== false;
   let onVisibilityChange = null;
@@ -94,6 +104,9 @@ export async function register(swUrl = '/sw.js', options = {}) {
   // ── Periodic Background Sync (if supported by browser/PWA) ────────────────
   if ('periodicSync' in registration) {
     try {
+      if (pollIntervalMs < 86400000) {
+        console.warn('[NLPWA] Periodic Background Sync minInterval is set below 24h. Most browsers enforce a minimum interval of 12-24 hours for periodicSync.');
+      }
       await registration.periodicSync.register('nlpwa-update-check', {
         minInterval: pollIntervalMs,
       });
@@ -104,6 +117,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
 
   const unsubscribe = () => {
     unsubscribeUpdate();
+    if (unsubscribeNoUpdate) unsubscribeNoUpdate();
     if (intervalTimer) clearInterval(intervalTimer);
     if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
   };
@@ -111,6 +125,6 @@ export async function register(swUrl = '/sw.js', options = {}) {
   return { registration, unsubscribe };
 }
 
-export { onUpdateReady, applyUpdate } from './update-ui.js';
+export { onUpdateReady, onNoUpdate, applyUpdate } from './update-ui.js';
 export { requestUpdateCheck, sendToSW } from './messaging.js';
 export { getCacheInfo, cleanupRuntimeCache } from './cache-manager.js';

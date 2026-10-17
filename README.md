@@ -15,7 +15,7 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 - **Atomic updates** — new versions are staged in a separate cache and switched in with one pointer write; a failed or interrupted update never affects the running app
 - **Route-aware cache eviction** — stale entries removed automatically on route change
 - **Self-healing cache** — failed fetches retry on next update check
-- **Three drop-in files** — `sw.js` (core engine), `config.js` (routes/settings), and `client.js` (runtime SDK)
+- **Three drop-in files** — `sw.js` (core engine), `config.json` (routes/settings), and `client.js` (runtime SDK)
 
 ---
 
@@ -26,7 +26,7 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 You can drop NLPWA into any project with a single command:
 
 ```bash
-# Drop sw.js, client.js, and config.js into current directory
+# Drop sw.js, client.js, and config.json into current directory
 npx nlpwa init
 
 # Or target a public directory
@@ -38,8 +38,7 @@ Your project now has:
 your-app/
 ├── sw.js         ← Standalone Service Worker engine
 ├── client.js     ← Client SDK (exports NLPWAClient / register)
-├── config.js     ← Developer configuration (routes, precache, endpoints)
-├── config.json   ← Compiled runtime config (for offline cache)
+├── config.json   ← Runtime configuration (routes, precache, endpoints)
 └── index.html
 ```
 
@@ -129,7 +128,7 @@ Manifest hashes are the first 32 hex characters of each file's SHA-256 digest.
 
 | Command / Flag | Default | Description |
 |---|---|---|
-| `npx nlpwa init [--dir <path>]` | `./` | Copies `sw.js`, `client.js`, and `config.js` to target directory |
+| `npx nlpwa init [--dir <path>]` | `./` | Copies `sw.js`, `client.js`, and `config.json` to target directory |
 | `npx nlpwa update [--dir <path>]` | `./dist` or `./` | Increments patch version, builds `config.json`, hashes offline files, and emits update API |
 | `--config <path>` | auto-detect | Path to custom config file (e.g. `./src/config.js`) |
 | `--version <semver>` | auto-increment | Explicit version override (e.g. `2.0.0`) |
@@ -234,7 +233,7 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 | `onUpdateReady` | `Function` | — | Called with `{ version, partial }` when update is ready |
 | `autoReload` | `boolean` | `false` | Reload automatically on update (deferred if user is typing in inputs) |
 | `checkOnFocus` | `boolean` | `true` | Check for update when tab gains focus |
-| `focusThrottleMs` | `number` | `300000` | Min ms between focus-triggered checks (5 min) |
+| `focusThrottleMs` | `number` | `3600000` | Min ms between focus-triggered checks (1 hr) |
 | `pollIntervalMs` | `number` | `3600000` | Client interval (ms) to check updates while tab is active (1 hr) |
 
 ### Client: `NLPWAClient.applyUpdate(options)`
@@ -348,8 +347,8 @@ Output:
 - `out/sw.module.js` — Service Worker library (`import { initSW } from 'nlpwa/sw'`)
 - `out/client.js` — Client IIFE (global `NLPWAClient`)
 - `out/client.esm.js` — Client ES module (`import { register } from 'nlpwa/client'`)
-- `out/config.js` — Configuration template
-- `out/config.json` — Generated runtime config
+- `out/config.json` — Runtime configuration starter (`/config.json`)
+- `out/rollup-plugin.js` — Rollup/Vite plugin (`import { nlpwa } from 'nlpwa/rollup'`)
 
 ---
 

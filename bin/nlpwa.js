@@ -18,19 +18,11 @@ import { createHash }                            from 'node:crypto';
 import { readFileSync, writeFileSync, statSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, relative, resolve, dirname }      from 'node:path';
 import { fileURLToPath, pathToFileURL }          from 'node:url';
-let incrementPatch;
-try {
-  ({ incrementPatch } = await import('../out/version.js'));
-} catch {
-  try {
-    ({ incrementPatch } = await import('../src/shared/version.js'));
-  } catch {
-    incrementPatch = (version) => {
-      const base = String(version || '1.0.0').split('-')[0];
-      const parts = base.split('.').map(s => parseInt(s, 10) || 0);
-      return `${parts[0] ?? 0}.${parts[1] ?? 0}.${(parts[2] ?? 0) + 1}`;
-    };
-  }
+/** Increment semver patch version helper */
+function incrementPatch(version) {
+  const base = String(version || '1.0.0').split('-')[0];
+  const parts = base.split('.').map(s => parseInt(s, 10) || 0);
+  return `${parts[0] ?? 0}.${parts[1] ?? 0}.${(parts[2] ?? 0) + 1}`;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -226,7 +218,6 @@ async function cmdInit(args) {
   const filesToCopy = [
     { src: 'sw.js',        dest: 'sw.js',        required: true },
     { src: 'client.js',    dest: 'client.js',    required: true },
-    { src: 'config.js',    dest: 'config.js',    required: false, checkExisting: true },
     { src: 'config.json',  dest: 'config.json',  required: false, checkExisting: true },
   ];
 
@@ -265,7 +256,7 @@ ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
   1. Add the client script to your HTML:
      ${c.cyan}<script type="module" src="/client.js"></script>${c.reset}
 
-  2. Configure routes & offline precache in ${c.bold}config.js${c.reset}
+  2. Configure routes & offline precache in ${c.bold}config.json${c.reset}
 
   3. When deploying updates, run:
      ${c.cyan}npx nlpwa update${c.reset}

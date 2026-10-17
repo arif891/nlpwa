@@ -35,6 +35,7 @@ src/
 │   │   ├── store.js                nlpwa-meta pointers (active / staged), lock, old-cache cleanup
 │   │   ├── install.js              precacheFiles() — install-time stage + commit (manifest-driven)
 │   │   ├── runtime.js              get/put/delete helpers for offline + runtime caches, clearAllCaches()
+│   │   ├── cleanup.js              cleanRuntimeCache(), getStorageQuotaInfo() — quota & size-based eviction
 │   │   ├── evict.js                evictByRoute() — route-aware eviction on route changes
 │   │   └── index.js                Barrel re-export
 │   ├── fetch/
@@ -51,10 +52,11 @@ src/
 ├── client/                         ← Runs in main browser thread (built to out/client.js)
 │   ├── register.js                 register(swUrl, options) — SW registration & client SDK entry
 │   ├── messaging.js                sendToSW(), onSWMessage(), requestUpdateCheck()
+│   ├── cache-manager.js            getCacheInfo(), cleanupRuntimeCache() — quota & cache management
 │   └── update-ui.js                onUpdateReady() → callback + CustomEvent, applyUpdate()
 │
 ├── rollup-plugin.js                ← Bundler plugin for Vite / Rollup integration
-└── config.js                       ← Starter config template (built to out/config.js)
+└── config.js                       ← Starter config template (emits out/config.json)
 ```
 
 ---
@@ -200,6 +202,16 @@ A cached file is evicted when its URL no longer matches any **caching-capable** 
 **Example:** If you change a route from `cache-first` to `network-only`, all previously cached responses for that URL pattern are evicted on the next update.
 
 Eviction runs on **both** caches after every successful update application.
+
+---
+
+## Runtime Cache Cleanup & Quota Management
+
+NLPWA includes an intelligent cleanup manager for the dynamic `runtime` cache:
+- **Storage Quota Detection**: Reads `navigator.storage.estimate()` to inspect storage usage and quota limits.
+- **Cache Inspection**: `getCacheInfo()` queries the SW to return total entries, estimated bytes, and quota metrics.
+- **Eviction Strategies**: Supports `lru` (least-recently-used via `X-NLPWA-Cached-At`), `fifo` (first-in-first-out), and `largest` (evicts largest items first via `X-NLPWA-Content-Length`).
+- **Flexible Limits**: Supports limits by item count (`maxEntries`), total size (`maxTotalMB`, `maxTotalBytes`), or individual item bounds (`minItemBytes`, `maxItemBytes`, string units like `'50MB'`).
 
 ---
 

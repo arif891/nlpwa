@@ -35,9 +35,10 @@
     },
     "./config": {
       "types": "./types/config.d.ts",
-      "import": "./out/config.js",
-      "default": "./out/config.js"
+      "import": "./out/config.json",
+      "default": "./out/config.json"
     },
+    "./config.json": "./out/config.json",
     "./rollup": {
       "types": "./types/rollup.d.ts",
       "import": "./out/rollup-plugin.js",

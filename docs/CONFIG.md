@@ -22,9 +22,9 @@ initSW({
 
 ---
 
-## 2. Application Configuration (`config.js`)
+## 2. Application Configuration (`config.json` or `config.js`)
 
-Developers define routes, precached shell files, and update settings in `config.js`. The build tool compiles this into `/config.json`, which the Service Worker stores and reads from the `offline` cache.
+Developers define routes, precached shell files, and update settings in `config.json` (or `config.js` when using a bundler). In standalone mode, `/config.json` is read directly from the web server into the `offline` cache. When using `nlpwa update`, the CLI automatically compiles and syncs the runtime `config.json`.
 
 ```js
 export default {

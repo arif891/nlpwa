@@ -11,6 +11,17 @@ export default async () => {
     }
   }
 
+  // ── Emit runtime config.json ──────────────────────────────────────────────
+  const emitConfigPlugin = {
+    name: 'emit-config-json',
+    async writeBundle() {
+      const { default: config } = await import('./src/config.js');
+      const { writeFileSync, mkdirSync } = await import('node:fs');
+      mkdirSync('out', { recursive: true });
+      writeFileSync('out/config.json', JSON.stringify(config, null, 2), 'utf8');
+    },
+  };
+
   return [
   // ── Service Worker: standalone ────────────────────────────────────────────
   // Copied by `nlpwa init`. Calls initSW() itself, has no exports, and is an
@@ -22,7 +33,7 @@ export default async () => {
       format:  'iife',
       banner:  '/* NLPWA Service Worker — https://github.com/arif891/nlpwa */',
     },
-    plugins,
+    plugins: [...plugins, emitConfigPlugin],
   },
 
   // ── Service Worker: library (import { initSW } from 'nlpwa/sw') ───────────
@@ -60,25 +71,6 @@ export default async () => {
     plugins,
   },
 
-  // ── Config starter bundle ─────────────────────────────────────────────────
-  {
-    input: 'src/config.js',
-    output: {
-      file:    'out/config.js',
-      format:  'es',
-      banner:  '/* NLPWA Default Config — https://github.com/arif891/nlpwa */',
-    },
-    plugins: [
-      {
-        name: 'emit-config-json',
-        async writeBundle() {
-          const { default: config } = await import('./src/config.js');
-          const { writeFileSync } = await import('node:fs');
-          writeFileSync('out/config.json', JSON.stringify(config, null, 2), 'utf8');
-        },
-      },
-    ],
-  },
 
   // ── Rollup plugin ─────────────────────────────────────────────────────────
   {
@@ -95,17 +87,6 @@ export default async () => {
       'node:url',
       'node:crypto',
     ],
-    plugins,
-  },
-
-  // ── Shared version helper ─────────────────────────────────────────────────
-  {
-    input: 'src/shared/version.js',
-    output: {
-      file:    'out/version.js',
-      format:  'es',
-      banner:  '/* NLPWA Version Helper — https://github.com/arif891/nlpwa */',
-    },
     plugins,
   },
 ];

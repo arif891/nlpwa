@@ -11,3 +11,4 @@ export {
 } from './runtime.js';
 export { evictByRoute } from './evict.js';
 export { tagResponse, CACHE_STATUS, CACHE_STATUS_HEADER } from './tag.js';
+export { getStorageQuotaInfo, cleanRuntimeCache } from './cleanup.js';

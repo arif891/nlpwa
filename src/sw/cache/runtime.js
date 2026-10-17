@@ -63,7 +63,29 @@ export async function getFromRuntime(request, matchOptions) {
 export async function putInRuntime(request, response) {
   const { caches: cacheNames } = getConfig();
   const cache = await caches.open(cacheNames.runtime);
-  await cache.put(request, response.clone());
+
+  let responseToStore = response.clone();
+  if (response.type !== 'opaque') {
+    try {
+      const headers = new Headers(response.headers);
+      if (!headers.has('X-NLPWA-Cached-At')) {
+        headers.set('X-NLPWA-Cached-At', String(Date.now()));
+      }
+      if (!headers.has('X-NLPWA-Content-Length')) {
+        const cl = headers.get('Content-Length');
+        if (cl) headers.set('X-NLPWA-Content-Length', cl);
+      }
+      responseToStore = new Response(responseToStore.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    } catch {
+      responseToStore = response.clone();
+    }
+  }
+
+  await cache.put(request, responseToStore);
 }
 
 /**

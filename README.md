@@ -262,6 +262,57 @@ const reg = await navigator.serviceWorker.ready;
 (navigator.serviceWorker.controller || reg.active)?.postMessage({ type: 'CHECK_UPDATE' });
 ```
 
+### Storage Quota & Cache Cleanup (`getCacheInfo`, `cleanupRuntimeCache`)
+
+Inspect storage quota and clean the runtime cache on demand from your web app:
+
+```js
+import { getCacheInfo, cleanupRuntimeCache } from 'nlpwa/client';
+// or window.NLPWAClient.getCacheInfo()
+
+// 1. Query browser storage quota and runtime cache metrics
+const info = await getCacheInfo();
+console.log(`Storage: ${info.percentUsed}% used (${(info.usage / 1024 / 1024).toFixed(1)} MB of ${(info.quota / 1024 / 1024).toFixed(1)} MB)`);
+console.log(`Runtime cache: ${info.runtimeEntries} items (${(info.runtimeBytes / 1024).toFixed(1)} KB)`);
+console.log('Top largest files:', info.largestEntries);
+
+// 2. Clean runtime cache by largest size (to free disk space quickly)
+await cleanupRuntimeCache({
+  strategy: 'largest',
+  maxTotalMB: 50, // keep total runtime cache under 50 MB (or maxTotalBytes: 50 * 1024 * 1024)
+});
+
+// Or evict any individual file larger than 5 MB:
+await cleanupRuntimeCache({
+  maxItemMB: 5, // or maxItemKB: 500, maxItemBytes: 5242880, or maxItem: '5MB'
+});
+
+// Or evict by quota threshold (keeps storage under 75%):
+await cleanupRuntimeCache({
+  strategy: 'quota',
+  maxQuotaPercent: 75,
+});
+
+// Or LRU (oldest first):
+await cleanupRuntimeCache({
+  strategy: 'lru',
+  maxEntries: 100,
+});
+```
+
+#### Cleanup Strategies
+
+All size options conveniently accept **MB** (`maxTotalMB`), **KB** (`maxTotalKB`), **Bytes** (`maxTotalBytes`), or string with units (e.g. `'50MB'`, `'500KB'`):
+
+| Strategy | Key Options | Behavior |
+|---|---|---|
+| `'largest'` | `maxTotalMB` / `maxTotalKB` / `maxTotalBytes`, `maxEntries`, `minItemMB` | Sorts runtime files by size descending, evicting the largest files first |
+| `'lru'` | `maxEntries`, `maxTotalMB` / `maxTotalBytes` | Sorts runtime files by cached timestamp ascending, evicting oldest first |
+| `'max-age'` | `maxAgeMs` | Evicts entries older than `maxAgeMs` |
+| `'quota'` | `maxQuotaPercent`, `maxQuotaMB` / `maxQuotaBytes`, `preferLargest` | Checks origin quota and evicts entries until under target threshold |
+| `'pattern'` | `match` (glob) | Evicts entries whose URL matches glob pattern |
+| `'all'` | — | Wipes all runtime cache entries |
+
 ---
 
 ## Fetch Strategies

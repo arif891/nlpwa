@@ -113,3 +113,4 @@ export async function register(swUrl = '/sw.js', options = {}) {
 
 export { onUpdateReady, applyUpdate } from './update-ui.js';
 export { requestUpdateCheck, sendToSW } from './messaging.js';
+export { getCacheInfo, cleanupRuntimeCache } from './cache-manager.js';

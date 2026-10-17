@@ -10,11 +10,25 @@ export const MANIFEST_CACHE_PATH = SNAPSHOT_CACHE_PATH;
 
 /** postMessage type identifiers (SW ↔ client) */
 export const MESSAGE_TYPES = {
-  UPDATE_READY:   'UPDATE_READY',   // SW → client: new version available
-  CHECK_UPDATE:   'CHECK_UPDATE',   // client → SW: trigger manual check
-  UPDATE_APPLIED: 'UPDATE_APPLIED', // SW → client: reply to APPLY_UPDATE ({ applied })
-  NO_UPDATE:      'NO_UPDATE',      // SW → client: already up to date
-  APPLY_UPDATE:   'APPLY_UPDATE',   // client → SW: switch to the staged update now
+  UPDATE_READY:    'UPDATE_READY',    // SW → client: new version available
+  CHECK_UPDATE:    'CHECK_UPDATE',    // client → SW: trigger manual check
+  UPDATE_APPLIED:  'UPDATE_APPLIED',  // SW → client: reply to APPLY_UPDATE ({ applied })
+  NO_UPDATE:       'NO_UPDATE',       // SW → client: already up to date
+  APPLY_UPDATE:    'APPLY_UPDATE',    // client → SW: switch to the staged update now
+  GET_CACHE_INFO:  'GET_CACHE_INFO',  // client → SW: request storage quota & cache metrics
+  CACHE_INFO:      'CACHE_INFO',      // SW → client: reply with quota & cache metrics
+  CLEANUP_RUNTIME: 'CLEANUP_RUNTIME', // client → SW: request runtime cache cleanup
+  RUNTIME_CLEANED: 'RUNTIME_CLEANED', // SW → client: reply with cleanup results
+};
+
+/** Runtime cache cleanup strategies */
+export const CLEANUP_STRATEGIES = {
+  LARGEST: 'largest', // Evict largest files first (or files above size threshold)
+  LRU:     'lru',     // Evict oldest / least-recently-cached first
+  MAX_AGE: 'max-age', // Evict files older than maxAgeMs
+  QUOTA:   'quota',   // Evict when quota usage exceeds threshold
+  PATTERN: 'pattern', // Evict files matching glob pattern
+  ALL:     'all',     // Wipe all runtime cache entries
 };
 
 /** Max parallel downloads while staging an update. */

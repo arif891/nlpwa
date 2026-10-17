@@ -46,6 +46,10 @@ export function globToRegex(pattern) {
  */
 export function matchGlob(pattern, url) {
   try {
+    if (pattern.startsWith('http://') || pattern.startsWith('https://') || pattern.startsWith('//')) {
+      const full = typeof url === 'string' ? url : url.href;
+      return globToRegex(pattern).test(full);
+    }
     const { pathname } = new URL(url, 'http://localhost');
     return globToRegex(pattern).test(pathname);
   } catch {

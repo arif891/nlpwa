@@ -20,7 +20,7 @@ import { getConfig } from '../config/index.js';
  * @param {FetchEvent} [event]
  */
 function safePutInRuntime(request, response, event) {
-  if (!response || !response.ok || response.status === 206) return Promise.resolve();
+  if (!response || (!response.ok && response.type !== 'opaque') || response.status === 206) return Promise.resolve();
   if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return Promise.resolve();
 
   try {

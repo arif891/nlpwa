@@ -329,12 +329,21 @@ var NLPWAClient = (function (exports) {
       }
       if (options.autoReload) {
         // Don't auto-reload if user is actively typing in an input to prevent data loss
-        const activeTag = document.activeElement?.tagName?.toLowerCase();
-        const isEditing = activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.isContentEditable;
+        const activeElem = typeof document !== 'undefined' ? document.activeElement : null;
+        const activeTag = activeElem?.tagName?.toLowerCase();
+        const isEditing = activeTag === 'input' || activeTag === 'textarea' || activeElem?.isContentEditable;
         if (!isEditing) {
           applyUpdate();
         } else {
           console.warn('[NLPWA] Auto-reload deferred: active input focused.');
+          const onFinishEditing = () => {
+            activeElem?.removeEventListener('blur', onFinishEditing);
+            activeElem?.removeEventListener('change', onFinishEditing);
+            console.log('[NLPWA] Input focus cleared, applying deferred reload.');
+            applyUpdate();
+          };
+          activeElem?.addEventListener('blur', onFinishEditing, { once: true });
+          activeElem?.addEventListener('change', onFinishEditing, { once: true });
         }
       }
     });

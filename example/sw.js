@@ -119,6 +119,18 @@
      */
     verifyHashes: 'strict',
 
+    /**
+     * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).
+     * Default: ''
+     */
+    base: '',
+
+    /**
+     * Keep immediate previous version cache after commit for multi-tab grace retention.
+     * Default: false
+     */
+    retainPreviousVersionCache: false,
+
     /** Cache storage names */
     caches: {
       offline: CACHE_NAMES.OFFLINE,
@@ -432,7 +444,7 @@
 
   /**
    * Ensure runtime config has been loaded from the offline cache before handling requests.
-   * Resolves immediately if already loaded or previously started.
+   * Resolves with the active runtime config.
    *
    * @returns {Promise<Object|null>}
    */
@@ -451,35 +463,44 @@
    * @returns {Promise<Object|null>}
    */
   async function loadConfigFromCache() {
-    const config = _config || initConfig();
-    const baseName = config.caches?.offline || 'offline';
-    const configPath = config.configPath || '/config.json';
+    const promise = (async () => {
+      const config = _config || initConfig();
+      const baseName = config.caches?.offline || 'offline';
+      let configPath = config.configPath || '/config.json';
+      if (config.base && configPath.startsWith('/')) {
+        const cleanBase = config.base.endsWith('/') ? config.base.slice(0, -1) : config.base;
+        configPath = `${cleanBase}${configPath}`;
+      }
 
-    try {
-      const cache = await openActive(baseName);
-      const response = await cache.match(configPath);
-      if (!response) return null;
+      try {
+        const cache = await openActive(baseName);
+        const response = await cache.match(configPath);
+        if (!response) return null;
 
-      const runtimeJson = await response.json();
-      const oldInterval = _config?.updateCheckInterval;
-      updateActiveConfig(runtimeJson);
-      console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+        const runtimeJson = await response.json();
+        const oldInterval = _config?.updateCheckInterval;
+        updateActiveConfig(runtimeJson);
+        console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
 
-      // Restart update polling if the interval changed after hydrating from cache
-      if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
-        for (const handler of _intervalChangeHandlers) {
-          try {
-            handler(runtimeJson.updateCheckInterval);
-          } catch (err) {
-            console.error('[NLPWA] Interval change handler error:', err);
+        // Restart update polling if the interval changed after hydrating from cache
+        if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
+          for (const handler of _intervalChangeHandlers) {
+            try {
+              handler(runtimeJson.updateCheckInterval);
+            } catch (err) {
+              console.error('[NLPWA] Interval change handler error:', err);
+            }
           }
         }
+        return runtimeJson;
+      } catch (err) {
+        console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
+        return null;
       }
-      return runtimeJson;
-    } catch (err) {
-      console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
-      return null;
-    }
+    })();
+
+    _configReadyPromise = promise;
+    return promise;
   }
 
   /**
@@ -509,7 +530,22 @@
       }
     }
 
-    return { versionEndpoint, infoEndpoint };
+    const resolveEndpoint = (ep) => {
+      if (!ep || /^[a-z][a-z0-9+.-]*:/i.test(ep) || ep.startsWith('//')) return ep;
+      if (config.base) {
+        const cleanBase = config.base.endsWith('/') ? config.base.slice(0, -1) : config.base;
+        if (ep.startsWith('/')) {
+          return `${cleanBase}${ep}`;
+        }
+        return `${cleanBase}/${ep}`;
+      }
+      return ep;
+    };
+
+    return {
+      versionEndpoint: resolveEndpoint(versionEndpoint),
+      infoEndpoint: resolveEndpoint(infoEndpoint),
+    };
   }
 
   /**
@@ -520,9 +556,14 @@
   async function fetchServerVersion() {
     const { versionEndpoint } = getUpdateEndpoints();
 
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(15000)
+      : undefined;
+
     const response = await fetch(versionEndpoint, {
       cache: 'no-store',
       headers: { 'Accept': 'application/json' },
+      signal,
     });
 
     if (!response.ok) {
@@ -546,9 +587,14 @@
   async function fetchServerInfo() {
     const { infoEndpoint } = getUpdateEndpoints();
 
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(30000)
+      : undefined;
+
     const response = await fetch(infoEndpoint, {
       cache: 'no-store',
       headers: { 'Accept': 'application/json' },
+      signal,
     });
 
     if (!response.ok) {
@@ -709,7 +755,10 @@
 
   /** Fetch a file fresh from the network and check it against its manifest hash. */
   async function fetchVerified(path, expected, verify) {
-    const response = await fetch(path, { cache: 'no-store' });
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(30000)
+      : undefined;
+    const response = await fetch(path, { cache: 'no-store', signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     if (expected && verify !== false) {
@@ -895,9 +944,20 @@
     let responseToStore = response.clone();
     if (response.type !== 'opaque') {
       try {
+        const isNullBody = [101, 204, 205, 304].includes(response.status);
         const headers = new Headers(response.headers);
         if (!headers.has('X-NLPWA-Cached-At')) {
           headers.set('X-NLPWA-Cached-At', String(Date.now()));
+        }
+        if (isNullBody) {
+          headers.set('X-NLPWA-Content-Length', '0');
+          responseToStore = new Response(null, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          });
+          await cache.put(request, responseToStore);
+          return;
         }
         if (!headers.has('X-NLPWA-Content-Length')) {
           const cl = headers.get('Content-Length');
@@ -1004,6 +1064,10 @@
    */
   function matchGlob(pattern, url) {
     try {
+      if (pattern.startsWith('http://') || pattern.startsWith('https://') || pattern.startsWith('//')) {
+        const full = typeof url === 'string' ? url : url.href;
+        return globToRegex(pattern).test(full);
+      }
       const { pathname } = new URL(url, 'http://localhost');
       return globToRegex(pattern).test(pathname);
     } catch {
@@ -1038,8 +1102,19 @@
       : true;
 
     for (const route of routes) {
-      if (route.origin) {
-        if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+      let routeOrigin = route.origin;
+      let matchPattern = route.match;
+
+      if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+        try {
+          routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+        } catch {
+          // fallback
+        }
+      }
+
+      if (routeOrigin) {
+        if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
           continue;
         }
       } else if (!isSameOrigin) {
@@ -1047,7 +1122,7 @@
         continue;
       }
 
-      if (matchGlob(route.match, requestUrl.pathname)) {
+      if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
         return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
       }
     }
@@ -1133,6 +1208,7 @@
       return false;
     }
 
+    const previousActive = await getActive();
     await setActive({ cache: staged.cache, version: staged.version, swVersion: staged.swVersion });
     await clearStaged();
 
@@ -1144,7 +1220,18 @@
       await evictFromRuntime(staged.evict ?? []);
     }
     await evictByRoute();
-    await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep: [staged.cache] });
+
+    const keep = [staged.cache];
+    if (config.retainPreviousVersionCache && previousActive?.cache) {
+      keep.push(previousActive.cache);
+    }
+    await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep });
+
+    if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+      self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+        clients.forEach((c) => c.postMessage({ type: 'UPDATE_APPLIED', version: staged.version }));
+      }).catch(() => {});
+    }
 
     console.log(`[NLPWA] Switched to v${staged.version}`);
     return true;
@@ -1683,7 +1770,7 @@
    * @param {FetchEvent} [event]
    */
   function safePutInRuntime(request, response, event) {
-    if (!response || !response.ok || response.status === 206) return Promise.resolve();
+    if (!response || (!response.ok && response.type !== 'opaque') || response.status === 206) return Promise.resolve();
     if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return Promise.resolve();
 
     try {
@@ -2006,11 +2093,34 @@
       ? requestUrl.origin === self.location.origin
       : true;
 
+    // Always bypass Vite internal dev requests and HMR updates directly to network
+    if (
+      requestUrl.pathname.startsWith('/@vite/') ||
+      requestUrl.pathname.startsWith('/@fs/') ||
+      requestUrl.pathname.includes('/.vite/') ||
+      requestUrl.pathname.endsWith('.hot-update.json') ||
+      requestUrl.searchParams.has('import')
+    ) {
+      return (req, event) => networkOnly(req);
+    }
+
     for (const route of routes) {
+      let routeOrigin = route.origin;
+      let matchPattern = route.match;
+
+      // Support full URL patterns directly in match: "https://cdn.jsdelivr.net/npm/**"
+      if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+        try {
+          routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+        } catch {
+          // fallback
+        }
+      }
+
       // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
       // match against that. Otherwise default to same-origin only.
-      if (route.origin) {
-        if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+      if (routeOrigin) {
+        if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
           continue;
         }
       } else if (!isSameOrigin) {
@@ -2018,7 +2128,7 @@
         continue;
       }
 
-      if (matchGlob(route.match, requestUrl.pathname)) {
+      if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
         const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
         return (req, event) => fn(req, event, route);
       }

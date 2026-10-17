@@ -30,8 +30,19 @@ export function isCacheableUrl(url) {
     : true;
 
   for (const route of routes) {
-    if (route.origin) {
-      if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+    let routeOrigin = route.origin;
+    let matchPattern = route.match;
+
+    if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+      try {
+        routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+      } catch {
+        // fallback
+      }
+    }
+
+    if (routeOrigin) {
+      if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
         continue;
       }
     } else if (!isSameOrigin) {
@@ -39,7 +50,7 @@ export function isCacheableUrl(url) {
       continue;
     }
 
-    if (matchGlob(route.match, requestUrl.pathname)) {
+    if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
       return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
     }
   }

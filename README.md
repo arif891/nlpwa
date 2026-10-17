@@ -76,6 +76,8 @@ export default {
   routes: [
     { match: '/api/**',       strategy: 'network-only'           },
     { match: '/assets/**',    strategy: 'cache-first'            },
+    // Cross-origin CDN assets (e.g. wasm, AI models, libraries)
+    { match: 'https://cdn.jsdelivr.net/npm/**', strategy: 'cache-first' },
     { match: '/pages/**',     strategy: 'network-first', networkTimeoutMs: 3000 },
     { match: '/_feeds/**',    strategy: 'stale-while-revalidate' },
     { match: '**',            strategy: 'network-first'          },
@@ -139,9 +141,9 @@ Manifest hashes are the first 32 hex characters of each file's SHA-256 digest.
 If you use Vite or Rollup, you can automate updates on every build using the bundled plugin:
 
 ```js
-// vite.config.js or rollup.config.js
+// vite.config.js
 import { defineConfig } from 'vite';
-import nlpwa from 'nlpwa/rollup';
+import nlpwa from 'nlpwa/vite'; // or 'nlpwa/rollup' for Rollup
 
 export default defineConfig({
   plugins: [
@@ -243,9 +245,19 @@ Asks the SW to switch to the staged update via `APPLY_UPDATE` message, waits for
 ### Client events
 
 ```js
-// CustomEvent fired on document when update is ready
+// Fired when an update is staged and ready to apply
 document.addEventListener('nlpwa:update-ready', (e) => {
   console.log('New version:', e.detail.version, 'Partial:', e.detail.partial);
+});
+
+// Fired when the app is confirmed up to date
+document.addEventListener('nlpwa:no-update', (e) => {
+  console.log('Already on latest version:', e.detail.version);
+});
+
+// Fired when an update switch has been committed
+document.addEventListener('nlpwa:update-applied', () => {
+  console.log('Update switched to active version');
 });
 ```
 

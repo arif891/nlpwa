@@ -67,9 +67,20 @@ export async function putInRuntime(request, response) {
   let responseToStore = response.clone();
   if (response.type !== 'opaque') {
     try {
+      const isNullBody = [101, 204, 205, 304].includes(response.status);
       const headers = new Headers(response.headers);
       if (!headers.has('X-NLPWA-Cached-At')) {
         headers.set('X-NLPWA-Cached-At', String(Date.now()));
+      }
+      if (isNullBody) {
+        headers.set('X-NLPWA-Content-Length', '0');
+        responseToStore = new Response(null, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+        await cache.put(request, responseToStore);
+        return;
       }
       if (!headers.has('X-NLPWA-Content-Length')) {
         const cl = headers.get('Content-Length');

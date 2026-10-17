@@ -2,7 +2,7 @@ import { getConfig, loadConfigFromCache } from '../config/index.js';
 import { evictFromRuntime } from '../cache/runtime.js';
 import { evictByRoute } from '../cache/evict.js';
 import {
-  getActiveName, setActive, getStaged, clearStaged,
+  getActive, getActiveName, setActive, getStaged, clearStaged,
   cleanupCaches, tryAcquire, release,
 } from '../cache/store.js';
 import { getSnapshotPath } from './manifest.js';
@@ -29,6 +29,7 @@ export async function commitStaged() {
     return false;
   }
 
+  const previousActive = await getActive();
   await setActive({ cache: staged.cache, version: staged.version, swVersion: staged.swVersion });
   await clearStaged();
 
@@ -40,7 +41,18 @@ export async function commitStaged() {
     await evictFromRuntime(staged.evict ?? []);
   }
   await evictByRoute();
-  await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep: [staged.cache] });
+
+  const keep = [staged.cache];
+  if (config.retainPreviousVersionCache && previousActive?.cache) {
+    keep.push(previousActive.cache);
+  }
+  await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep });
+
+  if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+    self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+      clients.forEach((c) => c.postMessage({ type: 'UPDATE_APPLIED', version: staged.version }));
+    }).catch(() => {});
+  }
 
   console.log(`[NLPWA] Switched to v${staged.version}`);
   return true;

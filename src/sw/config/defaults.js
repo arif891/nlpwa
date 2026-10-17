@@ -53,6 +53,18 @@ export const DEFAULTS = {
    */
   verifyHashes: 'strict',
 
+  /**
+   * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).
+   * Default: ''
+   */
+  base: '',
+
+  /**
+   * Keep immediate previous version cache after commit for multi-tab grace retention.
+   * Default: false
+   */
+  retainPreviousVersionCache: false,
+
   /** Cache storage names */
   caches: {
     offline: CACHE_NAMES.OFFLINE,

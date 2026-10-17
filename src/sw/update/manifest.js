@@ -9,9 +9,14 @@ import { openActive } from '../cache/store.js';
 export async function fetchServerVersion() {
   const { versionEndpoint } = getUpdateEndpoints();
 
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(15000)
+    : undefined;
+
   const response = await fetch(versionEndpoint, {
     cache: 'no-store',
     headers: { 'Accept': 'application/json' },
+    signal,
   });
 
   if (!response.ok) {
@@ -35,9 +40,14 @@ export async function fetchServerVersion() {
 export async function fetchServerInfo() {
   const { infoEndpoint } = getUpdateEndpoints();
 
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(30000)
+    : undefined;
+
   const response = await fetch(infoEndpoint, {
     cache: 'no-store',
     headers: { 'Accept': 'application/json' },
+    signal,
   });
 
   if (!response.ok) {

@@ -40,11 +40,34 @@ export function resolveStrategy(request) {
     ? requestUrl.origin === self.location.origin
     : true;
 
+  // Always bypass Vite internal dev requests and HMR updates directly to network
+  if (
+    requestUrl.pathname.startsWith('/@vite/') ||
+    requestUrl.pathname.startsWith('/@fs/') ||
+    requestUrl.pathname.includes('/.vite/') ||
+    requestUrl.pathname.endsWith('.hot-update.json') ||
+    requestUrl.searchParams.has('import')
+  ) {
+    return (req, event) => networkOnly(req, event);
+  }
+
   for (const route of routes) {
+    let routeOrigin = route.origin;
+    let matchPattern = route.match;
+
+    // Support full URL patterns directly in match: "https://cdn.jsdelivr.net/npm/**"
+    if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+      try {
+        routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+      } catch {
+        // fallback
+      }
+    }
+
     // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
     // match against that. Otherwise default to same-origin only.
-    if (route.origin) {
-      if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+    if (routeOrigin) {
+      if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
         continue;
       }
     } else if (!isSameOrigin) {
@@ -52,7 +75,7 @@ export function resolveStrategy(request) {
       continue;
     }
 
-    if (matchGlob(route.match, requestUrl.pathname)) {
+    if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
       const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
       return (req, event) => fn(req, event, route);
     }

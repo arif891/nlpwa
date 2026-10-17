@@ -64,6 +64,10 @@ export interface NLPWAConfig {
   networkTimeoutMs?: number;
   /** Default fallback URL for navigation requests when offline */
   navigationFallback?: string;
+  /** Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths) */
+  base?: string;
+  /** Retain immediate prior version cache on commit for multi-tab grace retention */
+  retainPreviousVersionCache?: boolean;
 }
 
 declare const defaultConfig: NLPWAConfig;

@@ -45,7 +45,7 @@
       "default": "./out/rollup-plugin.js"
     },
     "./vite": {
-      "types": "./types/rollup.d.ts",
+      "types": "./types/vite.d.ts",
       "import": "./out/rollup-plugin.js",
       "default": "./out/rollup-plugin.js"
     },
@@ -55,10 +55,11 @@
     "nlpwa": "./bin/nlpwa.js"
   },
   "scripts": {
-    "build":          "rollup -c",
-    "build:prod":     "rollup -c --environment PROD",
+    "build":          "rollup -c && npm run sync:example",
+    "build:prod":     "rollup -c --environment PROD && npm run sync:example",
     "dev":            "rollup -c --watch",
     "test":           "node --test test/*.test.js",
+    "sync:example":   "node -e \"const { copyFileSync } = require('fs'); copyFileSync('out/sw.js', 'example/sw.js'); copyFileSync('out/client.js', 'example/client.js'); copyFileSync('out/config.json', 'example/config.json'); console.log('[NLPWA] example/ synced with out/');\"",
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa":          "node ./bin/nlpwa.js",
     "nlpwa:update":   "node ./bin/nlpwa.js update",

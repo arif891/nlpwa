@@ -24,7 +24,10 @@ async function isAlreadyStaged(cache, path, expected, verify) {
 
 /** Fetch a file fresh from the network and check it against its manifest hash. */
 async function fetchVerified(path, expected, verify) {
-  const response = await fetch(path, { cache: 'no-store' });
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(30000)
+    : undefined;
+  const response = await fetch(path, { cache: 'no-store', signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
   if (expected && verify !== false) {

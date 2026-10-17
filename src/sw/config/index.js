@@ -98,7 +98,7 @@ let _configReadyPromise = null;
 
 /**
  * Ensure runtime config has been loaded from the offline cache before handling requests.
- * Resolves immediately if already loaded or previously started.
+ * Resolves with the active runtime config.
  *
  * @returns {Promise<Object|null>}
  */
@@ -117,35 +117,44 @@ export function ensureConfigReady() {
  * @returns {Promise<Object|null>}
  */
 export async function loadConfigFromCache() {
-  const config = _config || initConfig();
-  const baseName = config.caches?.offline || 'offline';
-  const configPath = config.configPath || '/config.json';
+  const promise = (async () => {
+    const config = _config || initConfig();
+    const baseName = config.caches?.offline || 'offline';
+    let configPath = config.configPath || '/config.json';
+    if (config.base && configPath.startsWith('/')) {
+      const cleanBase = config.base.endsWith('/') ? config.base.slice(0, -1) : config.base;
+      configPath = `${cleanBase}${configPath}`;
+    }
 
-  try {
-    const cache = await openActive(baseName);
-    const response = await cache.match(configPath);
-    if (!response) return null;
+    try {
+      const cache = await openActive(baseName);
+      const response = await cache.match(configPath);
+      if (!response) return null;
 
-    const runtimeJson = await response.json();
-    const oldInterval = _config?.updateCheckInterval;
-    updateActiveConfig(runtimeJson);
-    console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+      const runtimeJson = await response.json();
+      const oldInterval = _config?.updateCheckInterval;
+      updateActiveConfig(runtimeJson);
+      console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
 
-    // Restart update polling if the interval changed after hydrating from cache
-    if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
-      for (const handler of _intervalChangeHandlers) {
-        try {
-          handler(runtimeJson.updateCheckInterval);
-        } catch (err) {
-          console.error('[NLPWA] Interval change handler error:', err);
+      // Restart update polling if the interval changed after hydrating from cache
+      if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
+        for (const handler of _intervalChangeHandlers) {
+          try {
+            handler(runtimeJson.updateCheckInterval);
+          } catch (err) {
+            console.error('[NLPWA] Interval change handler error:', err);
+          }
         }
       }
+      return runtimeJson;
+    } catch (err) {
+      console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
+      return null;
     }
-    return runtimeJson;
-  } catch (err) {
-    console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
-    return null;
-  }
+  })();
+
+  _configReadyPromise = promise;
+  return promise;
 }
 
 /**
@@ -175,5 +184,20 @@ export function getUpdateEndpoints() {
     }
   }
 
-  return { versionEndpoint, infoEndpoint };
+  const resolveEndpoint = (ep) => {
+    if (!ep || /^[a-z][a-z0-9+.-]*:/i.test(ep) || ep.startsWith('//')) return ep;
+    if (config.base) {
+      const cleanBase = config.base.endsWith('/') ? config.base.slice(0, -1) : config.base;
+      if (ep.startsWith('/')) {
+        return `${cleanBase}${ep}`;
+      }
+      return `${cleanBase}/${ep}`;
+    }
+    return ep;
+  };
+
+  return {
+    versionEndpoint: resolveEndpoint(versionEndpoint),
+    infoEndpoint: resolveEndpoint(infoEndpoint),
+  };
 }

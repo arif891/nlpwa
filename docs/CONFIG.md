@@ -208,20 +208,68 @@ routes: [
 | `**` | Any characters including `/` | `/assets/**` matches `/assets/img/logo.png` |
 | `?` | Any single character except `/` | `/page?` matches `/pages` |
 | Literal | Exact pathname | `/offline.html` |
+| Full URL | External CDN or cross-origin endpoint | `https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/**` |
 
-Patterns are matched against the **pathname** of the request URL (not the full URL).
+#### Cross-Origin & CDN Asset Caching
+
+NLPWA supports caching cross-origin assets (such as CDN-hosted ONNX Runtime `.wasm` files, AI models, or third-party fonts).
+
+You can define cross-origin routes in either of two ways:
+
+1. **Direct Full URL:**
+   ```js
+   {
+     match: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/**',
+     strategy: 'cache-first',
+   }
+   ```
+2. **Explicit `origin` + `match`:**
+   ```js
+   {
+     origin: 'https://cdn.jsdelivr.net',
+     match: '/npm/onnxruntime-web@1.30.0/**',
+     strategy: 'cache-first',
+   }
+   ```
+   *(Wildcard origins like `origin: '*'` are also supported to apply a strategy to all origins matching the path pattern).*
+
+Cross-origin responses—including opaque responses (`status: 0`) from `<script>` or WebAssembly workers—are safely stored in the `runtime` cache and served offline.
 
 #### `strategy` — Fetch strategy
 
 | Value | Description |
 |---|---|
-| `'cache-first'` | Cache → Network. Best for: static assets |
+| `'cache-first'` | Cache → Network. Best for: static assets, CDN libraries |
 | `'network-first'` | Network → Cache fallback. Best for: HTML pages |
 | `'network-only'` | Network always. Best for: API writes |
 | `'stale-while-revalidate'` | Cache instantly, update in background. Best for: feeds |
 | `'cache-only'` | Cache only, 503 on miss. Best for: offline fallback |
 
 See [STRATEGIES.md](STRATEGIES.md) for full strategy behaviour.
+
+---
+
+### `base` · `string` · default: `''`
+
+Base public path where the application is hosted (e.g. `'/my-app/'` for subpath deployments or GitHub Pages).
+When specified, `configPath` and update API endpoints automatically resolve relative to this base path.
+
+```js
+base: '/my-app/'
+```
+
+---
+
+### `retainPreviousVersionCache` · `boolean` · default: `false`
+
+Controls whether the immediate prior version's offline cache is preserved when an update commits.
+
+- `false` (default): Immediately prunes the old offline cache on commit to conserve storage quota.
+- `true`: Keeps the immediate prior version's cache in storage alongside the new version. Recommended for multi-tab applications so open background tabs don't experience 404s when lazy-loading older chunk files before they navigate/reload.
+
+```js
+retainPreviousVersionCache: true
+```
 
 ---
 

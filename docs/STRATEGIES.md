@@ -238,3 +238,30 @@ Is slight staleness acceptable and speed is important?
 Is this a manual offline fallback that never needs to be fresh?
   YES → cache-only  (offline.html, placeholder pages)
 ```
+
+---
+
+## Cross-Origin & CDN Asset Caching
+
+NLPWA supports caching cross-origin requests, such as third-party CDNs, Google Fonts, or AI/ML WebAssembly runtimes (e.g., `onnxruntime-web`, TensorFlow.js).
+
+### Configuration Options
+
+You can define cross-origin routes in either style:
+
+```js
+// Option 1: Full URL pattern
+{ match: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/**', strategy: 'cache-first' }
+
+// Option 2: Origin property + path glob
+{ origin: 'https://cdn.jsdelivr.net', match: '/npm/onnxruntime-web@1.30.0/**', strategy: 'cache-first' }
+
+// Option 3: Wildcard origin for all origins matching a path pattern
+{ origin: '*', match: '/fonts/**', strategy: 'cache-first' }
+```
+
+### Opaque Responses & WASM Binaries
+- When assets are loaded via `<script>` tags, Web Workers, or `importScripts` without CORS headers, the browser generates an **opaque response** (`status: 0`, `type: 'opaque'`).
+- NLPWA safely stores opaque responses in the `runtime` cache, allowing heavy `.wasm` and `.mjs` worker scripts to load instantaneously offline without throwing Quota or Range errors.
+- Any request not matching an explicit cross-origin route automatically passes through via `networkOnly` without caching.
+

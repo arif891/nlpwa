@@ -4,12 +4,19 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isCacheableUrl } from '../src/sw/cache/evict.js';
-import { initConfig, updateActiveConfig, loadConfigFromCache, onUpdateIntervalChange } from '../src/sw/config/index.js';
+import { initConfig, updateActiveConfig, loadConfigFromCache, onUpdateIntervalChange, ensureConfigReady } from '../src/sw/config/index.js';
 import { startUpdatePolling, stopUpdatePolling } from '../src/sw/update/index.js';
 import { nlpwaPlugin } from '../src/rollup-plugin.js';
 import { setupEnv, req } from './helpers/fake-env.js';
+import { makeServer } from './helpers/fake-server.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
 import { findConfigFile, syncSourceConfigVersion } from '../bin/build-utils.js';
+import { putInRuntime, getFromRuntime } from '../src/sw/cache/runtime.js';
+import { resolveStrategy } from '../src/sw/fetch/router.js';
+import { stageUpdate } from '../src/sw/update/stage.js';
+import { commitStaged } from '../src/sw/update/commit.js';
+import { getActive, openActive } from '../src/sw/cache/store.js';
+import { fetchServerManifest } from '../src/sw/update/manifest.js';
 
 test('isCacheableUrl: cross-origin route matching respects route.origin', () => {
   globalThis.self = {
@@ -182,3 +189,119 @@ test('build-utils: syncSourceConfigVersion does not overwrite version in comment
   assert.ok(updated.includes(`// Comment with version: '0.0.1'`));
   assert.ok(updated.includes(`version: '1.0.1'`));
 });
+
+test('putInRuntime: handles 204 No Content without throwing and injects metadata', async () => {
+  setupEnv(() => new Response(null, { status: 204, statusText: 'No Content' }));
+  const request = req('/api/track');
+  const res204 = new Response(null, { status: 204, statusText: 'No Content' });
+
+  // Should succeed without throwing TypeError
+  await putInRuntime(request, res204);
+
+  const matched = await getFromRuntime(request);
+  assert.ok(matched);
+  assert.equal(matched.status, 204);
+  assert.equal(matched.headers.get('X-NLPWA-Content-Length'), '0');
+  assert.ok(matched.headers.get('X-NLPWA-Cached-At'));
+});
+
+test('ensureConfigReady: synchronizes and reflects new config after loadConfigFromCache', async () => {
+  setupEnv(() => new Response('ok'));
+  const cache = await openActive('offline');
+
+  await cache.put(
+    req('/config.json'),
+    new Response(JSON.stringify({ version: '1.0.0', customField: 'initial' }), {
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+
+  const initialLoaded = await loadConfigFromCache();
+  assert.equal(initialLoaded?.customField, 'initial');
+  const initialReady = await ensureConfigReady();
+  assert.equal(initialReady?.customField, 'initial');
+
+  // Simulate committing a new config.json
+  await cache.put(
+    req('/config.json'),
+    new Response(JSON.stringify({ version: '1.0.1', customField: 'updated' }), {
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+
+  await loadConfigFromCache();
+  const nextReady = await ensureConfigReady();
+  assert.equal(nextReady?.customField, 'updated');
+});
+
+test('resolveStrategy: automatically bypasses Vite dev server and HMR URLs', () => {
+  globalThis.self = { location: { origin: 'http://localhost:5173' } };
+  initConfig({
+    routes: [{ match: '**', strategy: 'cache-first' }],
+    defaultStrategy: 'cache-first',
+  });
+
+  const viteClient = resolveStrategy(new Request('http://localhost:5173/@vite/client'));
+  const viteFs = resolveStrategy(new Request('http://localhost:5173/@fs/node_modules/vite.js'));
+  const viteHmr = resolveStrategy(new Request('http://localhost:5173/src/App.jsx.hot-update.json'));
+  const viteImport = resolveStrategy(new Request('http://localhost:5173/src/main.js?import'));
+
+  assert.equal(viteClient.name, ''); // wrapped networkOnly function
+  // Verify standard app route still gets cache-first
+  const appRoute = resolveStrategy(new Request('http://localhost:5173/assets/style.css'));
+  assert.ok(appRoute);
+});
+
+test('commitStaged: retainPreviousVersionCache keeps prior active cache for multi-tab setups', async () => {
+  const v1 = { '/config.json': JSON.stringify({ version: '1.0.0' }), '/app.js': 'v1' };
+  const server = makeServer('1.0.0', v1);
+  const caches = setupEnv(server.fetch, { retainPreviousVersionCache: true });
+
+  const r1 = await stageUpdate(await fetchServerManifest());
+  assert.equal(r1.status, 'ready');
+  assert.equal(await commitStaged(), true);
+  const activeV1 = (await getActive()).cache;
+
+  server.set('1.0.1', { ...v1, '/app.js': 'v2' });
+  const r2 = await stageUpdate(await fetchServerManifest());
+  assert.equal(r2.status, 'ready');
+
+  assert.equal(await commitStaged(), true);
+  const activeV2 = (await getActive()).cache;
+
+  assert.notEqual(activeV1, activeV2);
+  const currentKeys = await caches.keys();
+  // With retainPreviousVersionCache: true, activeV1 is still preserved in storage
+  assert.ok(currentKeys.includes(activeV1), 'prior version cache retained');
+  assert.ok(currentKeys.includes(activeV2), 'new version cache active');
+});
+
+test('cross-origin routing: matches and caches full URL patterns like onnxruntime-web CDN', () => {
+  globalThis.self = { location: { origin: 'https://myapp.example.com' } };
+  initConfig({
+    routes: [
+      {
+        match: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/**',
+        strategy: 'cache-first',
+      },
+    ],
+    defaultStrategy: 'network-first',
+  });
+
+  const onnxWasmUrl = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort-wasm-simd.wasm';
+  const onnxJsUrl = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.js';
+  const otherCdnUrl = 'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js';
+
+  // Verify router resolves strategy for onnxruntime-web
+  const onnxStrategy = resolveStrategy(new Request(onnxWasmUrl));
+  assert.ok(onnxStrategy);
+
+  // Verify isCacheableUrl returns true for matched cross-origin URLs
+  assert.equal(isCacheableUrl(onnxWasmUrl), true);
+  assert.equal(isCacheableUrl(onnxJsUrl), true);
+
+  // Unconfigured cross-origin URL returns false (not cacheable)
+  assert.equal(isCacheableUrl(otherCdnUrl), false);
+});
+
+

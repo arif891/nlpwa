@@ -79,5 +79,34 @@ export default async () => {
       },
     ],
   },
+
+  // ── Rollup plugin ─────────────────────────────────────────────────────────
+  {
+    input: 'src/rollup-plugin.js',
+    output: {
+      file:    'out/rollup-plugin.js',
+      format:  'es',
+      banner:  '/* NLPWA Rollup Plugin — https://github.com/arif891/nlpwa */',
+    },
+    external: [
+      /^node:/,
+      'node:fs',
+      'node:path',
+      'node:url',
+      'node:crypto',
+    ],
+    plugins,
+  },
+
+  // ── Shared version helper ─────────────────────────────────────────────────
+  {
+    input: 'src/shared/version.js',
+    output: {
+      file:    'out/version.js',
+      format:  'es',
+      banner:  '/* NLPWA Version Helper — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
 ];
 };

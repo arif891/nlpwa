@@ -2,6 +2,17 @@ import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
 import { openActive } from '../cache/store.js';
 
+let _intervalChangeHandler = null;
+
+/**
+ * Register a callback to be notified if updateCheckInterval changes at runtime.
+ *
+ * @param {(newInterval: number) => void} handler
+ */
+export function onUpdateIntervalChange(handler) {
+  _intervalChangeHandler = handler;
+}
+
 /** Singleton config instance, set by initConfig() */
 let _config = null;
 
@@ -111,8 +122,16 @@ export async function loadConfigFromCache() {
     if (!response) return null;
 
     const runtimeJson = await response.json();
+    const oldInterval = _config?.updateCheckInterval;
     updateActiveConfig(runtimeJson);
     console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+
+    // Restart update polling if the interval changed after hydrating from cache
+    if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
+      if (typeof _intervalChangeHandler === 'function') {
+        _intervalChangeHandler(runtimeJson.updateCheckInterval);
+      }
+    }
     return runtimeJson;
   } catch (err) {
     console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
@@ -132,8 +151,8 @@ export async function loadConfigFromCache() {
  */
 export function getUpdateEndpoints() {
   const config = getConfig();
-  let versionEndpoint = '/api/update/version';
-  let infoEndpoint = '/api/update/info';
+  let versionEndpoint = '/api/update/version.json';
+  let infoEndpoint = '/api/update/info.json';
 
   if (config.updateAPI) {
     if (Array.isArray(config.updateAPI)) {

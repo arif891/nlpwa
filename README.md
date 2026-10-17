@@ -253,8 +253,13 @@ document.addEventListener('nlpwa:update-ready', (e) => {
 ### Manual update check (from client JS)
 
 ```js
-// Trigger a check without waiting for the next poll interval
-navigator.serviceWorker.controller?.postMessage({ type: 'CHECK_UPDATE' });
+// Trigger a check via the client library:
+import { requestUpdateCheck } from 'nlpwa/client';
+requestUpdateCheck();
+
+// Or raw postMessage:
+const reg = await navigator.serviceWorker.ready;
+(navigator.serviceWorker.controller || reg.active)?.postMessage({ type: 'CHECK_UPDATE' });
 ```
 
 ---
@@ -269,7 +274,7 @@ navigator.serviceWorker.controller?.postMessage({ type: 'CHECK_UPDATE' });
 | `stale-while-revalidate` | Cache (instant) | Network (block if uncached) | ✅ Runtime | Feeds, listings |
 | `cache-only` | Cache | 503 response | ❌ Never | Offline-only fallback |
 
-All intercepted responses carry an `X-Cache-Status` header (`offline-cache`, `runtime-cache`, `network`, `stale-runtime-cache`, `stale-offline-cache`, `offline-fallback`, or `bypass`).
+All intercepted responses carry an `X-Cache-Status` header (`offline-cache`, `runtime-cache`, `network`, `stale`, `offline-fallback`, or `bypass`).
 See [docs/STRATEGIES.md](docs/STRATEGIES.md) for detailed behaviour.
 
 ---

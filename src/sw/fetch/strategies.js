@@ -200,12 +200,12 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   const cached = (await getFromRuntime(request, matchOptions)) ?? (await getFromOffline(request, matchOptions));
 
   // Single network request, shared by the background refresh and the
-  // cache-miss path (previously a miss issued two identical fetches).
-  const revalidate = fetch(request).then((response) => {
-    // clone() happens synchronously here, before the caller consumes the body
+  // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
+  const revalidate = (async () => {
+    const response = await fetch(request);
     safePutInRuntime(request, response, event);
     return response;
-  });
+  })();
 
   if (cached) {
     // Serve stale immediately; keep the SW alive for the background refresh.
@@ -214,9 +214,29 @@ export async function staleWhileRevalidate(request, event, options = {}) {
     return tagResponse(cached, CACHE_STATUS.STALE);
   }
 
-  // No cache — wait for the same request
-  const response = await revalidate;
-  return tagResponse(response, CACHE_STATUS.NETWORK);
+  // No cache — wait for network, fall back to offline handling if network fails
+  try {
+    const response = await revalidate;
+    return tagResponse(response, CACHE_STATUS.NETWORK);
+  } catch {
+    // Navigation fallback for SPAs or offline pages
+    if (request.mode === 'navigate') {
+      const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+      const fallbackRes = await getFromCache(fallbackUrl);
+      if (fallbackRes) {
+        return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+      }
+    }
+
+    // Return a typed offline error response instead of throwing
+    return tagResponse(
+      new Response('Offline — no cached version available.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+      CACHE_STATUS.OFFLINE_FALLBACK,
+    );
+  }
 }
 
 // ── cache-only ──────────────────────────────────────────────────────────

@@ -10,8 +10,8 @@ export function makeServer(version, files) {
   state.fetch = async (r) => {
     const path = new URL(r.url).pathname;
     state.calls.push(path);
-    if (path === '/api/update/version') return Response.json({ version: state.version });
-    if (path === '/api/update/info') {
+    if (path === '/api/update/version' || path === '/api/update/version.json') return Response.json({ version: state.version });
+    if (path === '/api/update/info' || path === '/api/update/info.json') {
       return Response.json({
         version: state.version,
         // `lie` lets a test advertise a hash that doesn't match the served bytes

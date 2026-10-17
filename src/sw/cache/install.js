@@ -55,8 +55,10 @@ async function precacheWithoutManifest() {
   try {
     const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
     if (configRes.ok) {
-      await offlineCache.put(configPath, configRes.clone());
-      updateActiveConfig(await configRes.json());
+      const cloned = configRes.clone();
+      const data = await configRes.json();
+      await offlineCache.put(configPath, cloned);
+      updateActiveConfig(data);
     } else {
       console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
       await loadConfigFromCache();

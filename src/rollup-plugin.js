@@ -48,7 +48,7 @@ async function loadConfig(configPath) {
   }
 
   const fileUrl = pathToFileURL(configPath).href;
-  const mod = await import(fileUrl);
+  const mod = await import(`${fileUrl}?t=${Date.now()}`);
   return mod.default ?? mod;
 }
 
@@ -67,8 +67,25 @@ export function nlpwaPlugin(options = {}) {
   const virtualModuleId = 'virtual:nlpwa-version';
   const resolvedVirtualModuleId = '\0' + virtualModuleId;
 
+  let targetVersion = null;
+  let targetConfig = null;
+  let targetConfigPath = null;
+
+  async function resolveTargetVersion() {
+    targetConfigPath = findConfigFile(options.config);
+    targetConfig = await loadConfig(targetConfigPath);
+    const prevVersion = targetConfig.version ?? '1.0.0';
+    const autoInc = options.autoIncrement !== false && !options.version;
+    targetVersion = options.version ?? (autoInc ? incrementPatch(prevVersion) : prevVersion);
+    return { targetVersion, targetConfig, targetConfigPath };
+  }
+
   return {
     name: 'nlpwa',
+
+    async buildStart() {
+      await resolveTargetVersion();
+    },
 
     resolveId(id) {
       if (id === virtualModuleId) {
@@ -78,23 +95,26 @@ export function nlpwaPlugin(options = {}) {
 
     async load(id) {
       if (id === resolvedVirtualModuleId) {
-        const configPath = findConfigFile(options.config);
-        const config = await loadConfig(configPath);
-        const version = options.version ?? config.version ?? '1.0.0';
-        return `export const APP_VERSION = ${JSON.stringify(version)};\nexport default APP_VERSION;\n`;
+        if (!targetVersion) {
+          await resolveTargetVersion();
+        }
+        return `export const APP_VERSION = ${JSON.stringify(targetVersion)};\nexport default APP_VERSION;\n`;
       }
     },
 
     async writeBundle(bundleOptions) {
       if (options.generateManifest === false) return;
 
-      const configPath = findConfigFile(options.config);
-      const rawConfig = await loadConfig(configPath);
+      if (!targetVersion) {
+        await resolveTargetVersion();
+      }
+
+      const configPath = targetConfigPath;
+      const rawConfig = targetConfig || {};
       const distDir = resolve(process.cwd(), options.distDir ?? bundleOptions.dir ?? './dist');
 
-      const prevVersion = rawConfig.version ?? '1.0.0';
+      const appVersion = targetVersion;
       const autoInc = options.autoIncrement !== false && !options.version;
-      const appVersion = options.version ?? (autoInc ? incrementPatch(prevVersion) : prevVersion);
 
       // 1. Sync version back to source config if auto-incremented
       if (autoInc && configPath && existsSync(configPath)) {
@@ -129,8 +149,10 @@ export function nlpwaPlugin(options = {}) {
 
       mkdirSync(distDir, { recursive: true });
 
-      // 2. Emit config.json in distDir
-      const configJsonPath = resolve(distDir, 'config.json');
+      // 2. Emit config file in distDir (dynamically from runtimeConfig.configPath)
+      const cleanConfigPath = runtimeConfig.configPath.replace(/^\/+/, '');
+      const configJsonPath = resolve(distDir, cleanConfigPath);
+      mkdirSync(dirname(configJsonPath), { recursive: true });
       const jsonIndent = options.pretty ? 2 : 0;
       writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
 
@@ -184,7 +206,7 @@ export function nlpwaPlugin(options = {}) {
       writeFileSync(versionOut, JSON.stringify({ version: appVersion }, null, jsonIndent), 'utf8');
       writeFileSync(infoOut, JSON.stringify({ version: appVersion, files }, null, jsonIndent), 'utf8');
 
-      console.log(`[NLPWA] Emitted config.json and update API (v${appVersion}, ${files.length} tracked offline files)`);
+      console.log(`[NLPWA] Emitted ${cleanConfigPath} and update API (v${appVersion}, ${files.length} tracked offline files)`);
     },
   };
 }

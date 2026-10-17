@@ -67,3 +67,23 @@ test('staleWhileRevalidate: offline with a cached copy does not throw', async ()
   assert.equal(await text(res), 'old');
   await event.settle(); // must resolve, not reject
 });
+
+test('staleWhileRevalidate: offline cache miss returns 503 offline-fallback without throwing', async () => {
+  setupEnv(async () => { throw new TypeError('offline'); });
+  const event = fakeEvent();
+  const res = await staleWhileRevalidate(req('/feed'), event);
+  assert.equal(res.status, 503);
+  assert.equal(res.headers.get('X-Cache-Status'), 'offline-fallback');
+});
+
+test('staleWhileRevalidate: offline cache miss for navigation returns navigationFallback', async () => {
+  const caches = setupEnv(async () => { throw new TypeError('offline'); });
+  await (await caches.open('offline')).put(req('/index.html'), new Response('spa shell'));
+  const navReq = req('/about');
+  Object.defineProperty(navReq, 'mode', { value: 'navigate' });
+  const event = fakeEvent();
+  const res = await staleWhileRevalidate(navReq, event, { navigationFallback: '/index.html' });
+  assert.equal(res.status, 200);
+  assert.equal(await text(res), 'spa shell');
+  assert.equal(res.headers.get('X-Cache-Status'), 'offline-cache');
+});

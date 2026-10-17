@@ -1,4 +1,4 @@
-import { onUpdateReady } from './update-ui.js';
+import { onUpdateReady, applyUpdate } from './update-ui.js';
 import { requestUpdateCheck } from './messaging.js';
 
 /**
@@ -53,7 +53,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
       const activeTag = document.activeElement?.tagName?.toLowerCase();
       const isEditing = activeTag === 'input' || activeTag === 'textarea' || document.activeElement?.isContentEditable;
       if (!isEditing) {
-        window.location.reload();
+        applyUpdate();
       } else {
         console.warn('[NLPWA] Auto-reload deferred: active input focused.');
       }

@@ -22,6 +22,9 @@ export const CACHE_STATUS = {
 
   /** Synthetic 503: no network and no cached version available */
   OFFLINE_FALLBACK: 'offline-fallback',
+
+  /** Request bypassed the Service Worker cache */
+  BYPASS:           'bypass',
 };
 
 /** Name of the response header injected by the SW */

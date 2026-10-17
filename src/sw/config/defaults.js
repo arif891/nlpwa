@@ -33,8 +33,8 @@ export const DEFAULTS = {
    * - info: full manifest returning { version: 'x.y.z', files: [...] }
    */
   updateAPI: {
-    version: '/api/update/version',
-    info: '/api/update/info',
+    version: '/api/update/version.json',
+    info: '/api/update/info.json',
   },
 
   /**

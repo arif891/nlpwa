@@ -15,13 +15,38 @@ import { openActive } from './store.js';
  * @param {string} url  full URL string
  * @returns {boolean}
  */
-function isCacheableUrl(url) {
+export function isCacheableUrl(url) {
   const { routes, defaultStrategy } = getConfig();
 
+  let requestUrl;
+  try {
+    requestUrl = new URL(url);
+  } catch {
+    return false;
+  }
+
+  const isSameOrigin = typeof self !== 'undefined' && self.location
+    ? requestUrl.origin === self.location.origin
+    : true;
+
   for (const route of routes) {
-    if (matchGlob(route.match, url)) {
+    if (route.origin) {
+      if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+        continue;
+      }
+    } else if (!isSameOrigin) {
+      // Unspecified origin matches ONLY same-origin requests
+      continue;
+    }
+
+    if (matchGlob(route.match, requestUrl.pathname)) {
       return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
     }
+  }
+
+  // Cross-origin requests without an explicit origin route pass through without caching
+  if (!isSameOrigin) {
+    return false;
   }
 
   // No route matched — fall back to defaultStrategy

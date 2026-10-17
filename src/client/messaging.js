@@ -7,8 +7,10 @@ import { MESSAGE_TYPES } from '../shared/constants.js';
  * @returns {Promise<void>}
  */
 export async function sendToSW(message) {
+  if (!('serviceWorker' in navigator)) return;
   const registration = await navigator.serviceWorker.ready;
-  registration.active?.postMessage(message);
+  const sw = navigator.serviceWorker.controller || registration.active;
+  sw?.postMessage(message);
 }
 
 /**

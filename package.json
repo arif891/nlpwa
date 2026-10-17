@@ -14,21 +14,35 @@
   "files": [
     "out",
     "bin",
-    "src",
+    "types",
     "README.md",
     "LICENSE"
   ],
   "engines": {
     "node": ">=18"
   },
+  "types": "./types/index.d.ts",
   "exports": {
-    "./sw":     "./out/sw.module.js",
+    "./sw": {
+      "types": "./types/sw.d.ts",
+      "import": "./out/sw.module.js",
+      "default": "./out/sw.module.js"
+    },
     "./client": {
-      "import":  "./out/client.esm.js",
+      "types": "./types/client.d.ts",
+      "import": "./out/client.esm.js",
       "default": "./out/client.js"
     },
-    "./config": "./out/config.js",
-    "./rollup": "./src/rollup-plugin.js",
+    "./config": {
+      "types": "./types/config.d.ts",
+      "import": "./out/config.js",
+      "default": "./out/config.js"
+    },
+    "./rollup": {
+      "types": "./types/rollup.d.ts",
+      "import": "./out/rollup-plugin.js",
+      "default": "./out/rollup-plugin.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

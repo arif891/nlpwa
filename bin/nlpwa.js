@@ -18,7 +18,20 @@ import { createHash }                            from 'node:crypto';
 import { readFileSync, writeFileSync, statSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, relative, resolve, dirname }      from 'node:path';
 import { fileURLToPath, pathToFileURL }          from 'node:url';
-import { incrementPatch }                        from '../src/shared/version.js';
+let incrementPatch;
+try {
+  ({ incrementPatch } = await import('../out/version.js'));
+} catch {
+  try {
+    ({ incrementPatch } = await import('../src/shared/version.js'));
+  } catch {
+    incrementPatch = (version) => {
+      const base = String(version || '1.0.0').split('-')[0];
+      const parts = base.split('.').map(s => parseInt(s, 10) || 0);
+      return `${parts[0] ?? 0}.${parts[1] ?? 0}.${(parts[2] ?? 0) + 1}`;
+    };
+  }
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +108,7 @@ async function loadConfig(configPath) {
 
   // Dynamic import for .js / .mjs config files
   const fileUrl = pathToFileURL(configPath).href;
-  const mod = await import(fileUrl);
+  const mod = await import(`${fileUrl}?t=${Date.now()}`);
   return mod.default ?? mod;
 }
 
@@ -303,11 +316,13 @@ async function cmdUpdate(args) {
 
   mkdirSync(targetDir, { recursive: true });
 
-  // 1. Write runtime config.json into target directory
-  const configJsonPath = resolve(targetDir, 'config.json');
+  // 1. Write runtime config into target directory
+  const cleanConfigPath = (runtimeConfig.configPath || '/config.json').replace(/^\/+/, '');
+  const configJsonPath = resolve(targetDir, cleanConfigPath);
+  mkdirSync(dirname(configJsonPath), { recursive: true });
   const jsonIndent = args.pretty ? 2 : 0;
   writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
-  console.log(`  ${c.green}+${c.reset} ${c.cyan}/config.json${c.reset} (generated from config.js)`);
+  console.log(`  ${c.green}+${c.reset} ${c.cyan}/${cleanConfigPath}${c.reset} (generated from config.js)`);
 
   // 2. Track ONLY offline cached files and the config file
   const trackedUrlPaths = Array.from(new Set([

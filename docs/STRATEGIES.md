@@ -27,9 +27,8 @@ Every response intercepted by NLPWA includes an `X-Cache-Status` response header
 | `offline-cache` | Served from the active versioned offline cache (`precache` + `config.json`) |
 | `runtime-cache` | Served from the dynamic runtime cache |
 | `network` | Fetched fresh from the network |
-| `stale-offline-cache` | Served immediately from offline cache while revalidating in background |
-| `stale-runtime-cache` | Served immediately from runtime cache while revalidating in background |
-| `offline-fallback` | Offline fallback served for navigation when requested page is uncached |
+| `stale` | Served immediately from cache while revalidating in background |
+| `offline-fallback` | Offline fallback served for navigation or cache misses when offline |
 | `bypass` | Request bypassed the Service Worker cache |
 
 ---

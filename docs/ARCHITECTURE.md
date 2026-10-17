@@ -94,10 +94,10 @@ CacheStorage
 ```
 install event
   └─ precacheFiles()
-       └─ fetch('/config.json', { cache: 'no-store' })
-            └─ caches.open('offline').put('/config.json', response)
-            └─ updateActiveConfig(runtimeConfig)  ← hydrates routes & precache
-       └─ cache.add(url) for each url in config.precache
+       └─ fetch('/config.json', { cache: 'no-store' }) & app shell (or update manifest)
+       └─ stages initial version in offline@<version>-<id> cache
+       └─ writes snapshot to staged cache (marks cache complete)
+       └─ commits immediately via setActive() and hydrates active config
   └─ self.skipWaiting()
 ```
 
@@ -106,6 +106,7 @@ install event
 ```
 activate event
   └─ self.clients.claim()
+  └─ sweepOrphanCaches()      ← cleans up unreferenced staging caches
   └─ loadConfigFromCache()    ← ensures in-memory routes are ready
   └─ startUpdatePolling()     ← sets interval timer
   └─ checkForUpdate()         ← runs initial two-tier check
@@ -115,15 +116,18 @@ activate event
 
 ```
 fetch event (GET, http/https only)
+  └─ ensureConfigReady()
+  └─ if request.mode === 'navigate':
+       └─ commitIfReady()     ← switches to staged update before serving new page!
   └─ resolveStrategy(request)
        └─ iterate active config.routes (hydrated from offline cache) top-to-bottom
             └─ matchGlob(route.match, request.url)
                  └─ first match → return strategy function
                  └─ no match   → return defaultStrategy function
-  └─ event.respondWith(strategyFn(request))
+  └─ event.respondWith(strategyFn(request, event))
 ```
 
-### 4. Two-Tier Update Check
+### 4. Two-Tier Update Check & Atomic Staging
 
 ```
 checkForUpdate()
@@ -131,42 +135,51 @@ checkForUpdate()
   ├─ [guard] _updateInProgress lock — prevents concurrent runs
   │
   ├─ Tier 1: fetchServerVersion()
-  │    └─ GET /api/update/version  { cache: 'no-store' }
+  │    └─ GET /api/update/version.json  { cache: 'no-store' }
   │    └─ isNewer(server.version, cached.version)?
   │         └─ false & no SW engine change: STOP (no heavy downloads)
   │
   ├─ Tier 2: fetchServerManifest()
-  │    └─ GET /api/update/info  { cache: 'no-store' }
+  │    └─ GET /api/update/info.json  { cache: 'no-store' }
   │
   ├─ computeDiff(server.files, cached.files)
   │    └─ Map-based comparison → { added[], modified[], removed[] }
   │
-  ├─ applyDiff(diff, serverManifest)
-  │    ├─ fetch added + modified → putInOffline()
-  │    │    └─ if /config.json in diff: reload in-memory routes dynamically!
-  │    ├─ deleteFromOffline() for removed
-  │    ├─ evictFromRuntime() for modified + removed
-  │    ├─ evictByRoute() using updated routes
-  │    └─ saveCachedManifest(newManifest)
+  ├─ stageUpdate(manifest, diff) in separate offline@<version>-<id> cache
+  │    ├─ reuse files already verified in partial staging cache (resume)
+  │    ├─ copy unchanged files locally from active cache (zero network bytes)
+  │    ├─ fetch added + modified files with { cache: 'no-store' }
+  │    ├─ verify SHA-256 against manifest hashes (config.verifyHashes)
+  │    ├─ if single file fails 5 times (MAX_RETRY_ATTEMPTS): proceed degraded
+  │    ├─ write snapshot to staged cache (marks staging complete)
+  │    └─ record staged pointer in nlpwa-meta (/_nlpwa/staged.json)
   │
-  └─ broadcast({ type: 'UPDATE_READY', version })
+  └─ broadcast({ type: 'UPDATE_READY', version, partial })
        └─ clients.matchAll() → client.postMessage(...)
+
+Commit Phase: commitStaged() (triggered on navigation or APPLY_UPDATE message):
+  ├─ atomically switch active pointer in nlpwa-meta (/_nlpwa/active.json)
+  ├─ clear staged pointer
+  ├─ reload config.json into in-memory router
+  ├─ evict modified/removed entries from runtime cache
+  ├─ evictByRoute() using updated routes
+  └─ prune old offline caches
 ```
 
 ### 5. Client Update Flow
 
 ```
-SW postMessage({ type: 'UPDATE_READY', version })
+SW postMessage({ type: 'UPDATE_READY', version, partial })
   └─ onSWMessage handler in register.js
-       ├─ options.onUpdateReady({ version })  ← user callback
+       ├─ options.onUpdateReady({ version, partial })  ← user callback
        ├─ document.dispatchEvent('nlpwa:update-ready')
-       └─ options.autoReload → window.location.reload()
+       └─ options.autoReload → deferred if user is editing inputs, else reload
 
-User clicks "Refresh"
+User clicks "Refresh" (or calls NLPWAClient.applyUpdate()):
   └─ NLPWAClient.applyUpdate()
+       └─ sendToSW({ type: 'APPLY_UPDATE' }) → awaits UPDATE_APPLIED reply
        └─ window.location.reload()
-            └─ browser re-requests resources
-                 └─ SW serves from updated offline cache
+            └─ browser navigation request commits staged cache and serves new version
 ```
 
 ---
@@ -203,11 +216,11 @@ The SW is single-threaded, but `checkForUpdate()` is async. A boolean lock (`_up
 | SW vs. App Versioning | Separated (SW manual, App build-managed) | App updates don't cause browser byte-level SW reinstalls |
 | Dynamic Config | `config.js` → `config.json` in `offline` cache | Route and strategy changes update OTA without touching SW code |
 | File Tracking Scope | Offline files (`config.precache`) + `config.json` only | Runtime assets are cached lazily; keeps manifest tiny & focused |
-| Two-Tier Update API | `/version` (check) + `/info` (manifest) | Polling costs ~20 bytes instead of pulling full file trees |
-| Cache layout | `offline` + `runtime` only | No versioned cache proliferation |
-| Manifest storage | Cache entry at `/_nlpwa/manifest.json` | No IndexedDB; survives SW restarts |
+| Two-Tier Update API | `/version.json` (check) + `/info.json` (manifest) | Polling costs ~20 bytes instead of pulling full file trees |
+| Cache layout | `nlpwa-meta` + `offline@<version>-<id>` + `runtime` | Atomic active pointer ensures zero mixed-version states; old caches pruned on commit |
+| Manifest storage | Cache snapshot at `/_nlpwa/snapshot.json` | Survives SW restarts, marks cache complete, no IndexedDB required |
 | Diff computation | Client-side (SW) | Server stays stateless; no complex delta calculations |
 | Eviction rule | Route-strategy-aware | Routes define cacheability; not file presence |
-| Update failure | Skip & log (no rollback) | Self-healing on next check; simpler code |
+| Atomic Staging & Resumption | Separate staging cache + SHA-256 verification | Downloads stage in a separate cache; live app stays untouched until atomic commit. Failed downloads resume, degraded fallback after 5 retries |
 | SW format | ES module (`type: 'module'`) | Modern browsers support it; readable output |
-| Client format | IIFE (`NLPWAClient`) | Drop-in `<script>` tag; no bundler required |
+| Client format | IIFE (`NLPWAClient`) + ES module export | Drop-in `<script>` tag or bundler import |

@@ -13,10 +13,24 @@ directly to the network.
 | Strategy | Serves from | Network fallback | Caches response | Best for |
 |---|---|---|---|---|
 | `cache-first` | Offline → Runtime | Yes (on miss) | ✅ Runtime | Static assets |
-| `network-first` | Network | Cache (offline) | ✅ Runtime | HTML, user data |
+| `network-first` | Network | Cache (offline → runtime) | ✅ Runtime | HTML, user data |
 | `network-only` | Network | ❌ None | ❌ Never | API mutations |
 | `stale-while-revalidate` | Cache (instant) | Blocks if no cache | ✅ Runtime | Feeds, listings |
 | `cache-only` | Cache | 503 response | ❌ Never | Offline fallback |
+
+### `X-Cache-Status` Headers
+
+Every response intercepted by NLPWA includes an `X-Cache-Status` response header for debugging and observability:
+
+| Header Value | Meaning |
+|---|---|
+| `offline-cache` | Served from the active versioned offline cache (`precache` + `config.json`) |
+| `runtime-cache` | Served from the dynamic runtime cache |
+| `network` | Fetched fresh from the network |
+| `stale-offline-cache` | Served immediately from offline cache while revalidating in background |
+| `stale-runtime-cache` | Served immediately from runtime cache while revalidating in background |
+| `offline-fallback` | Offline fallback served for navigation when requested page is uncached |
+| `bypass` | Request bypassed the Service Worker cache |
 
 ---
 
@@ -51,21 +65,23 @@ Request → offline cache → runtime cache → network → store in runtime
 ## `network-first`
 
 ```
-Request → network → store in runtime → return
-                ↓ (network fails)
-          offline cache → runtime cache → 503 if nothing
+Request → network (within networkTimeoutMs) → store in runtime → return
+                 ↓ (timeout / network fails)
+           offline cache → runtime cache → 503 (or navigationFallback)
 ```
 
 **Behaviour:**
-1. Fetch from network
-2. On success: store in `runtime` cache, return response
-3. On network failure: check `offline` then `runtime` cache
-4. If nothing cached: return a `503` text response (never throws)
+1. Fetch from network.
+2. If `networkTimeoutMs` is configured and elapses while a cached response exists, the cached response is served immediately while the network fetch continues in the background to refresh the cache.
+3. If no cached response exists, it continues waiting for the network rather than immediately returning 503.
+4. On network success: store in `runtime` cache, return response.
+5. On network failure: check `offline` then `runtime` cache.
+6. If offline with no cache match for navigation requests: falls back to `navigationFallback` if configured. Otherwise returns a `503` text response (never throws).
 
 **Characteristics:**
 - Always fresh when online
 - Graceful offline fallback using last-cached response
-- Adds a small latency vs `cache-first` (one network round-trip per request)
+- Optional `networkTimeoutMs` avoids slow-network hanging for users with cached data
 
 **Best for:** Content that must be fresh when online but should still work offline:
 - HTML pages (`/`, `/about`, `/dashboard`)

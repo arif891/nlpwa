@@ -33,8 +33,8 @@ export default {
 
   // Two-tier update endpoints
   updateAPI: {
-    version: '/api/update/version',
-    info:    '/api/update/info',
+    version: '/api/update/version.json',
+    info:    '/api/update/info.json',
   },
 
   // Update check polling interval
@@ -81,10 +81,14 @@ Defines the two-tier update check endpoints:
 
 ```js
 updateAPI: {
-  version: '/api/update/version',
-  info:    '/api/update/info',
+  version: '/api/update/version.json',
+  info:    '/api/update/info.json',
 }
 ```
+
+> **CLI Output Handling:** When you run `nlpwa update`, the CLI automatically resolves the disk output based on your endpoints:
+> - If an endpoint ends with `.json` (e.g. `/api/update/version.json`), it generates `dist/api/update/version.json`.
+> - If an endpoint has no extension (e.g. `/api/update/version`), it generates directory `index.json` files (`dist/api/update/version/index.json`).
 
 *(Also supports array format: `[{ type: 'version', endpoint: '...' }, { type: 'info', endpoint: '...' }]` or legacy `manifestEndpoint`).*
 
@@ -236,16 +240,34 @@ Must be one of the five strategy names listed above.
 
 ## Full Example
 
+### `sw.js` (Service Worker Engine)
+
 ```js
 import { initSW } from '/nlpwa.sw.js';
 
 initSW({
+  // SW engine logic version — managed manually by the developer
+  version: '1',
+
+  // Path to runtime config file (read from and stored in offline cache)
+  configPath: '/config.json',
+});
+```
+
+### `config.js` (Application Configuration)
+
+```js
+export default {
   // ── Identity ───────────────────────────────────────────────────────────────
   version: '2.1.0',
 
   // ── Update ─────────────────────────────────────────────────────────────────
-  manifestEndpoint:    '/api/manifest/latest',
+  updateAPI: {
+    version: '/api/update/version.json',
+    info:    '/api/update/info.json',
+  },
   updateCheckInterval: 60 * 60 * 1000,          // 1 hour
+  verifyHashes: 'strict',                        // 'strict' | 'warn' | false
 
   // ── Caches ─────────────────────────────────────────────────────────────────
   caches: {
@@ -288,7 +310,7 @@ initSW({
   ],
 
   defaultStrategy: 'network-first',
-});
+};
 ```
 
 ---

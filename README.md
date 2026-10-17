@@ -54,8 +54,8 @@ export default {
 
   // Two-tier update endpoints
   updateAPI: {
-    version: '/api/update/version',
-    info:    '/api/update/info',
+    version: '/api/update/version.json',
+    info:    '/api/update/info.json',
   },
 
   // Check for updates every hour
@@ -107,8 +107,10 @@ npx nlpwa update --dir ./dist
 
 This generates:
 - `dist/config.json` (runtime config for the SW offline cache)
-- `dist/api/update/version/index.json` (`{ "version": "1.0.1" }`)
-- `dist/api/update/info/index.json` (`{ "version": "1.0.1", "files": [...] }`)
+- `dist/api/update/version.json` (`{ "version": "1.0.1" }`)
+- `dist/api/update/info.json` (`{ "version": "1.0.1", "files": [...] }`)
+
+*(Note: If custom endpoint paths do not end with `.json`, e.g. `/api/update/version`, the CLI automatically generates directory `index.json` files).*
 
 ### 5. Register from your HTML
 
@@ -119,7 +121,7 @@ This generates:
   import { register, applyUpdate } from '/client.js';
 
   register('/sw.js', {
-    onUpdateReady: ({ version }) => {
+    onUpdateReady: ({ version, partial }) => {
       document.getElementById('update-banner').hidden = false;
     },
   });
@@ -152,19 +154,19 @@ An update is built in a brand-new `offline@…` cache while the active one keeps
 
 ```
 1. SW active → triggers check (on activate + every interval + tab focus)
-2. Tier 1: GET /api/update/version → { version }
+2. Tier 1: GET /api/update/version.json → { version }
 3. Compare against the live version → already up to date? STOP immediately.
-4. Tier 2: GET /api/update/info → { version, files: [{path, hash}] }
-5. Stage a new offline@<version> cache (the running app is not touched):
+4. Tier 2: GET /api/update/info.json → { version, files: [{path, hash}] }
+5. Stage a new offline@<version>-<id> cache (the running app is not touched):
    - unchanged files (same hash as live) are copied locally, no network
    - added/modified files are fetched (no-store) and their SHA-256 is
      checked against the manifest (config.verifyHashes)
    - files that verified earlier are reused when a failed update is retried
 6. Write the snapshot last (marks the staged cache complete)
-7. postMessage UPDATE_READY → client shows the update prompt
-8. On the next page load (or NLPWAClient.applyUpdate()):
-   switch the active pointer, reload config.json, evict changed entries from
-   the runtime cache, route-aware eviction, delete the old offline cache
+7. postMessage UPDATE_READY ({ version, partial }) → client shows update prompt
+8. On the next page navigation (or NLPWAClient.applyUpdate()):
+   switch the active pointer in nlpwa-meta, reload config.json, evict changed
+   entries from runtime cache, route-aware eviction, delete old offline cache
 ```
 
 First install runs the same pipeline during `install` and switches at once (no prompt), so the first update check has nothing left to download. If a file keeps failing, the old version stays live; after 5 consecutive failed checks the update goes ahead without that file (it keeps its old copy) and is retried on the next version bump.
@@ -181,21 +183,22 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `onUpdateReady` | `Function` | — | Called with `{ version }` when update is ready |
-| `autoReload` | `boolean` | `false` | Reload automatically on update |
+| `onUpdateReady` | `Function` | — | Called with `{ version, partial }` when update is ready |
+| `autoReload` | `boolean` | `false` | Reload automatically on update (deferred if user is typing in inputs) |
 | `checkOnFocus` | `boolean` | `true` | Check for update when tab gains focus |
-| `focusThrottleMs` | `number` | `300000` | Min ms between focus-triggered checks |
+| `focusThrottleMs` | `number` | `300000` | Min ms between focus-triggered checks (5 min) |
+| `pollIntervalMs` | `number` | `3600000` | Client interval (ms) to check updates while tab is active (1 hr) |
 
-### Client: `NLPWAClient.applyUpdate()`
+### Client: `NLPWAClient.applyUpdate(options)`
 
-Asks the SW to switch to the staged update, then reloads the page. (A plain reload also applies it, because the switch happens on navigation.)
+Asks the SW to switch to the staged update via `APPLY_UPDATE` message, waits for `UPDATE_APPLIED` confirmation (default timeout: 3000ms), and then reloads the page. (A plain navigation or reload also applies the update automatically.)
 
 ### Client events
 
 ```js
 // CustomEvent fired on document when update is ready
 document.addEventListener('nlpwa:update-ready', (e) => {
-  console.log('New version:', e.detail.version);
+  console.log('New version:', e.detail.version, 'Partial:', e.detail.partial);
 });
 ```
 
@@ -212,12 +215,13 @@ navigator.serviceWorker.controller?.postMessage({ type: 'CHECK_UPDATE' });
 
 | Strategy | Serves from | Falls back to | Caches response | Best for |
 |---|---|---|---|---|
-| `cache-first` | Cache | Network | ✅ Runtime | Static assets, fonts, images |
-| `network-first` | Network | Cache | ✅ Runtime | HTML pages, user data |
+| `cache-first` | Cache (offline → runtime) | Network | ✅ Runtime | Static assets, fonts, images |
+| `network-first` | Network | Cache (offline → runtime) | ✅ Runtime | HTML pages, user data |
 | `network-only` | Network | — | ❌ Never | API mutations (POST/PUT/DELETE) |
-| `stale-while-revalidate` | Cache (instant) | Network (block) | ✅ Runtime | Feeds, listings |
+| `stale-while-revalidate` | Cache (instant) | Network (block if uncached) | ✅ Runtime | Feeds, listings |
 | `cache-only` | Cache | 503 response | ❌ Never | Offline-only fallback |
 
+All intercepted responses carry an `X-Cache-Status` header (`offline-cache`, `runtime-cache`, `network`, `stale-runtime-cache`, `stale-offline-cache`, `offline-fallback`, or `bypass`).
 See [docs/STRATEGIES.md](docs/STRATEGIES.md) for detailed behaviour.
 
 ---

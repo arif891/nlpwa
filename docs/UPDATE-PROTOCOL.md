@@ -11,7 +11,7 @@ NLPWA uses a **two-tier** update protocol to minimize network overhead on mobile
 ### Tier 1: Lightweight Version Check
 
 ```
-GET /api/update/version
+GET /api/update/version.json
 ```
 
 Returned periodically or on tab focus to determine if an update is available.
@@ -23,17 +23,19 @@ Returned periodically or on tab focus to determine if an update is available.
 }
 ```
 
-If the returned `version` is not newer than the currently cached app version, the update check **stops immediately** without downloading any file lists.
+If the returned `version` is not newer than the currently cached app version (and the SW engine version is unchanged), the update check **stops immediately** without downloading any file lists.
 
 ---
 
 ### Tier 2: Full Manifest & Hashes
 
 ```
-GET /api/update/info
+GET /api/update/info.json
 ```
 
 Fetched **only** if Tier 1 reports a strictly newer version. Contains the complete list of tracked offline files with their SHA-256 hashes.
+
+*(Note: Custom endpoints without `.json` extension, such as `/api/update/version` and `/api/update/info`, are also fully supported).*
 
 **Response:** `200 OK`, `application/json`
 ```json
@@ -55,7 +57,7 @@ Fetched **only** if Tier 1 reports a strictly newer version. Contains the comple
 | `version` | `string` | ✅ | Semantic version of the deployment (auto-incremented by build tool) |
 | `files` | `array` | ✅ | List of tracked offline files and their hashes |
 | `files[].path` | `string` | ✅ | URL pathname starting with `/` |
-| `files[].hash` | `string` | ✅ | Stable content hash (SHA-256 first 8 hex characters) |
+| `files[].hash` | `string` | ✅ | Stable content hash (SHA-256 hex string or first 8+ hex chars) |
 
 ---
 
@@ -138,66 +140,80 @@ export default function nlpwaManifest() {
 
 ## Client-Side Update Algorithm
 
-### Step 1 — Version check
+### Step 1 — Tier 1 Version check
 
 ```
-GET /api/manifest/latest  →  { version: "1.4.2", files: [...] }
+GET /api/update/version.json  →  { version: "1.4.2" }
 
-isNewer("1.4.2", config.version)
+isNewer("1.4.2", activeVersion)
   → false: no update, broadcast NO_UPDATE, stop
-  → true:  continue
+  → true:  continue to Tier 2
 ```
 
-### Step 2 — Load cached manifest
+### Step 2 — Tier 2 Full Manifest
 
 ```
-offline['/_nlpwa/manifest.json']
-  → found:   { version: "1.3.0", files: [...oldFiles] }
-  → not found: treat oldFiles as []  (fresh install, all files are "added")
+GET /api/update/info.json  →  { version: "1.4.2", files: [...] }
 ```
 
-### Step 3 — Hash diff
+### Step 3 — Hash diff against active snapshot
 
 ```
-computeDiff(newFiles, oldFiles):
+cachedSnapshot = activeOffline['/_nlpwa/snapshot.json']
 
+computeDiff(newFiles, cachedSnapshot.files):
   for each file in newFiles:
-    if not in oldFiles:     → added
-    if hash differs:        → modified
-    if hash same:           → (no action)
+    if not in cachedSnapshot:     → added
+    if hash differs:              → modified
+    if hash same:                 → unchanged (no network needed)
 
-  for each file in oldFiles:
-    if not in newFiles:     → removed
+  for each file in cachedSnapshot:
+    if not in newFiles:           → removed
 ```
 
-### Step 4 — Apply diff
+### Step 4 — Staging in a separate cache (`stageUpdate`)
 
 ```
-For each path in added + modified:
-  fetch(path, { cache: 'no-store' })
-    → ok:     putInOffline(path, response)
-    → error:  log warning, skip (stale version stays, self-heals next check)
+Open separate cache: offline@1.4.2-<unique-id>
 
-For each path in removed:
-  deleteFromOffline(path)
-
-Evict from runtime cache:
-  → paths in modified (hash changed → serve fresh)
-  → paths in removed  (file gone)
-  → paths not in new manifest at all
-
-Route-aware eviction (both caches):
-  → any entry whose URL no longer matches a caching-capable route
-
-Save new manifest:
-  offline['/_nlpwa/manifest.json'] = newManifest
+1. Resumption: If file was already downloaded and hash verified in an
+   earlier partial staging attempt → reuse without re-downloading.
+2. Unchanged files: Copy locally from the active offline cache (0 bytes transferred).
+3. Added & modified files: Fetch fresh from network with { cache: 'no-store' }.
+4. Hash Verification:
+   - Compute SHA-256 of downloaded body.
+   - Match against manifest hash (config.verifyHashes: 'strict' | 'warn' | false).
+   - Strict mode rejects mismatches (and HTTP 200 HTML error pages).
+5. Error recovery:
+   - If a file repeatedly fails across 5 checks (MAX_RETRY_ATTEMPTS),
+     the update stages degraded by copying the older cached version.
+6. Seal staging:
+   - Write snapshot to offline@1.4.2-<unique-id>/_nlpwa/snapshot.json
+   - Write pointer in nlpwa-meta: /_nlpwa/staged.json { complete: true, ... }
 ```
 
 ### Step 5 — Notify clients
 
 ```
 clients.matchAll({ type: 'window' })
-  → client.postMessage({ type: 'UPDATE_READY', version: '1.4.2' })
+  → postMessage({ type: 'UPDATE_READY', version: '1.4.2', partial: false })
+```
+The client triggers a `nlpwa:update-ready` CustomEvent on `document` and invokes the `onUpdateReady` callback.
+
+### Step 6 — Atomic Commit (`commitStaged`)
+
+Commit happens smoothly without breaking running pages:
+- **On next navigation request** (`request.mode === 'navigate'`), or
+- **When user clicks refresh** via `NLPWAClient.applyUpdate()`.
+
+```
+commitStaged():
+  1. Atomic switch: write /_nlpwa/active.json pointer in nlpwa-meta.
+  2. Clear /_nlpwa/staged.json in nlpwa-meta.
+  3. Reload /config.json into in-memory SW router.
+  4. Evict modified & removed entries from runtime cache.
+  5. Route-aware eviction on runtime cache.
+  6. Prune old offline@... caches.
 ```
 
 ---
@@ -211,27 +227,22 @@ multiple versions is handled automatically:
 Client: v1.0.0  →  Server: v1.4.2
 ```
 
-The SW loads its cached manifest (which reflects v1.0.0's files), computes the
-diff against v1.4.2's files, and applies **one atomic update** covering all
+The SW loads its cached snapshot (which reflects v1.0.0's files), computes the
+diff against v1.4.2's files, and builds **one clean staged cache** covering all
 intermediate changes. No intermediate manifests are needed.
-
-This means you can also skip version numbers freely — version numbers are only
-used for the `isNewer()` comparison, not for routing through intermediate states.
 
 ---
 
-## Self-Healing
+## Self-Healing & Resumption
 
-Failures during `applyDiff` are non-fatal:
+Failures during staging never corrupt the running application:
 
 | Failure | Outcome |
 |---|---|
-| `fetch()` fails for a modified file | Old cached version stays; retried on next check |
+| `fetch()` fails or hash mismatches | Active version continues serving untouched; retry on next check |
+| Network drops mid-update | Verified files remain cached in staging; resumed on next check |
+| Single file permanently broken | Retried 5 times; then update proceeds degraded using previous copy |
 | Manifest endpoint unreachable | Update skipped entirely; retried on next check |
-| Partial update applied | Next check re-diffs and fetches any remaining changed files |
-
-The system converges towards the correct state on every check without any
-explicit retry logic, rollback, or transactional locking.
 
 ---
 
@@ -241,7 +252,8 @@ explicit retry logic, rollback, or transactional locking.
 
 | Type | Payload | Meaning |
 |---|---|---|
-| `UPDATE_READY` | `{ type, version }` | Update has been applied; client should prompt user |
+| `UPDATE_READY` | `{ type, version, partial }` | Staged update is complete; client should prompt user |
+| `UPDATE_APPLIED` | `{ type, applied }` | Staged update has been switched to active; client may reload |
 | `NO_UPDATE` | `{ type, version }` | Version check ran; client is already up to date |
 
 ### Client → SW
@@ -249,28 +261,25 @@ explicit retry logic, rollback, or transactional locking.
 | Type | Payload | Meaning |
 |---|---|---|
 | `CHECK_UPDATE` | `{ type }` | Client requests an immediate update check |
+| `APPLY_UPDATE` | `{ type }` | Client asks SW to commit staged update immediately |
 
 ### Client usage
 
 ```js
-// Listen for updates
-navigator.serviceWorker.addEventListener('message', (event) => {
-  if (event.data.type === 'UPDATE_READY') {
-    console.log('Ready to update to:', event.data.version);
-  }
+import { register, applyUpdate } from '/client.js';
+
+register('/sw.js', {
+  onUpdateReady: ({ version, partial }) => {
+    console.log('Update ready:', version, 'Partial:', partial);
+    // Show update notification UI
+    showUpdateBanner();
+  },
 });
 
-// Trigger manual check
-navigator.serviceWorker.controller?.postMessage({ type: 'CHECK_UPDATE' });
-```
-
-Or use the client library:
-
-```js
-document.addEventListener('nlpwa:update-ready', (e) => {
-  console.log('New version:', e.detail.version);
-  NLPWAClient.applyUpdate();  // or show a banner
-});
+// When user confirms update
+async function onUserClickUpdate() {
+  await applyUpdate(); // Sends APPLY_UPDATE, waits for confirmation, reloads
+}
 ```
 
 ---

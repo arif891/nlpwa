@@ -1,6 +1,6 @@
 # NLPWA — Native-like PWA Framework
 
-A lightweight, zero-runtime-dependency Service Worker framework that makes Progressive Web Apps feel truly native. It handles install-time caching, per-route fetch strategies, and seamless OTA (over-the-air) delta updates — all from two drop-in JS files.
+A lightweight, zero-runtime-dependency Service Worker framework that makes Progressive Web Apps feel truly native. It handles install-time caching, per-route fetch strategies, and seamless OTA (over-the-air) delta updates — all from three drop-in files (or npm package exports).
 
 ---
 
@@ -61,6 +61,9 @@ export default {
   // Check for updates every hour
   updateCheckInterval: 60 * 60 * 1000,
 
+  // Verify SHA-256 hashes against update manifest ('strict' | 'warn' | false)
+  verifyHashes: 'strict',
+
   // App shell files to track and offline-cache
   precache: [
     '/',
@@ -74,7 +77,7 @@ export default {
   routes: [
     { match: '/api/**',       strategy: 'network-only'           },
     { match: '/assets/**',    strategy: 'cache-first'            },
-    { match: '/pages/**',     strategy: 'network-first'          },
+    { match: '/pages/**',     strategy: 'network-first', networkTimeoutMs: 3000 },
     { match: '/_feeds/**',    strategy: 'stale-while-revalidate' },
     { match: '**',            strategy: 'network-first'          },
   ],
@@ -83,10 +86,12 @@ export default {
 
 ### 3. Initialize the Service Worker (`sw.js`)
 
-Your `sw.js` is the core engine. You only need to touch it when changing the low-level Service Worker engine version:
+When you run `npx nlpwa init`, the generated `sw.js` is **already the standalone, bundled engine** ready to run out of the box — no custom build step required.
+
+If you are customizing `sw.js` with a bundler (Vite or Rollup), you can import the engine directly:
 
 ```js
-import { initSW } from '/nlpwa.sw.js';
+import { initSW } from 'nlpwa/sw';
 
 initSW({
   // SW engine version (managed manually by dev)
@@ -112,7 +117,37 @@ This generates:
 
 *(Note: If custom endpoint paths do not end with `.json`, e.g. `/api/update/version`, the CLI automatically generates directory `index.json` files).*
 
-### 5. Register from your HTML
+#### CLI Reference
+
+| Command / Flag | Default | Description |
+|---|---|---|
+| `npx nlpwa init [--dir <path>]` | `./` | Copies `sw.js`, `client.js`, and `config.js` to target directory |
+| `npx nlpwa update [--dir <path>]` | `./dist` or `./` | Increments patch version, builds `config.json`, hashes offline files, and emits update API |
+| `--config <path>` | auto-detect | Path to custom config file (e.g. `./src/config.js`) |
+| `--version <semver>` | auto-increment | Explicit version override (e.g. `2.0.0`) |
+| `--pretty` | `false` | Pretty-print output JSON files with 2-space indentation |
+
+### 5. Bundler Integration (Vite / Rollup)
+
+If you use Vite or Rollup, you can automate updates on every build using the bundled plugin:
+
+```js
+// vite.config.js or rollup.config.js
+import { defineConfig } from 'vite';
+import nlpwa from 'nlpwa/rollup';
+
+export default defineConfig({
+  plugins: [
+    nlpwa({
+      config: './src/config.js', // path to config file
+      distDir: './dist',         // build output directory
+      pretty: true,
+    }),
+  ],
+});
+```
+
+### 6. Register from your HTML
 
 ```html
 <!-- In index.html, before closing </body> -->

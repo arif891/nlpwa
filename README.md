@@ -98,6 +98,12 @@ initSW({
   version: '1',
   // Path to runtime config (always read from and stored in offline cache)
   configPath: '/config.json',
+  // Where the update API lives. The first install runs before config.json is
+  // cached, so the engine needs these up front (match your config.js).
+  updateAPI: {
+    version: '/api/update/version.json',
+    info:    '/api/update/info.json',
+  },
 });
 ```
 
@@ -117,6 +123,8 @@ This generates:
 
 *(Note: If custom endpoint paths do not end with `.json`, e.g. `/api/update/version`, the CLI automatically generates directory `index.json` files).*
 
+Manifest hashes are the first 32 hex characters of each file's SHA-256 digest.
+
 #### CLI Reference
 
 | Command / Flag | Default | Description |
@@ -125,7 +133,7 @@ This generates:
 | `npx nlpwa update [--dir <path>]` | `./dist` or `./` | Increments patch version, builds `config.json`, hashes offline files, and emits update API |
 | `--config <path>` | auto-detect | Path to custom config file (e.g. `./src/config.js`) |
 | `--version <semver>` | auto-increment | Explicit version override (e.g. `2.0.0`) |
-| `--pretty` | `false` | Pretty-print output JSON files with 2-space indentation |
+| `--pretty` | `false` | Pretty-print output JSON files with 2-space indentation (compact by default) |
 
 ### 5. Bundler Integration (Vite / Rollup)
 
@@ -151,11 +159,10 @@ export default defineConfig({
 
 ```html
 <!-- In index.html, before closing </body> -->
-<script type="module" src="/client.js"></script>
-<script type="module">
-  import { register, applyUpdate } from '/client.js';
-
-  register('/sw.js', {
+<!-- client.js is a classic script that defines the global `NLPWAClient` -->
+<script src="/client.js"></script>
+<script>
+  NLPWAClient.register('/sw.js', {
     onUpdateReady: ({ version, partial }) => {
       document.getElementById('update-banner').hidden = false;
     },
@@ -165,8 +172,14 @@ export default defineConfig({
 <!-- Example update banner -->
 <div id="update-banner" hidden>
   A new version is available.
-  <button onclick="window.NLPWAClient.applyUpdate()">Refresh</button>
+  <button onclick="NLPWAClient.applyUpdate()">Refresh</button>
 </div>
+```
+
+Using a bundler instead? Import the ES module build:
+
+```js
+import { register, applyUpdate } from 'nlpwa/client';
 ```
 
 ---
@@ -275,8 +288,10 @@ npm run dev
 ```
 
 Output:
-- `out/sw.js` — Service Worker bundle (standalone core engine)
-- `out/client.js` — Client bundle (`NLPWAClient` & ES module exports)
+- `out/sw.js` — Standalone Service Worker (calls `initSW()` itself; copied by `nlpwa init`)
+- `out/sw.module.js` — Service Worker library (`import { initSW } from 'nlpwa/sw'`)
+- `out/client.js` — Client IIFE (global `NLPWAClient`)
+- `out/client.esm.js` — Client ES module (`import { register } from 'nlpwa/client'`)
 - `out/config.js` — Configuration template
 - `out/config.json` — Generated runtime config
 

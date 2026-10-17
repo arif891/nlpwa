@@ -5,11 +5,11 @@ import { createHash } from 'node:crypto';
 import { incrementPatch } from './shared/version.js';
 
 /**
- * SHA-256 first 8 hex characters.
+ * SHA-256 first 32 hex characters (128 bits).
  */
 function hashFile(filePath) {
   const content = readFileSync(filePath);
-  return createHash('sha256').update(content).digest('hex').slice(0, 8);
+  return createHash('sha256').update(content).digest('hex').slice(0, 32);
 }
 
 /**
@@ -120,8 +120,8 @@ export function nlpwaPlugin(options = {}) {
         version: appVersion,
         configPath: rawConfig.configPath || '/config.json',
         updateAPI: rawConfig.updateAPI || {
-          version: '/api/update/version',
-          info: '/api/update/info',
+          version: '/api/update/version.json',
+          info: '/api/update/info.json',
         },
         precache: rawConfig.precache || [],
         routes: rawConfig.routes || [],
@@ -154,8 +154,8 @@ export function nlpwaPlugin(options = {}) {
       }
 
       // 4. Emit update API outputs
-      let versionEndpoint = '/api/update/version';
-      let infoEndpoint = '/api/update/info';
+      let versionEndpoint = '/api/update/version.json';
+      let infoEndpoint = '/api/update/info.json';
 
       if (runtimeConfig.updateAPI) {
         if (typeof runtimeConfig.updateAPI === 'object' && !Array.isArray(runtimeConfig.updateAPI)) {

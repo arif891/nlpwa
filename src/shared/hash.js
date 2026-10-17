@@ -13,8 +13,8 @@ export async function sha256Hex(buffer) {
 /**
  * Compare a full SHA-256 hex digest with a manifest hash.
  *
- * The CLI currently emits the first 8 hex characters, so the manifest hash
- * is treated as a prefix. Anything shorter than 8 characters is rejected so a
+ * The CLI emits the first 32 hex characters (older builds emitted 8), so the
+ * manifest hash is treated as a prefix. Anything shorter than 8 characters is rejected so a
  * truncated or empty hash can never "match" by accident.
  *
  * @param {string} actualHex  full digest from sha256Hex()

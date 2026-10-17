@@ -12,18 +12,31 @@ export default async () => {
   }
 
   return [
-  // ── Service Worker bundle ─────────────────────────────────────────────────
+  // ── Service Worker: standalone ────────────────────────────────────────────
+  // Copied by `nlpwa init`. Calls initSW() itself, has no exports, and is an
+  // IIFE so it registers as a classic or a module worker.
   {
-    input: 'src/sw/index.js',
+    input: 'src/sw/standalone.js',
     output: {
       file:    'out/sw.js',
-      format:  'es',
+      format:  'iife',
       banner:  '/* NLPWA Service Worker — https://github.com/arif891/nlpwa */',
     },
     plugins,
   },
 
-  // ── Client bundle ─────────────────────────────────────────────────────────
+  // ── Service Worker: library (import { initSW } from 'nlpwa/sw') ───────────
+  {
+    input: 'src/sw/index.js',
+    output: {
+      file:    'out/sw.module.js',
+      format:  'es',
+      banner:  '/* NLPWA Service Worker (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+
+  // ── Client: IIFE (<script src="/client.js"> → global NLPWAClient) ─────────
   {
     input: 'src/client/register.js',
     output: {
@@ -32,6 +45,17 @@ export default async () => {
       name:    'NLPWAClient',
       banner:  '/* NLPWA Client — https://github.com/arif891/nlpwa */',
       exports: 'named',
+    },
+    plugins,
+  },
+
+  // ── Client: ES module (import { register } from 'nlpwa/client') ───────────
+  {
+    input: 'src/client/register.js',
+    output: {
+      file:    'out/client.esm.js',
+      format:  'es',
+      banner:  '/* NLPWA Client (module) — https://github.com/arif891/nlpwa */',
     },
     plugins,
   },

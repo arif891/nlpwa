@@ -18,11 +18,18 @@
     "README.md",
     "LICENSE"
   ],
+  "engines": {
+    "node": ">=18"
+  },
   "exports": {
-    "./sw":     "./out/sw.js",
-    "./client": "./out/client.js",
+    "./sw":     "./out/sw.module.js",
+    "./client": {
+      "import":  "./out/client.esm.js",
+      "default": "./out/client.js"
+    },
     "./config": "./out/config.js",
-    "./rollup": "./src/rollup-plugin.js"
+    "./rollup": "./src/rollup-plugin.js",
+    "./package.json": "./package.json"
   },
   "bin": {
     "nlpwa": "./bin/nlpwa.js"
@@ -31,7 +38,8 @@
     "build":          "rollup -c",
     "build:prod":     "rollup -c --environment PROD",
     "dev":            "rollup -c --watch",
-    "test":           "node --test test/**/*.test.js",
+    "test":           "node --test test/*.test.js",
+    "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa":          "node ./bin/nlpwa.js",
     "nlpwa:update":   "node ./bin/nlpwa.js update",
     "nlpwa:help":     "node ./bin/nlpwa.js --help"

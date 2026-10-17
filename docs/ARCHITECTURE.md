@@ -5,9 +5,9 @@ NLPWA is a Service Worker framework with a decoupled architecture:
 
 | Context | File | Role |
 |---|---|---|
-| Service Worker thread | `build/sw.js` | Intercepts fetches, manages caches, applies delta updates |
+| Service Worker thread | `out/sw.js` | Intercepts fetches, manages caches, applies delta updates |
 | Runtime Configuration | `config.js` → `config.json` | Dynamic route rules & precache list; stored in `offline` cache |
-| Main thread (browser) | `build/client.js` | Registers the SW, listens for updates, shows update UI |
+| Main thread (browser) | `out/client.js` (IIFE) / `out/client.esm.js` (ES module) | Registers the SW, listens for updates, shows update UI |
 | Build Tool / CLI | `bin/nlpwa.js` / Rollup | Auto-increments patch version, tracks offline files & config, emits update API |
 
 The Service Worker thread and client communicate via `postMessage`.
@@ -48,13 +48,13 @@ src/
 │       ├── commit.js               commitStaged() — one-write switch to the staged version
 │       └── index.js                checkForUpdate() with two-tier checks and concurrency lock
 │
-├── client/                         ← Runs in main browser thread (built to build/client.js)
+├── client/                         ← Runs in main browser thread (built to out/client.js)
 │   ├── register.js                 register(swUrl, options) — SW registration & client SDK entry
 │   ├── messaging.js                sendToSW(), onSWMessage(), requestUpdateCheck()
 │   └── update-ui.js                onUpdateReady() → callback + CustomEvent, applyUpdate()
 │
 ├── rollup-plugin.js                ← Bundler plugin for Vite / Rollup integration
-└── config.js                       ← Starter config template (built to build/config.js)
+└── config.js                       ← Starter config template (built to out/config.js)
 ```
 
 ---
@@ -223,4 +223,4 @@ The SW is single-threaded, but `checkForUpdate()` is async. A boolean lock (`_up
 | Eviction rule | Route-strategy-aware | Routes define cacheability; not file presence |
 | Atomic Staging & Resumption | Separate staging cache + SHA-256 verification | Downloads stage in a separate cache; live app stays untouched until atomic commit. Failed downloads resume, degraded fallback after 5 retries |
 | SW format | ES module (`type: 'module'`) | Modern browsers support it; readable output |
-| Client format | IIFE (`NLPWAClient`) + ES module export | Drop-in `<script>` tag or bundler import |
+| Client format | IIFE (`out/client.js`, global `NLPWAClient`) + ES module (`out/client.esm.js`) | Drop-in `<script>` tag or bundler import |

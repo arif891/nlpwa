@@ -57,7 +57,7 @@ Fetched **only** if Tier 1 reports a strictly newer version. Contains the comple
 | `version` | `string` | ✅ | Semantic version of the deployment (auto-incremented by build tool) |
 | `files` | `array` | ✅ | List of tracked offline files and their hashes |
 | `files[].path` | `string` | ✅ | URL pathname starting with `/` |
-| `files[].hash` | `string` | ✅ | Stable content hash (SHA-256 hex string or first 8+ hex chars) |
+| `files[].hash` | `string` | ✅ | Stable content hash (SHA-256 hex string or its first 8+ hex chars; the built-in tools emit 32) |
 
 ---
 
@@ -86,7 +86,7 @@ import { join, relative } from 'path';
 
 function hashFile(filePath) {
   const content = readFileSync(filePath);
-  return createHash('sha256').update(content).digest('hex').slice(0, 8);
+  return createHash('sha256').update(content).digest('hex').slice(0, 32);
 }
 
 function walkDir(dir, base = dir) {
@@ -122,7 +122,7 @@ export default function nlpwaManifest() {
               .createHash('sha256')
               .update(bundle[fileName].code)
               .digest('hex')
-              .slice(0, 8)
+              .slice(0, 32)
           : 'static',
       }));
 

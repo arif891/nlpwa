@@ -37,10 +37,10 @@ const c = {
   blue:   isTTY ? '\x1b[34m' : '',
 };
 
-/** SHA-256 first 8 hex chars — matches UPDATE-PROTOCOL.md */
+/** SHA-256 first 32 hex chars (128 bits) — matches UPDATE-PROTOCOL.md */
 function hashFile(filePath) {
   const content = readFileSync(filePath);
-  return createHash('sha256').update(content).digest('hex').slice(0, 8);
+  return createHash('sha256').update(content).digest('hex').slice(0, 32);
 }
 
 /**
@@ -217,6 +217,8 @@ async function cmdInit(args) {
     { src: 'config.json',  dest: 'config.json',  required: false, checkExisting: true },
   ];
 
+  const missing = [];
+
   for (const item of filesToCopy) {
     const srcPath = resolve(outDir, item.src);
     const destPath = resolve(targetDir, item.dest);
@@ -230,8 +232,17 @@ async function cmdInit(args) {
       copyFileSync(srcPath, destPath);
       console.log(`  ${c.green}+${c.reset} ${c.bold}Installed:${c.reset} ${item.dest}`);
     } else if (item.required) {
+      missing.push(item.src);
       console.error(`  ${c.red}X Source file missing:${c.reset} ${srcPath}`);
     }
+  }
+
+  if (missing.length > 0) {
+    console.error(`
+${c.red}${c.bold}  Init failed:${c.reset} ${missing.join(', ')} not found in ${outDir}
+  If you are running from a git checkout, build first: ${c.cyan}npm install && npm run build${c.reset}
+`);
+    process.exit(1);
   }
 
   console.log(`
@@ -283,8 +294,8 @@ async function cmdUpdate(args) {
     version: newVersion,
     configPath: rawConfig.configPath || '/config.json',
     updateAPI: rawConfig.updateAPI || {
-      version: '/api/update/version',
-      info: '/api/update/info',
+      version: '/api/update/version.json',
+      info: '/api/update/info.json',
     },
     precache: rawConfig.precache || [],
     routes: rawConfig.routes || [],
@@ -294,8 +305,7 @@ async function cmdUpdate(args) {
 
   // 1. Write runtime config.json into target directory
   const configJsonPath = resolve(targetDir, 'config.json');
-  const compact = Boolean(args.compact || args.minify);
-  const jsonIndent = compact ? 0 : 2;
+  const jsonIndent = args.pretty ? 2 : 0;
   writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
   console.log(`  ${c.green}+${c.reset} ${c.cyan}/config.json${c.reset} (generated from config.js)`);
 
@@ -327,8 +337,8 @@ async function cmdUpdate(args) {
   }
 
   // 3. Emit update API outputs
-  let versionEndpoint = '/api/update/version';
-  let infoEndpoint = '/api/update/info';
+  let versionEndpoint = '/api/update/version.json';
+  let infoEndpoint = '/api/update/info.json';
 
   if (runtimeConfig.updateAPI) {
     if (typeof runtimeConfig.updateAPI === 'object' && !Array.isArray(runtimeConfig.updateAPI)) {

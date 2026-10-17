@@ -64,7 +64,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
   const focusCheck = options.checkOnFocus !== false;
   let onVisibilityChange = null;
   if (focusCheck) {
-    const throttleMs = options.focusThrottleMs ?? 5 * 60 * 1000; // 5 min
+    const throttleMs = options.focusThrottleMs ?? 60 * 60 * 1000; // 1 hour
     let lastCheckAt = 0;
 
     onVisibilityChange = () => {

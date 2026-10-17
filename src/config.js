@@ -19,7 +19,7 @@ export default {
   },
 
   // Update polling interval in ms (set to 0 to disable periodic polling)
-  updateCheckInterval: 60 * 60 * 1000, // 1 hour
+  updateCheckInterval: 0, // Default: disabled
 
   // App shell files to track and offline-cache (tracked alongside config.json)
   precache: [

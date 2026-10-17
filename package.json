@@ -56,7 +56,8 @@
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa":          "node ./bin/nlpwa.js",
     "nlpwa:update":   "node ./bin/nlpwa.js update",
-    "nlpwa:help":     "node ./bin/nlpwa.js --help"
+    "nlpwa:help":     "node ./bin/nlpwa.js --help",
+    "example":        "node example/server.js"
   },
   "devDependencies": {
     "@rollup/plugin-terser": "^0.4.0",

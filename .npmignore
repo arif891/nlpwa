@@ -4,5 +4,6 @@
 test
 docs
 api
+example
 *.log
 .DS_Store

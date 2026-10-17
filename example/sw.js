@@ -1,0 +1,1854 @@
+/* NLPWA Service Worker — https://github.com/arif891/nlpwa */
+(function () {
+  'use strict';
+
+  /** Default cache storage names */
+  const CACHE_NAMES = {
+    OFFLINE: 'offline',
+    RUNTIME: 'runtime',
+  };
+
+  /** Path inside the offline cache where the snapshot is stored */
+  const SNAPSHOT_CACHE_PATH = '/_nlpwa/snapshot.json';
+  const MANIFEST_CACHE_PATH = SNAPSHOT_CACHE_PATH;
+
+  /** postMessage type identifiers (SW ↔ client) */
+  const MESSAGE_TYPES = {
+    UPDATE_READY:   'UPDATE_READY',   // SW → client: new version available
+    CHECK_UPDATE:   'CHECK_UPDATE',   // client → SW: trigger manual check
+    UPDATE_APPLIED: 'UPDATE_APPLIED', // SW → client: reply to APPLY_UPDATE ({ applied })
+    NO_UPDATE:      'NO_UPDATE',      // SW → client: already up to date
+    APPLY_UPDATE:   'APPLY_UPDATE',   // client → SW: switch to the staged update now
+  };
+
+  /** Max parallel downloads while staging an update. */
+  const FETCH_CONCURRENCY = 6;
+
+  /** Fetch strategy names */
+  const STRATEGIES = {
+    CACHE_FIRST:            'cache-first',
+    NETWORK_FIRST:          'network-first',
+    NETWORK_ONLY:           'network-only',
+    STALE_WHILE_REVALIDATE: 'stale-while-revalidate',
+    CACHE_ONLY:             'cache-only',
+  };
+
+  /**
+   * Strategies that store responses in a cache.
+   * Used by evict.js: a URL is only kept in cache if its matched route
+   * uses one of these strategies.
+   */
+  const CACHING_CAPABLE_STRATEGIES = new Set([
+    STRATEGIES.CACHE_FIRST,
+    STRATEGIES.NETWORK_FIRST,
+    STRATEGIES.STALE_WHILE_REVALIDATE,
+    STRATEGIES.CACHE_ONLY,
+  ]);
+
+  /**
+   * How many consecutive update checks may retry files that failed to download
+   * before giving up until the next app version bump. Prevents a permanently
+   * missing file (e.g. a typo in `precache`) from being retried forever.
+   */
+  const MAX_RETRY_ATTEMPTS = 5;
+
+  /**
+   * Default configuration values.
+   * All fields are overridable by the user via initConfig(userConfig).
+   */
+  const DEFAULTS = {
+    /**
+     * Service Worker version — set MANUALLY by the developer.
+     *
+     * Bump this when you make structural changes to the SW itself:
+     * routes, strategies, or precache list.
+     *
+     * Changing this triggers the browser's byte-level SW update, and
+     * tells NLPWA to wipe old caches and do a clean install.
+     *
+     * Note: The APP version is NOT configured here — it is auto-incremented
+     * by the build tool and lives in config.json and update API endpoints.
+     *
+     * Example: '1', '2', 'v3'
+     */
+    version: '1',
+
+    /**
+     * Path to the runtime config.json file (stored in and read from offline cache).
+     * Default: '/config.json'
+     */
+    configPath: '/config.json',
+
+    /**
+     * Server endpoints for two-tier update checks:
+     * - version: lightweight check returning { version: 'x.y.z' }
+     * - info: full manifest returning { version: 'x.y.z', files: [...] }
+     */
+    updateAPI: {
+      version: '/api/update/version.json',
+      info: '/api/update/info.json',
+    },
+
+    /**
+     * How often (ms) to automatically check for updates.
+     * Set to 0 to disable automatic polling (manual only).
+     */
+    updateCheckInterval: 60 * 60 * 1000, // 1 hour
+
+    /**
+     * How downloaded update files are checked against the manifest hash:
+     *   'strict' - mismatch fails that file; the update is not applied until
+     *              every file verifies (retried on the next check)
+     *   'warn'   - mismatch is logged but the file is still stored
+     *   false    - no verification
+     * Use 'warn' only if a proxy/CDN rewrites your files after the build.
+     */
+    verifyHashes: 'strict',
+
+    /** Cache storage names */
+    caches: {
+      offline: CACHE_NAMES.OFFLINE,
+      runtime: CACHE_NAMES.RUNTIME,
+    },
+
+    /** Path inside the offline cache where the manifest snapshot is stored */
+    manifestCachePath: MANIFEST_CACHE_PATH,
+
+    /**
+     * Files to pre-cache at SW install time (the app shell).
+     * These are fetched immediately when the SW installs.
+     */
+    precache: [],
+
+    /**
+     * Per-URL-pattern fetch strategies.
+     * Matched top-to-bottom; first match wins.
+     * Patterns support glob syntax: * (segment) and ** (any path).
+     *
+     * Example:
+     *   { match: '/api/**',    strategy: 'network-only' }
+     *   { match: '/assets/**', strategy: 'cache-first' }
+     */
+    routes: [],
+
+    /** Strategy to use when no route matches */
+    defaultStrategy: STRATEGIES.NETWORK_FIRST,
+  };
+
+  const VALID_STRATEGIES = new Set(Object.values(STRATEGIES));
+
+  /**
+   * Validate a merged config object.
+   * Returns an array of error strings (empty = valid).
+   *
+   * @param {Object} config
+   * @returns {string[]}
+   */
+  function validateConfig(config) {
+    const errors = [];
+
+    if (typeof config.version !== 'string' || !config.version) {
+      errors.push('config.version must be a non-empty string (e.g. "1", "2", "v3")');
+    }
+
+    if (config.configPath && typeof config.configPath !== 'string') {
+      errors.push('config.configPath must be a string (e.g. "/config.json")');
+    }
+
+    // Validate updateAPI
+    if (!config.updateAPI) {
+      errors.push('config.updateAPI must be defined with { version, info }');
+    } else if (Array.isArray(config.updateAPI)) {
+      if (config.updateAPI.length === 0) {
+        errors.push('config.updateAPI array must not be empty');
+      }
+    } else if (typeof config.updateAPI !== 'object') {
+      errors.push('config.updateAPI must be an object with { version, info } or an array');
+    }
+
+    if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
+      errors.push("config.verifyHashes must be 'strict', 'warn' or false");
+    }
+
+    if (typeof config.updateCheckInterval !== 'number' || config.updateCheckInterval < 0) {
+      errors.push('config.updateCheckInterval must be a non-negative number (ms)');
+    }
+
+    if (!config.caches || typeof config.caches.offline !== 'string') {
+      errors.push('config.caches.offline must be a string');
+    }
+
+    if (!config.caches || typeof config.caches.runtime !== 'string') {
+      errors.push('config.caches.runtime must be a string');
+    }
+
+    if (!Array.isArray(config.precache)) {
+      errors.push('config.precache must be an array of URL strings');
+    }
+
+    if (!Array.isArray(config.routes)) {
+      errors.push('config.routes must be an array');
+    } else {
+      config.routes.forEach((route, i) => {
+        if (typeof route.match !== 'string') {
+          errors.push(`config.routes[${i}].match must be a string (glob pattern)`);
+        }
+        if (!VALID_STRATEGIES.has(route.strategy)) {
+          errors.push(
+            `config.routes[${i}].strategy "${route.strategy}" is invalid. ` +
+            `Valid: ${[...VALID_STRATEGIES].join(', ')}`
+          );
+        }
+      });
+    }
+
+    if (!VALID_STRATEGIES.has(config.defaultStrategy)) {
+      errors.push(
+        `config.defaultStrategy "${config.defaultStrategy}" is invalid. ` +
+        `Valid: ${[...VALID_STRATEGIES].join(', ')}`
+      );
+    }
+
+    return errors;
+  }
+
+  /**
+   * Tiny "meta" cache + helpers that make updates atomic.
+   *
+   *   nlpwa-meta
+   *     /_nlpwa/active.json  → { cache, version, swVersion }   which offline cache is live
+   *     /_nlpwa/staged.json  → { cache, version, swVersion, complete, retryCount, evict, ... }
+   *
+   * Each app version lives in its own offline cache (`offline@<version>-<id>`).
+   * An update is built in a new cache while the active one keeps serving; the
+   * switch is a single write to active.json. With no pointer yet (first run, or
+   * an app installed by an older NLPWA) the plain `offline` cache is the active one.
+   *
+   * This module has no dependency on config so config/index.js can use it.
+   */
+
+  const META_CACHE = 'nlpwa-meta';
+  const ACTIVE_KEY = '/_nlpwa/active.json';
+  const STAGED_KEY = '/_nlpwa/staged.json';
+
+  async function readMeta(key) {
+    const cache = await caches.open(META_CACHE);
+    const response = await cache.match(key);
+    if (!response) return null;
+    try {
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeMeta(key, value) {
+    const cache = await caches.open(META_CACHE);
+    await cache.put(key, new Response(JSON.stringify(value), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  }
+
+  async function deleteMeta(key) {
+    const cache = await caches.open(META_CACHE);
+    await cache.delete(key);
+  }
+
+  // ── Active pointer (memoised: the SW can be restarted at any time, so the
+  //    first read always comes from the meta cache) ─────────────────────────
+
+  let _activePromise = null;
+
+  function getActive() {
+    if (!_activePromise) _activePromise = readMeta(ACTIVE_KEY);
+    return _activePromise;
+  }
+
+  async function getActiveName(baseName) {
+    return (await getActive())?.cache ?? baseName;
+  }
+
+  async function openActive(baseName) {
+    return caches.open(await getActiveName(baseName));
+  }
+
+  /** The single atomic commit point of an update. */
+  async function setActive(record) {
+    await writeMeta(ACTIVE_KEY, record);
+    _activePromise = Promise.resolve(record);
+  }
+
+  // ── Staged update record ──────────────────────────────────────────────────
+
+  const getStaged = () => readMeta(STAGED_KEY);
+  const setStaged = (record) => writeMeta(STAGED_KEY, record);
+  const clearStaged = () => deleteMeta(STAGED_KEY);
+
+  // ── Cooperative lock ──────────────────────────────────────────────────────
+  // Staging and committing must not overlap. Navigations must never wait for a
+  // long download, so callers use tryAcquire() and simply skip when busy.
+
+  let _busy = false;
+
+  function tryAcquire() {
+    if (_busy) return false;
+    _busy = true;
+    return true;
+  }
+
+  function release() {
+    _busy = false;
+  }
+
+  // ── Cleanup ───────────────────────────────────────────────────────────────
+
+  /**
+   * Delete every offline cache that is neither in `keep` nor the runtime cache.
+   * Managed names are the base name itself (legacy) and `<base>@…` (versioned).
+   *
+   * @param {{ base: string, runtime: string, keep: Array<string|undefined> }} opts
+   */
+  async function cleanupCaches({ base, runtime, keep }) {
+    const keepSet = new Set(keep.filter(Boolean));
+    const names = await caches.keys();
+    await Promise.all(
+      names
+        .filter((name) => name !== runtime && name !== META_CACHE && !keepSet.has(name))
+        .filter((name) => name === base || name.startsWith(`${base}@`))
+        .map((name) => {
+          console.log(`[NLPWA] Removed old cache: ${name}`);
+          return caches.delete(name);
+        })
+    );
+  }
+
+  let _intervalChangeHandler = null;
+
+  /**
+   * Register a callback to be notified if updateCheckInterval changes at runtime.
+   *
+   * @param {(newInterval: number) => void} handler
+   */
+  function onUpdateIntervalChange(handler) {
+    _intervalChangeHandler = handler;
+  }
+
+  /** Singleton config instance, set by initConfig() */
+  let _config = null;
+
+  /**
+   * Initialize the NLPWA config by merging user config with defaults.
+   * Should be called once at the top of the SW entry point.
+   *
+   * @param {Partial<typeof DEFAULTS>} userConfig
+   * @returns {typeof DEFAULTS}
+   */
+  function initConfig(userConfig = {}) {
+    const merged = {
+      ...DEFAULTS,
+      ...userConfig,
+      // Deep merge nested objects
+      caches: {
+        ...DEFAULTS.caches,
+        ...(userConfig.caches ?? {}),
+      },
+    };
+
+    const errors = validateConfig(merged);
+    if (errors.length > 0) {
+      console.error('[NLPWA] Config errors:\n' + errors.map(e => `  • ${e}`).join('\n'));
+    }
+
+    _config = Object.freeze(merged);
+    return _config;
+  }
+
+  /**
+   * Get the active config. Throws if initConfig() has not been called.
+   *
+   * @returns {typeof DEFAULTS}
+   */
+  function getConfig() {
+    if (!_config) {
+      throw new Error('[NLPWA] Config not initialized. Call initConfig(userConfig) first.');
+    }
+    return _config;
+  }
+
+  /**
+   * Update the active in-memory configuration with runtime config
+   * (e.g. loaded from /config.json in the offline cache).
+   *
+   * @param {Object} runtimeConfig
+   * @returns {typeof DEFAULTS}
+   */
+  function updateActiveConfig(runtimeConfig = {}) {
+    if (!_config) {
+      initConfig();
+    }
+
+    const merged = {
+      ..._config,
+      ...runtimeConfig,
+      // Preserve manual SW version if not provided or keep engine version
+      version: _config.version,
+      appVersion: runtimeConfig.version ?? _config.appVersion ?? runtimeConfig.appVersion,
+      // Deep merge nested caches
+      caches: {
+        ..._config.caches,
+        ...(runtimeConfig.caches ?? {}),
+      },
+      // Merge updateAPI
+      updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
+      // Runtime routes take priority
+      routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
+      precache: Array.isArray(runtimeConfig.precache) ? runtimeConfig.precache : _config.precache,
+    };
+
+    _config = Object.freeze(merged);
+    return _config;
+  }
+
+  let _configReadyPromise = null;
+
+  /**
+   * Ensure runtime config has been loaded from the offline cache before handling requests.
+   * Resolves immediately if already loaded or previously started.
+   *
+   * @returns {Promise<Object|null>}
+   */
+  function ensureConfigReady() {
+    if (!_configReadyPromise) {
+      _configReadyPromise = loadConfigFromCache();
+    }
+    return _configReadyPromise;
+  }
+
+  /**
+   * Load the runtime config file from the offline cache.
+   * Config is always read from the ACTIVE offline cache at runtime, so it
+   * switches together with the rest of the app shell when an update is committed.
+   *
+   * @returns {Promise<Object|null>}
+   */
+  async function loadConfigFromCache() {
+    const config = _config || initConfig();
+    const baseName = config.caches?.offline || 'offline';
+    const configPath = config.configPath || '/config.json';
+
+    try {
+      const cache = await openActive(baseName);
+      const response = await cache.match(configPath);
+      if (!response) return null;
+
+      const runtimeJson = await response.json();
+      const oldInterval = _config?.updateCheckInterval;
+      updateActiveConfig(runtimeJson);
+      console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+
+      // Restart update polling if the interval changed after hydrating from cache
+      if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
+        if (typeof _intervalChangeHandler === 'function') {
+          _intervalChangeHandler(runtimeJson.updateCheckInterval);
+        }
+      }
+      return runtimeJson;
+    } catch (err) {
+      console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Helper to resolve the two-tier update API endpoints:
+   * - versionEndpoint: lightweight check
+   * - infoEndpoint: full manifest
+   *
+   * Supports both object: { version, info }
+   * and array: [ { type: 'version', endpoint }, { type: 'info', endpoint } ]
+   *
+   * @returns {{ versionEndpoint: string, infoEndpoint: string }}
+   */
+  function getUpdateEndpoints() {
+    const config = getConfig();
+    let versionEndpoint = '/api/update/version.json';
+    let infoEndpoint = '/api/update/info.json';
+
+    if (config.updateAPI) {
+      if (Array.isArray(config.updateAPI)) {
+        const vEntry = config.updateAPI.find(e => e.type === 'version');
+        const iEntry = config.updateAPI.find(e => e.type === 'info');
+        if (vEntry?.endpoint) versionEndpoint = vEntry.endpoint;
+        if (iEntry?.endpoint) infoEndpoint = iEntry.endpoint;
+      } else if (typeof config.updateAPI === 'object') {
+        if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
+        if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
+      }
+    }
+
+    return { versionEndpoint, infoEndpoint };
+  }
+
+  /**
+   * Fetch lightweight app version from the server (Tier 1 check).
+   *
+   * @returns {Promise<{ version: string }>}
+   */
+  async function fetchServerVersion() {
+    const { versionEndpoint } = getUpdateEndpoints();
+
+    const response = await fetch(versionEndpoint, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`[NLPWA] Version check failed: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (typeof data.version !== 'string' || !data.version) {
+      throw new Error('[NLPWA] Version check response missing valid "version"');
+    }
+
+    return data;
+  }
+
+  /**
+   * Fetch the latest file tree update info from the server (Tier 2 fetch).
+   * Always bypasses browser cache (cache: 'no-store') to get the true current state.
+   *
+   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }>}
+   */
+  async function fetchServerInfo() {
+    const { infoEndpoint } = getUpdateEndpoints();
+
+    const response = await fetch(infoEndpoint, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`[NLPWA] Update info fetch failed: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      throw new Error(`[NLPWA] Update info response is not valid JSON (is the endpoint returning HTML?): ${err.message}`);
+    }
+
+    // Validate the expected shape before passing to computeDiff / applyDiff
+    if (typeof data.version !== 'string' || !data.version) {
+      throw new Error('[NLPWA] Update info missing or invalid "version" field (expected a non-empty string)');
+    }
+    if (!Array.isArray(data.files)) {
+      throw new Error('[NLPWA] Update info missing "files" array');
+    }
+
+    return data;
+  }
+
+  const fetchServerManifest = fetchServerInfo;
+
+  /** Path of the snapshot entry inside an offline cache. */
+  function getSnapshotPath() {
+    const config = getConfig();
+    return config.snapshotCachePath || config.manifestCachePath || '/_nlpwa/snapshot.json';
+  }
+
+  /**
+   * Load the snapshot (hash map of what is currently live) from the ACTIVE
+   * offline cache. Returns null on a fresh install.
+   *
+   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }|null>}
+   */
+  async function loadCachedSnapshot() {
+    const cache = await openActive(getConfig().caches.offline);
+    const response = await cache.match(getSnapshotPath());
+    if (!response) return null;
+    return response.json();
+  }
+
+  const loadCachedManifest = loadCachedSnapshot;
+
+  /**
+   * Write a snapshot into a given offline cache. For a staged update this is the
+   * LAST write: a cache that contains its snapshot is a complete one.
+   *
+   * @param {Cache} cache
+   * @param {Object} snapshotData
+   */
+  async function writeSnapshot(cache, snapshotData) {
+    const snapshot = { swVersion: getConfig().version, ...snapshotData };
+    await cache.put(getSnapshotPath(), new Response(JSON.stringify(snapshot), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  }
+
+  /**
+   * Compute the delta between a new server manifest and the currently cached one.
+   *
+   * The delta drives the update: only files that actually changed are fetched.
+   * Because the server always returns the full file list, this automatically
+   * handles any size of version jump (v1 → v100) in one pass.
+   *
+   * @param {Array<{ path: string, hash: string }>} newFiles   from server manifest
+   * @param {Array<{ path: string, hash: string }>|null} oldFiles  from cached manifest
+   *                                                               (null = fresh install)
+   * @returns {{ added: string[], modified: string[], removed: string[] }}
+   */
+  function isSafePath(path) {
+    if (typeof path !== 'string' || !path) return false;
+    // Reject absolute URLs with protocols (e.g. http:, https:, data:) and protocol-relative URLs (//)
+    if (path.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(path)) return false;
+    return true;
+  }
+
+  function computeDiff(newFiles, oldFiles) {
+    const safeNewFiles = (newFiles ?? []).filter(f => isSafePath(f?.path));
+    const safeOldFiles = (oldFiles ?? []).filter(f => isSafePath(f?.path));
+
+    // Build lookup maps for O(1) access
+    const oldMap = new Map(safeOldFiles.map(f => [f.path, f.hash]));
+    const newMap = new Map(safeNewFiles.map(f => [f.path, f.hash]));
+
+    const added    = [];
+    const modified = [];
+    const removed  = [];
+
+    // Files that are new or changed
+    for (const [path, hash] of newMap) {
+      if (!oldMap.has(path)) {
+        added.push(path);
+      } else if (oldMap.get(path) !== hash) {
+        modified.push(path);
+      }
+      // hash unchanged → no action needed
+    }
+
+    // Files that exist in old manifest but are gone in new manifest
+    for (const path of oldMap.keys()) {
+      if (!newMap.has(path)) {
+        removed.push(path);
+      }
+    }
+
+    return { added, modified, removed };
+  }
+
+  /**
+   * SHA-256 of a buffer as a lowercase hex string.
+   * Works in Service Workers, browsers and Node 18+ (Web Crypto).
+   *
+   * @param {ArrayBuffer|Uint8Array} buffer
+   * @returns {Promise<string>}
+   */
+  async function sha256Hex(buffer) {
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Compare a full SHA-256 hex digest with a manifest hash.
+   *
+   * The CLI emits the first 32 hex characters (older builds emitted 8), so the
+   * manifest hash is treated as a prefix. Anything shorter than 8 characters is rejected so a
+   * truncated or empty hash can never "match" by accident.
+   *
+   * @param {string} actualHex  full digest from sha256Hex()
+   * @param {string} expected   hash from the manifest (prefix of the digest)
+   * @returns {boolean}
+   */
+  function hashMatches(actualHex, expected) {
+    if (typeof expected !== 'string' || expected.length < 8) return false;
+    return actualHex.startsWith(expected.toLowerCase());
+  }
+
+  /** Run `fn` over `items` with at most `limit` in flight. */
+  async function mapLimit(items, limit, fn) {
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) await fn(items[next++]);
+    });
+    await Promise.all(workers);
+  }
+
+  /** Is `path` already in the staging cache with the expected content? */
+  async function isAlreadyStaged(cache, path, expected, verify) {
+    const hit = await cache.match(path);
+    if (!hit) return false;
+    if (!expected || verify === false) return true;
+    return hashMatches(await sha256Hex(await hit.arrayBuffer()), expected);
+  }
+
+  /** Fetch a file fresh from the network and check it against its manifest hash. */
+  async function fetchVerified(path, expected, verify) {
+    const response = await fetch(path, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    if (expected && verify !== false) {
+      const actual = await sha256Hex(await response.clone().arrayBuffer());
+      if (!hashMatches(actual, expected)) {
+        const detail = `hash mismatch (expected ${expected}, got ${actual.slice(0, expected.length)})`;
+        if (verify === 'strict') throw new Error(detail);
+        console.warn(`[NLPWA] ${path}: ${detail} - storing anyway (verifyHashes: 'warn')`);
+      }
+    }
+    return response;
+  }
+
+  /**
+   * Build the new app version in a SEPARATE cache while the active one keeps
+   * serving. Nothing here is visible to the running app until commitStaged().
+   *
+   * For every file in the manifest:
+   *   1. already in the staging cache and verified  → reuse   (resume after failure)
+   *   2. unchanged since the active version         → copy locally, no network
+   *   3. otherwise                                  → fetch (no-store) and verify hash
+   *
+   * The snapshot is written last: a staging cache that contains its snapshot is
+   * complete. If some files keep failing, after MAX_RETRY_ATTEMPTS the update is
+   * finalised anyway ("degraded"): failed files keep their old copy and old hash
+   * (or are left out if new), so a later version bump retries them.
+   *
+   * @param {{ version: string, files: Array<{ path: string, hash: string }> }} manifest
+   * @param {{ activeSnapshot?: Object|null, forceRefetch?: boolean }} [opts]
+   *        forceRefetch: ignore the active copies and download everything (SW engine change)
+   * @returns {Promise<
+   *   { status: 'ready', partial: boolean, failed: string[], reused: number, copied: number, fetched: number } |
+   *   { status: 'incomplete', failed: string[], retryCount: number }
+   * >}
+   */
+  async function stageUpdate(manifest, { activeSnapshot = null, forceRefetch = false } = {}) {
+    const config = getConfig();
+    const verify = config.verifyHashes ?? 'strict';
+    const files = manifest.files.filter((f) => isSafePath(f?.path));
+
+    const diff = computeDiff(files, activeSnapshot?.files ?? null);
+    const evict = [...diff.modified, ...diff.removed];
+
+    // ── Resume a matching partial staging cache, or start a new one ──────────
+    let staged = await getStaged();
+    const resumable = staged && !staged.complete
+      && staged.version === manifest.version && staged.swVersion === config.version;
+    if (!resumable) {
+      if (staged?.cache) await caches.delete(staged.cache);
+      staged = {
+        cache: `${config.caches.offline}@${manifest.version}-${Date.now().toString(36)}`,
+        version: manifest.version,
+        swVersion: config.version,
+        complete: false,
+        retryCount: 0,
+      };
+    }
+    // Record the staging cache BEFORE creating it so a crash can never orphan it
+    await setStaged(staged);
+
+    const next = await caches.open(staged.cache);
+    const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
+    const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
+
+    const stats = { reused: 0, copied: 0, fetched: 0 };
+    const failed = [];
+
+    await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash }) => {
+      try {
+        if (await isAlreadyStaged(next, path, hash, verify)) {
+          stats.reused++;
+          return;
+        }
+        if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
+          const hit = await activeCache.match(path);
+          if (hit) {
+            await next.put(path, hit);
+            stats.copied++;
+            return;
+          }
+        }
+        await next.put(path, await fetchVerified(path, hash, verify));
+        stats.fetched++;
+      } catch (err) {
+        failed.push(path);
+        console.warn(`[NLPWA] Staging failed: ${path} - ${err.message}`);
+      }
+    });
+
+    const retryCount = failed.length ? staged.retryCount + 1 : 0;
+    const gaveUp = failed.length > 0 && retryCount >= MAX_RETRY_ATTEMPTS;
+
+    if (failed.length && !gaveUp) {
+      // Keep what verified; the next check resumes from here. Active is untouched.
+      await setStaged({ ...staged, retryCount });
+      return { status: 'incomplete', failed, retryCount };
+    }
+
+    // ── Finalise: snapshot last, then mark the staged record complete ────────
+    const failedSet = new Set(failed);
+    const snapshotFiles = [];
+    for (const file of files) {
+      if (!failedSet.has(file.path)) {
+        snapshotFiles.push(file);
+        continue;
+      }
+      const oldHash = activeHashes.get(file.path);
+      const old = oldHash && activeCache ? await activeCache.match(file.path) : null;
+      if (old) {
+        await next.put(file.path, old);
+        snapshotFiles.push({ path: file.path, hash: oldHash });
+      }
+    }
+
+    await writeSnapshot(next, {
+      version: manifest.version,
+      files: snapshotFiles,
+      ...(failed.length ? { degraded: failed } : {}),
+    });
+
+    if (gaveUp) {
+      console.error(
+        `[NLPWA] Giving up on ${failed.length} file(s) after ${retryCount} attempts: ${failed.join(', ')}`
+      );
+    }
+
+    await setStaged({
+      ...staged,
+      retryCount,
+      complete: true,
+      partial: failed.length > 0,
+      evict,
+      clearRuntime: forceRefetch,
+    });
+
+    console.log(
+      `[NLPWA] Staged v${manifest.version}: ${stats.fetched} fetched, ${stats.copied} copied, ` +
+      `${stats.reused} reused${failed.length ? `, ${failed.length} failed` : ''}`
+    );
+
+    return { status: 'ready', partial: failed.length > 0, failed, ...stats };
+  }
+
+  // ── Offline cache helpers ────────────────────────────────────────────────────
+
+  /**
+   * Read a response from the offline (app shell) cache.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromOffline(request, matchOptions) {
+    const { caches: cacheNames } = getConfig();
+    const cache = await openActive(cacheNames.offline);
+    return cache.match(request, matchOptions);
+  }
+
+  // ── Runtime cache helpers ────────────────────────────────────────────────────
+
+  /**
+   * Read a response from the runtime (lazy) cache.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromRuntime(request, matchOptions) {
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    return cache.match(request, matchOptions);
+  }
+
+  /**
+   * Write a response into the runtime cache.
+   * Used by fetch strategies (network-first, stale-while-revalidate, cache-first).
+   *
+   * @param {Request|string} request
+   * @param {Response} response
+   */
+  async function putInRuntime(request, response) {
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    await cache.put(request, response.clone());
+  }
+
+  /**
+   * Delete specific URLs from the runtime cache.
+   * Used during update to evict stale/changed files so they are re-fetched fresh.
+   *
+   * @param {string[]} paths  URL pathnames to evict, e.g. ['/app.js', '/pages/about.html']
+   */
+  async function evictFromRuntime(paths) {
+    if (!paths.length) return;
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    await Promise.all(paths.map(path => cache.delete(path)));
+  }
+
+  /**
+   * Convenience: look up a request from offline first, then runtime.
+   * Returns the first match found, or undefined if neither has it.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromCache(request, matchOptions) {
+    return (await getFromOffline(request, matchOptions)) ?? (await getFromRuntime(request, matchOptions));
+  }
+
+  /** Compiled regex cache — avoids recompiling the same glob on every fetch event */
+  const _regexCache = new Map();
+
+  /**
+   * Convert a glob pattern to a RegExp.
+   *
+   * Supported syntax:
+   *   **   matches anything, including path separators  e.g. /assets/**
+   *   *    matches anything except /                    e.g. /pages/*
+   *   ?    matches a single character except /
+   *
+   * Results are memoized per pattern string.
+   *
+   * @param {string} pattern
+   * @returns {RegExp}
+   */
+  function globToRegex(pattern) {
+    if (_regexCache.has(pattern)) return _regexCache.get(pattern);
+
+    const regexStr = pattern
+      // Escape all regex special chars except our glob chars (* ?)
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      // Handle /**/ to allow matching 0 or more directory levels (e.g. /**/foo.js matches /foo.js and /a/b/foo.js)
+      .replace(/\/\*\*\//g, '\x00GLOBSTARSLASH\x00')
+      // Replace standalone **
+      .replace(/\*\*/g, '\x00GLOBSTAR\x00')
+      // * → match anything except /
+      .replace(/\*/g, '[^/]*')
+      // ? → match single char except /
+      .replace(/\?/g, '[^/]')
+      // Restore placeholders AFTER single * has been replaced
+      .replace(/\x00GLOBSTARSLASH\x00/g, '/(?:.*/)?')
+      .replace(/\x00GLOBSTAR\x00/g, '.*');
+
+    const regex = new RegExp('^' + regexStr + '$');
+    _regexCache.set(pattern, regex);
+    return regex;
+  }
+
+  /**
+   * Test if a full URL's pathname matches a glob pattern.
+   *
+   * @param {string} pattern  glob pattern, e.g. '/api/**'
+   * @param {string} url      full URL string, e.g. 'https://example.com/api/user'
+   * @returns {boolean}
+   */
+  function matchGlob(pattern, url) {
+    try {
+      const { pathname } = new URL(url, 'http://localhost');
+      return globToRegex(pattern).test(pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Determine if a URL should remain in any cache.
+   *
+   * A URL is "cacheable" if the first matching route in config.routes uses
+   * a caching-capable strategy (cache-first, network-first, stale-while-revalidate,
+   * or cache-only). network-only routes are not cacheable.
+   *
+   * If no route matches, the defaultStrategy is used as the fallback.
+   *
+   * @param {string} url  full URL string
+   * @returns {boolean}
+   */
+  function isCacheableUrl(url) {
+    const { routes, defaultStrategy } = getConfig();
+
+    let requestUrl;
+    try {
+      requestUrl = new URL(url);
+    } catch {
+      return false;
+    }
+
+    const isSameOrigin = typeof self !== 'undefined' && self.location
+      ? requestUrl.origin === self.location.origin
+      : true;
+
+    for (const route of routes) {
+      if (route.origin) {
+        if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+          continue;
+        }
+      } else if (!isSameOrigin) {
+        // Unspecified origin matches ONLY same-origin requests
+        continue;
+      }
+
+      if (matchGlob(route.match, requestUrl.pathname)) {
+        return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
+      }
+    }
+
+    // Cross-origin requests without an explicit origin route pass through without caching
+    if (!isSameOrigin) {
+      return false;
+    }
+
+    // No route matched — fall back to defaultStrategy
+    return CACHING_CAPABLE_STRATEGIES.has(defaultStrategy);
+  }
+
+  /**
+   * Evict all entries from an opened Cache whose URLs are no longer cacheable
+   * according to the current route config.
+   *
+   * @param {Cache}  cache
+   * @param {string} cacheName  for logging
+   * @param {Set<string>} protectedPaths  internal entries that must never be evicted
+   *                                      (snapshot and runtime config.json)
+   */
+  async function evictNonCacheable(cache, cacheName, protectedPaths) {
+    const keys = await cache.keys();
+
+    await Promise.all(
+      keys.map(async (request) => {
+        const { pathname } = new URL(request.url);
+
+        // Never evict internal entries: the snapshot and the runtime config
+        if (protectedPaths.has(pathname)) return;
+
+        if (!isCacheableUrl(request.url)) {
+          await cache.delete(request);
+          console.log(`[NLPWA] Evicted (route no longer cacheable) [${cacheName}]: ${pathname}`);
+        }
+      })
+    );
+  }
+
+  /**
+   * Run route-aware eviction on both offline and runtime caches.
+   *
+   * Called after every successful update to clean up entries whose routes
+   * have been removed or changed to network-only in the latest config.
+   */
+  async function evictByRoute() {
+    const { caches: cacheNames, manifestCachePath, snapshotCachePath, configPath } = getConfig();
+    const protectedPaths = new Set(
+      [manifestCachePath, snapshotCachePath, configPath || '/config.json'].filter(Boolean)
+    );
+
+    const [offlineCache, runtimeCache] = await Promise.all([
+      openActive(cacheNames.offline),
+      caches.open(cacheNames.runtime),
+    ]);
+
+    await Promise.all([
+      evictNonCacheable(offlineCache, cacheNames.offline, protectedPaths),
+      evictNonCacheable(runtimeCache, cacheNames.runtime, protectedPaths),
+    ]);
+  }
+
+  /**
+   * Make the staged update the live one. The switch itself is ONE write
+   * (setActive), so a crash leaves either the old or the new version, never a mix.
+   *
+   * Caller must hold the lock (see commitIfReady) unless it is the update check.
+   *
+   * @returns {Promise<boolean>} true if a staged update was committed
+   */
+  async function commitStaged() {
+    const config = getConfig();
+    const staged = await getStaged();
+    if (!staged?.complete) return false;
+
+    // A complete cache always contains its snapshot. If not, discard it.
+    const cache = await caches.open(staged.cache);
+    if (!(await cache.match(getSnapshotPath()))) {
+      console.warn('[NLPWA] Staged cache is missing its snapshot, discarding.');
+      await clearStaged();
+      await caches.delete(staged.cache);
+      return false;
+    }
+
+    await setActive({ cache: staged.cache, version: staged.version, swVersion: staged.swVersion });
+    await clearStaged();
+
+    // Everything below is cleanup after the switch; the new version is already live.
+    await loadConfigFromCache();
+    if (staged.clearRuntime) {
+      await caches.delete(config.caches.runtime);
+    } else {
+      await evictFromRuntime(staged.evict ?? []);
+    }
+    await evictByRoute();
+    await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep: [staged.cache] });
+
+    console.log(`[NLPWA] Switched to v${staged.version}`);
+    return true;
+  }
+
+  /**
+   * Commit only if no update is currently being staged. Never waits: a page
+   * navigation must not be held up by a download, it just tries again next time.
+   */
+  async function commitIfReady() {
+    if (!tryAcquire()) return false;
+    try {
+      return await commitStaged();
+    } finally {
+      release();
+    }
+  }
+
+  /** Delete offline caches left behind by interrupted or superseded updates. */
+  async function sweepOrphanCaches() {
+    const config = getConfig();
+    const staged = await getStaged();
+    await cleanupCaches({
+      base: config.caches.offline,
+      runtime: config.caches.runtime,
+      keep: [await getActiveName(config.caches.offline), staged?.cache],
+    });
+  }
+
+  /**
+   * Install-time caching, called from the SW `install` event.
+   *
+   * Normal path: take the server manifest and run the same stage → verify →
+   * commit pipeline as an update. On a first install nothing is running yet, so
+   * the staged cache is switched in immediately. When upgrading from an older
+   * SW the app is already running, so the staged cache waits for the next
+   * navigation like any other update.
+   *
+   * Because the snapshot is written during install, the first update check sees
+   * an up-to-date app instead of re-downloading everything.
+   *
+   * Fallback (no manifest, e.g. `nlpwa update` was never run): precache from
+   * config.precache without hashes. The first update check then builds the
+   * hashed snapshot.
+   */
+  async function precacheFiles() {
+    if (!tryAcquire()) return;
+    try {
+      let manifest = null;
+      try {
+        manifest = await fetchServerManifest();
+      } catch (err) {
+        console.warn(`[NLPWA] No update manifest at install (${err.message})`);
+      }
+
+      const activeSnapshot = await loadCachedSnapshot();
+
+      if (manifest) {
+        const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
+        const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
+        // Incomplete staging is resumed by the update check on activate.
+        if (result.status === 'ready' && !activeSnapshot) await commitStaged();
+        return;
+      }
+
+      if (!activeSnapshot) await precacheWithoutManifest();
+    } finally {
+      release();
+    }
+  }
+
+  async function precacheWithoutManifest() {
+    const config = getConfig();
+    const configPath = config.configPath || '/config.json';
+    
+    const offlineCache = await openActive(config.caches.offline);
+
+    try {
+      const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (configRes.ok) {
+        const cloned = configRes.clone();
+        const data = await configRes.json();
+        await offlineCache.put(configPath, cloned);
+        updateActiveConfig(data);
+      } else {
+        console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
+        await loadConfigFromCache();
+      }
+    } catch (err) {
+      console.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
+      await loadConfigFromCache();
+    }
+
+    const precache = getConfig().precache || [];
+    // cache: 'reload' skips the HTTP cache so stale bytes are never stored
+    const results = await Promise.allSettled(
+      precache.map((url) => offlineCache.add(new Request(new URL(url, self.location.href), { cache: 'reload' })))
+    );
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+    });
+  }
+
+  /**
+   * Cache status values added to responses via the X-Cache-Status header.
+   *
+   * Clients can read this header from any intercepted response to determine
+   * where the response actually came from:
+   *
+   *   fetch('/app.js').then(r => console.log(r.headers.get('X-Cache-Status')));
+   *   // → 'offline-cache' | 'runtime-cache' | 'network' | 'stale' | 'offline-fallback'
+   */
+  const CACHE_STATUS = {
+    /** Response was fetched fresh from the network */
+    NETWORK:          'network',
+
+    /** Response came from the offline (precache / app shell) store */
+    OFFLINE_CACHE:    'offline-cache',
+
+    /** Response came from the runtime (lazy) cache */
+    RUNTIME_CACHE:    'runtime-cache',
+
+    /** Stale-while-revalidate: served from cache while network update runs in background */
+    STALE:            'stale',
+
+    /** Synthetic 503: no network and no cached version available */
+    OFFLINE_FALLBACK: 'offline-fallback',
+
+    /** Request bypassed the Service Worker cache */
+    BYPASS:           'bypass',
+  };
+
+  /** Name of the response header injected by the SW */
+  const CACHE_STATUS_HEADER = 'X-Cache-Status';
+
+  /**
+   * Wrap a Response with an X-Cache-Status header indicating its origin.
+   *
+   * Notes:
+   *   - Response headers are immutable, so a new Response is constructed.
+   *   - Opaque responses (cross-origin, no CORS) cannot have their body read,
+   *     so they are returned as-is with no header added.
+   *   - The original response is consumed — do not use it after calling this.
+   *
+   * @param {Response} response
+   * @param {string}   status    one of CACHE_STATUS values
+   * @returns {Response}
+   */
+  function tagResponse(response, status) {
+    if (!response) return response;
+
+    // Opaque responses (opaque / opaqueredirect / status 0) cannot have their body
+    // read or reconstructed without throwing RangeError. Return them unchanged.
+    if (response.type === 'opaque' || response.type === 'opaqueredirect' || response.status === 0) {
+      return response;
+    }
+
+    const headers = new Headers(response.headers);
+    headers.set(CACHE_STATUS_HEADER, status);
+
+    return new Response(response.body, {
+      status:     response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  /**
+   * Safely put a response clone into the runtime cache without blocking the main response.
+   * - Skips 206 Partial Content (Range requests) to prevent Cache Storage API TypeError.
+   * - Skips non-2xx responses.
+   * - Catches QuotaExceededError or write failures without breaking the caller.
+   * - Extends SW lifetime via event.waitUntil() if event is available.
+   *
+   * @param {Request} request
+   * @param {Response} response
+   * @param {FetchEvent} [event]
+   */
+  function safePutInRuntime(request, response, event) {
+    if (!response || !response.ok || response.status === 206) return;
+    if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return;
+
+    try {
+      const clone = response.clone();
+      const writePromise = putInRuntime(request, clone).catch((err) => {
+        console.warn('[NLPWA] Runtime cache write failed:', err.message);
+      });
+
+      if (event && typeof event.waitUntil === 'function') {
+        event.waitUntil(writePromise);
+      }
+    } catch (err) {
+      console.warn('[NLPWA] Could not clone response for runtime cache:', err.message);
+    }
+  }
+
+  // ── cache-first ──────────────────────────────────────────────────────────
+
+  /**
+   * Serve from offline cache first, then runtime cache.
+   * On cache miss, fetch from network and store in runtime cache asynchronously.
+   *
+   * Best for: static assets, fonts, images — files that rarely change.
+   *
+   * Response header: X-Cache-Status: offline-cache | runtime-cache | network
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function cacheFirst(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+
+    const offlineCached = await getFromOffline(request, matchOptions);
+    if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+
+    const runtimeCached = await getFromRuntime(request, matchOptions);
+    if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+
+    const response = await fetch(request);
+    safePutInRuntime(request, response, event);
+    return tagResponse(response, CACHE_STATUS.NETWORK);
+  }
+
+  // ── network-first ──────────────────────────────────────────────────────────
+
+  /**
+   * Try network first. On failure or timeout, fall back to cache (offline → runtime).
+   * Successful network responses are stored in runtime cache asynchronously.
+   * If offline and no cache matches a navigation request, falls back to navigationFallback (e.g. /index.html).
+   *
+   * Best for: HTML pages, user data — content that should be fresh when online.
+   *
+   * Response header: X-Cache-Status: network | offline-cache | runtime-cache | offline-fallback
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function networkFirst(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+    const timeoutMs = options.networkTimeoutMs ?? getConfig().networkTimeoutMs ?? 0;
+
+    /** Look in offline then runtime cache; returns a tagged Response or null. */
+    const lookupCache = async () => {
+      const offlineCached = await getFromOffline(request, matchOptions);
+      if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+
+      const runtimeCached = await getFromRuntime(request, matchOptions);
+      if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+
+      return null;
+    };
+
+    const networkPromise = fetch(request);
+
+    try {
+      let response;
+
+      if (timeoutMs > 0) {
+        const TIMED_OUT = Symbol('timeout');
+        let timerId;
+        const timeout = new Promise((resolve) => {
+          timerId = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+        });
+
+        let result;
+        try {
+          result = await Promise.race([networkPromise, timeout]);
+        } finally {
+          clearTimeout(timerId);
+        }
+
+        if (result === TIMED_OUT) {
+          // Only give up on the network if we actually have something to serve.
+          // With nothing cached, a slow response is better than a synthetic 503,
+          // so keep waiting for the original request.
+          const cached = await lookupCache();
+          if (cached) {
+            // Let the slow request finish in the background so the cache is
+            // refreshed for next time.
+            const refresh = networkPromise
+              .then((res) => { safePutInRuntime(request, res, event); })
+              .catch(() => {});
+            if (event && typeof event.waitUntil === 'function') event.waitUntil(refresh);
+            return cached;
+          }
+          response = await networkPromise;
+        } else {
+          response = result;
+        }
+      } else {
+        response = await networkPromise;
+      }
+
+      safePutInRuntime(request, response, event);
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch {
+      const cached = await lookupCache();
+      if (cached) return cached;
+
+      // Navigation fallback for SPAs or offline pages
+      if (request.mode === 'navigate') {
+        const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+        const fallbackRes = await getFromCache(fallbackUrl);
+        if (fallbackRes) {
+          return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+        }
+      }
+
+      // Return a typed offline error response instead of throwing
+      return tagResponse(
+        new Response('Offline — no cached version available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
+  }
+
+  // ── network-only ──────────────────────────────────────────────────────────
+
+  /**
+   * Always fetch from network. Never read from or write to any cache.
+   *
+   * Best for: API mutations (POST, PUT, DELETE), authenticated endpoints.
+   *
+   * Response header: X-Cache-Status: network
+   *
+   * @param {Request} request
+   * @returns {Promise<Response>}
+   */
+  async function networkOnly(request) {
+    return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
+  }
+
+  // ── stale-while-revalidate ───────────────────────────────────────────────────
+
+  /**
+   * Serve from cache immediately (stale), then update the cache in the background.
+   * If there is no cached response, fall through to a network fetch (blocks).
+   *
+   * Best for: feeds, listings, content where slightly stale is acceptable.
+   *
+   * Response header: X-Cache-Status: stale | network
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]  needed to extend SW lifetime for background revalidation
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function staleWhileRevalidate(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+    const cached = (await getFromRuntime(request, matchOptions)) ?? (await getFromOffline(request, matchOptions));
+
+    // Single network request, shared by the background refresh and the
+    // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
+    const revalidate = (async () => {
+      const response = await fetch(request);
+      safePutInRuntime(request, response, event);
+      return response;
+    })();
+
+    if (cached) {
+      // Serve stale immediately; keep the SW alive for the background refresh.
+      const settled = revalidate.catch(() => {/* offline during revalidation is fine */});
+      if (event && typeof event.waitUntil === 'function') event.waitUntil(settled);
+      return tagResponse(cached, CACHE_STATUS.STALE);
+    }
+
+    // No cache — wait for network, fall back to offline handling if network fails
+    try {
+      const response = await revalidate;
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch {
+      // Navigation fallback for SPAs or offline pages
+      if (request.mode === 'navigate') {
+        const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+        const fallbackRes = await getFromCache(fallbackUrl);
+        if (fallbackRes) {
+          return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+        }
+      }
+
+      // Return a typed offline error response instead of throwing
+      return tagResponse(
+        new Response('Offline — no cached version available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
+  }
+
+  // ── cache-only ──────────────────────────────────────────────────────────
+
+  /**
+   * Serve exclusively from cache. Never hit the network.
+   * Returns a 503 if the resource is not cached.
+   *
+   * Best for: offline-only fallback resources (placeholder pages, offline.html).
+   *
+   * Response header: X-Cache-Status: offline-cache | runtime-cache | offline-fallback
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function cacheOnly(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+
+    const offlineCached = await getFromOffline(request, matchOptions);
+    if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+
+    const runtimeCached = await getFromRuntime(request, matchOptions);
+    if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+
+    if (request.mode === 'navigate') {
+      const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+      const fallbackRes = await getFromCache(fallbackUrl);
+      if (fallbackRes) {
+        return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+      }
+    }
+
+    return tagResponse(
+      new Response('Not available offline.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+      CACHE_STATUS.OFFLINE_FALLBACK,
+    );
+  }
+
+  /** Map strategy name → strategy function */
+  const STRATEGY_FN = {
+    [STRATEGIES.CACHE_FIRST]:            cacheFirst,
+    [STRATEGIES.NETWORK_FIRST]:          networkFirst,
+    [STRATEGIES.NETWORK_ONLY]:           networkOnly,
+    [STRATEGIES.STALE_WHILE_REVALIDATE]: staleWhileRevalidate,
+    [STRATEGIES.CACHE_ONLY]:             cacheOnly,
+  };
+
+  /**
+   * Resolve the strategy function for a given Request by matching it against
+   * config.routes (top-to-bottom, first match wins).
+   * Falls back to config.defaultStrategy if no route matches.
+   *
+   * @param {Request} request
+   * @returns {Function}  one of the five strategy functions
+   */
+  function resolveStrategy(request) {
+    const { routes, defaultStrategy } = getConfig();
+
+    let requestUrl;
+    try {
+      requestUrl = new URL(request.url);
+    } catch {
+      return (req, event) => networkOnly(req);
+    }
+
+    const isSameOrigin = typeof self !== 'undefined' && self.location
+      ? requestUrl.origin === self.location.origin
+      : true;
+
+    for (const route of routes) {
+      // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
+      // match against that. Otherwise default to same-origin only.
+      if (route.origin) {
+        if (route.origin !== '*' && route.origin !== requestUrl.origin) {
+          continue;
+        }
+      } else if (!isSameOrigin) {
+        // Unspecified origin matches ONLY same-origin requests
+        continue;
+      }
+
+      if (matchGlob(route.match, requestUrl.pathname)) {
+        const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
+        return (req, event) => fn(req, event, route);
+      }
+    }
+
+    // Cross-origin requests without an explicit origin route pass through without caching
+    if (!isSameOrigin) {
+      return (req, event) => networkOnly(req);
+    }
+
+    const defaultFn = STRATEGY_FN[defaultStrategy] ?? networkFirst;
+    return (req, event) => defaultFn(req, event);
+  }
+
+  /**
+   * Handle all `fetch` events from the Service Worker.
+   *
+   * Filters:
+   *   - Non-GET requests pass through (POST/PUT/DELETE handled natively)
+   *   - Non-HTTP(S) URLs pass through (chrome-extension://, etc.)
+   *
+   * Ensures runtime config is hydrated from offline cache before matching routes,
+   * and switches to a staged update on navigation requests.
+   *
+   * @param {FetchEvent} event
+   */
+  function handleFetch(event) {
+    const { request } = event;
+
+    // Only intercept GET requests
+    if (request.method !== 'GET') return;
+
+    // Only intercept http(s) requests
+    if (!request.url.startsWith('http')) return;
+
+    event.respondWith(
+      (async () => {
+        await ensureConfigReady();
+        // A staged update goes live only when a new page load starts, so one
+        // page is never served half from the old version and half from the new.
+        if (request.mode === 'navigate') {
+          await commitIfReady().catch((err) => console.warn('[NLPWA] Commit failed:', err.message));
+        }
+        const strategyFn = resolveStrategy(request);
+        return strategyFn(request, event);
+      })()
+    );
+  }
+
+  /**
+   * Notify all connected clients with a postMessage.
+   *
+   * @param {Object} message
+   */
+  async function broadcast(message) {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+    clients.forEach(client => client.postMessage(message));
+  }
+
+  /**
+   * Run a complete two-tier update check cycle:
+   *
+   *   1. Tier 1: lightweight version check (/api/update/version)
+   *   2. Stop early if the live version already matches
+   *   3. Tier 2: fetch the full file manifest (/api/update/info)
+   *   4. Stage: build the new version in a separate cache (copy unchanged files,
+   *      fetch + hash-verify the rest). The running app is not touched.
+   *   5. Tell clients UPDATE_READY. The switch happens on the next navigation
+   *      (or APPLY_UPDATE), so one page load is never served from two versions.
+   *
+   * On a first install there is nothing to protect, so the staged cache is
+   * switched in right away and no banner is shown.
+   *
+   * Safe to call concurrently: a shared lock lets only one run proceed.
+   *
+   * @returns {Promise<{ updated: boolean, version?: string }>}
+   */
+  async function checkForUpdate() {
+    if (!tryAcquire()) {
+      console.log('[NLPWA] Update already in progress, skipping.');
+      return { updated: false };
+    }
+    try {
+      return await runUpdateCheck();
+    } finally {
+      release();
+    }
+  }
+
+  async function runUpdateCheck() {
+    const config = getConfig();
+
+    // ── Tier 1: lightweight version check ────────────────────────────────────
+    let serverVersion;
+    try {
+      serverVersion = (await fetchServerVersion()).version;
+    } catch (err) {
+      console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
+    }
+
+    const active = await loadCachedManifest();
+    const staged = await getStaged();
+
+    // A complete update is already staged and waiting for the next navigation.
+    if (staged?.complete && staged.swVersion === config.version
+        && (!serverVersion || serverVersion === staged.version)) {
+      await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, partial: Boolean(staged.partial), staged: true });
+      return { updated: true, version: staged.version, staged: true };
+    }
+
+    const isFresh = !active;
+    const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
+    const needsRetry = Boolean(active?.needsRetry); // snapshots written by older NLPWA versions
+    const isCurrent = (version) => !isFresh && !swVersionChanged && !needsRetry && version === active.version;
+
+    if (serverVersion && isCurrent(serverVersion)) {
+      console.log(`[NLPWA] App already up to date (v${active.version})`);
+      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
+      return { updated: false };
+    }
+
+    // ── Tier 2: full manifest ────────────────────────────────────────────────
+    let serverManifest;
+    try {
+      serverManifest = await fetchServerManifest();
+    } catch (err) {
+      console.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
+      return { updated: false };
+    }
+
+    if (isCurrent(serverManifest.version)) {
+      console.log(`[NLPWA] App already up to date (v${active.version})`);
+      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
+      return { updated: false };
+    }
+
+    console.log(isFresh
+      ? `[NLPWA] Initial installation: staging v${serverManifest.version}`
+      : `[NLPWA] Update available: v${active.version} → v${serverManifest.version}`);
+
+    // ── Stage (active version keeps serving) ─────────────────────────────────
+    const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
+
+    if (result.status === 'incomplete') {
+      return { updated: false, version: serverManifest.version, failed: result.failed };
+    }
+
+    if (isFresh) {
+      await commitStaged();
+      return { updated: false, version: serverManifest.version, initial: true };
+    }
+
+    await broadcast({
+      type: MESSAGE_TYPES.UPDATE_READY,
+      version: serverManifest.version,
+      partial: result.partial,
+      staged: true,
+    });
+    return { updated: true, version: serverManifest.version, staged: true };
+  }
+
+  let _pollTimer = null;
+
+  /**
+   * Stop automatic update polling if running.
+   */
+  function stopUpdatePolling() {
+    if (_pollTimer !== null) {
+      clearInterval(_pollTimer);
+      _pollTimer = null;
+    }
+  }
+
+  /**
+   * Start automatic update polling based on config.updateCheckInterval.
+   * Clears any existing interval timer before starting.
+   * No-op if updateCheckInterval is 0 (manual-only mode).
+   */
+  function startUpdatePolling() {
+    stopUpdatePolling();
+
+    const { updateCheckInterval } = getConfig();
+    if (!updateCheckInterval) return;
+
+    const intervalMs = updateCheckInterval;
+    console.log(`[NLPWA] Update polling every ${intervalMs / 1000}s`);
+
+    _pollTimer = setInterval(() => {
+      checkForUpdate().catch(err => console.error('[NLPWA] Update check error:', err));
+    }, intervalMs);
+  }
+
+  // Re-invoke polling if updateCheckInterval changes at runtime
+  onUpdateIntervalChange(() => {
+    startUpdatePolling();
+  });
+
+  /**
+   * Initialize the NLPWA Service Worker.
+   *
+   * @param {Object} userConfig
+   */
+  function initSW(userConfig = {}) {
+    const config = initConfig(userConfig);
+
+    // Eagerly try to hydrate routes and config from offline cache on SW startup
+    loadConfigFromCache().catch(() => {});
+
+    // ── install ────────────────────────────────────────────────────────────────
+    self.addEventListener('install', (event) => {
+      console.log(`[NLPWA] Installing SW v${config.version}`);
+      event.waitUntil(
+        precacheFiles()
+          .then(() => self.skipWaiting())
+          .catch(err => console.error('[NLPWA] Install error:', err))
+      );
+    });
+
+    // ── activate ───────────────────────────────────────────────────────────────
+    self.addEventListener('activate', (event) => {
+      console.log(`[NLPWA] Activated SW v${config.version}`);
+      event.waitUntil(
+        self.clients.claim().then(async () => {
+          await sweepOrphanCaches().catch(() => {});
+          await loadConfigFromCache();
+          startUpdatePolling();
+          return checkForUpdate();
+        })
+      );
+    });
+
+    // ── fetch ──────────────────────────────────────────────────────────────────
+    self.addEventListener('fetch', handleFetch);
+
+    // ── message ────────────────────────────────────────────────────────────────
+    // Clients can trigger a manual update check via:
+    //   navigator.serviceWorker.controller.postMessage({ type: 'CHECK_UPDATE' })
+    self.addEventListener('message', (event) => {
+      if (event.data?.type === MESSAGE_TYPES.CHECK_UPDATE) {
+        event.waitUntil(checkForUpdate());
+      }
+
+      // Client asked to switch to the staged update now, then it will reload.
+      if (event.data?.type === MESSAGE_TYPES.APPLY_UPDATE) {
+        event.waitUntil((async () => {
+          const applied = await commitIfReady().catch(() => false);
+          event.source?.postMessage({ type: MESSAGE_TYPES.UPDATE_APPLIED, applied });
+        })());
+      }
+    });
+
+    // ── periodic background sync ───────────────────────────────────────────────
+    self.addEventListener('periodicsync', (event) => {
+      if (event.tag === 'nlpwa-update-check') {
+        event.waitUntil(checkForUpdate());
+      }
+    });
+  }
+
+  /**
+   * Standalone Service Worker entry (built to out/sw.js, the file `nlpwa init` copies).
+   *
+   * It starts the engine with the defaults below. Everything app-specific
+   * (routes, precache list, update endpoints) lives in /config.json, which is
+   * stored in the offline cache and applied as soon as it is available.
+   *
+   * `updateAPI` is set here because the very first install runs before
+   * /config.json has been cached, so the engine needs to know where the update
+   * manifest is. These match the starter config.js. If you serve the update API
+   * elsewhere, build your own entry:
+   *
+   *   import { initSW } from 'nlpwa/sw';
+   *   initSW({ version: '1', updateAPI: { version: '/v', info: '/i' } });
+   */
+
+  initSW({
+    version: '1',
+    configPath: '/config.json',
+    updateAPI: {
+      version: '/api/update/version.json',
+      info: '/api/update/info.json',
+    },
+  });
+
+})();

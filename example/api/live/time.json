@@ -1,0 +1,8 @@
+{
+  "status": "live",
+  "strategy": "network-only",
+  "timestamp": 1792234600000,
+  "server": "NLPWA Edge Cluster #4",
+  "bypassCache": true,
+  "message": "Always live, strictly bypasses Service Worker cache."
+}

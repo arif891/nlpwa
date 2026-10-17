@@ -1,5 +1,6 @@
 import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
+import { openActive } from '../cache/store.js';
 
 /** Singleton config instance, set by initConfig() */
 let _config = null;
@@ -94,17 +95,18 @@ export function ensureConfigReady() {
 
 /**
  * Load the runtime config file from the offline cache.
- * Config is always read from the offline cache at runtime.
+ * Config is always read from the ACTIVE offline cache at runtime, so it
+ * switches together with the rest of the app shell when an update is committed.
  *
  * @returns {Promise<Object|null>}
  */
 export async function loadConfigFromCache() {
   const config = _config || initConfig();
-  const cacheName = config.caches?.offline || 'offline';
+  const baseName = config.caches?.offline || 'offline';
   const configPath = config.configPath || '/config.json';
 
   try {
-    const cache = await caches.open(cacheName);
+    const cache = await openActive(baseName);
     const response = await cache.match(configPath);
     if (!response) return null;
 

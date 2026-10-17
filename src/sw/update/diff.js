@@ -10,7 +10,7 @@
  *                                                               (null = fresh install)
  * @returns {{ added: string[], modified: string[], removed: string[] }}
  */
-function isSafePath(path) {
+export function isSafePath(path) {
   if (typeof path !== 'string' || !path) return false;
   // Reject absolute URLs with protocols (e.g. http:, https:, data:) and protocol-relative URLs (//)
   if (path.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(path)) return false;

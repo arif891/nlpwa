@@ -1,4 +1,5 @@
 import { getConfig } from '../config/index.js';
+import { openActive, getActiveName, resetMeta } from './store.js';
 
 // ── Offline cache helpers ────────────────────────────────────────────────────
 
@@ -10,7 +11,7 @@ import { getConfig } from '../config/index.js';
  */
 export async function getFromOffline(request, matchOptions) {
   const { caches: cacheNames } = getConfig();
-  const cache = await caches.open(cacheNames.offline);
+  const cache = await openActive(cacheNames.offline);
   return cache.match(request, matchOptions);
 }
 
@@ -23,7 +24,7 @@ export async function getFromOffline(request, matchOptions) {
  */
 export async function putInOffline(request, response) {
   const { caches: cacheNames } = getConfig();
-  const cache = await caches.open(cacheNames.offline);
+  const cache = await openActive(cacheNames.offline);
   await cache.put(request, response.clone());
 }
 
@@ -34,7 +35,7 @@ export async function putInOffline(request, response) {
  */
 export async function deleteFromOffline(request) {
   const { caches: cacheNames } = getConfig();
-  const cache = await caches.open(cacheNames.offline);
+  const cache = await openActive(cacheNames.offline);
   await cache.delete(request);
 }
 
@@ -79,7 +80,7 @@ export async function evictFromRuntime(paths) {
 }
 
 /**
- * Delete both the offline and runtime caches entirely.
+ * Delete the active offline cache and the runtime cache entirely.
  *
  * Called when swVersion changes — the developer has changed SW logic
  * (routes, strategies, precache list), so all existing cached data
@@ -87,10 +88,12 @@ export async function evictFromRuntime(paths) {
  */
 export async function clearAllCaches() {
   const { caches: cacheNames } = getConfig();
+  const activeName = await getActiveName(cacheNames.offline);
   await Promise.all([
-    caches.delete(cacheNames.offline),
+    caches.delete(activeName),
     caches.delete(cacheNames.runtime),
   ]);
+  await resetMeta();
   console.log('[NLPWA] All caches cleared (SW version change)');
 }
 

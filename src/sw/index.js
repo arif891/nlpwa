@@ -2,6 +2,7 @@ import { initConfig, loadConfigFromCache } from './config/index.js';
 import { precacheFiles } from './cache/install.js';
 import { handleFetch } from './fetch/index.js';
 import { checkForUpdate, startUpdatePolling } from './update/index.js';
+import { commitIfReady, sweepOrphanCaches } from './update/commit.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
 
 /**
@@ -30,6 +31,7 @@ export function initSW(userConfig = {}) {
     console.log(`[NLPWA] Activated SW v${config.version}`);
     event.waitUntil(
       self.clients.claim().then(async () => {
+        await sweepOrphanCaches().catch(() => {});
         await loadConfigFromCache();
         startUpdatePolling();
         return checkForUpdate();
@@ -46,6 +48,14 @@ export function initSW(userConfig = {}) {
   self.addEventListener('message', (event) => {
     if (event.data?.type === MESSAGE_TYPES.CHECK_UPDATE) {
       event.waitUntil(checkForUpdate());
+    }
+
+    // Client asked to switch to the staged update now, then it will reload.
+    if (event.data?.type === MESSAGE_TYPES.APPLY_UPDATE) {
+      event.waitUntil((async () => {
+        const applied = await commitIfReady().catch(() => false);
+        event.source?.postMessage({ type: MESSAGE_TYPES.UPDATE_APPLIED, applied });
+      })());
     }
   });
 

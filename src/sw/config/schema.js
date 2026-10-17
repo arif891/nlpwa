@@ -31,6 +31,10 @@ export function validateConfig(config) {
     errors.push('config.updateAPI must be an object with { version, info } or an array');
   }
 
+  if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
+    errors.push("config.verifyHashes must be 'strict', 'warn' or false");
+  }
+
   if (typeof config.updateCheckInterval !== 'number' || config.updateCheckInterval < 0) {
     errors.push('config.updateCheckInterval must be a non-negative number (ms)');
   }

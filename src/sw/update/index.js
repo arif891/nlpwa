@@ -1,8 +1,8 @@
 import { getConfig } from '../config/index.js';
-import { fetchServerVersion, fetchServerManifest, loadCachedManifest, saveCachedManifest } from './manifest.js';
-import { computeDiff, computeRefreshDiff } from './diff.js';
-import { applyDiff } from './apply.js';
-import { precacheFiles } from '../cache/index.js';
+import { getStaged, tryAcquire, release } from '../cache/store.js';
+import { fetchServerVersion, fetchServerManifest, loadCachedManifest } from './manifest.js';
+import { stageUpdate } from './stage.js';
+import { commitStaged } from './commit.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 
 /**
@@ -18,131 +18,103 @@ async function broadcast(message) {
 /**
  * Run a complete two-tier update check cycle:
  *
- *   1. Tier 1: Lightweight version check (/api/update/version)
- *   2. Check if App version is newer than cached manifest (stop early if not)
- *   3. Check if SW engine version changed
- *   4. Tier 2: Fetch full file manifest (/api/update/info)
- *   5. Hash diff against cached manifest
- *   6. Apply diff (fetch changed files & config.json, delete removed, evict stale)
- *   7. Broadcast UPDATE_READY to all clients
+ *   1. Tier 1: lightweight version check (/api/update/version)
+ *   2. Stop early if the live version already matches
+ *   3. Tier 2: fetch the full file manifest (/api/update/info)
+ *   4. Stage: build the new version in a separate cache (copy unchanged files,
+ *      fetch + hash-verify the rest). The running app is not touched.
+ *   5. Tell clients UPDATE_READY. The switch happens on the next navigation
+ *      (or APPLY_UPDATE), so one page load is never served from two versions.
  *
- * This function is safe to call concurrently — a module-level lock
- * prevents overlapping update runs.
+ * On a first install there is nothing to protect, so the staged cache is
+ * switched in right away and no banner is shown.
+ *
+ * Safe to call concurrently: a shared lock lets only one run proceed.
  *
  * @returns {Promise<{ updated: boolean, version?: string }>}
  */
-let _updateInProgress = false;
-
 export async function checkForUpdate() {
-  if (_updateInProgress) {
+  if (!tryAcquire()) {
     console.log('[NLPWA] Update already in progress, skipping.');
     return { updated: false };
   }
-
-  _updateInProgress = true;
-
   try {
-    const config = getConfig();
-
-    // ── Tier 1: Lightweight version check ──────────────────────────────────
-    let versionInfo;
-    try {
-      versionInfo = await fetchServerVersion();
-    } catch (err) {
-      console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest if available:', err.message);
-    }
-
-    const cachedManifest = await loadCachedManifest();
-    const serverVersion = versionInfo?.version;
-
-    // Check if this is a fresh install (no snapshot stored yet)
-    const isFreshInstall = !cachedManifest;
-
-    // Check if SW engine version changed (developer manually bumped config.version)
-    const swVersionChanged = cachedManifest?.swVersion && cachedManifest.swVersion !== config.version;
-
-    // Check if previous update had failed fetches that need retry
-    const needsRetry = Boolean(cachedManifest?.needsRetry);
-
-    // Short-circuit if app version matches server, no SW change, and no retry needed
-    if (!isFreshInstall && !swVersionChanged && !needsRetry && serverVersion && serverVersion === cachedManifest.version) {
-      console.log(`[NLPWA] App already up to date (v${cachedManifest.version})`);
-      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: cachedManifest.version });
-      return { updated: false };
-    }
-
-    // ── Tier 2: Fetch server manifest ──────────────────────────────────────
-    let serverManifest;
-    try {
-      serverManifest = await fetchServerManifest();
-    } catch (err) {
-      console.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
-      return { updated: false };
-    }
-
-    // Handle SW engine version bump safely (populate new files before clearing old runtime)
-    if (swVersionChanged) {
-      console.log(`[NLPWA] SW engine version changed: v${cachedManifest.swVersion} → v${config.version}. Updating cache.`);
-      await precacheFiles();
-      // Re-fetch everything, but still drop files that no longer exist in the manifest
-      const diff = computeRefreshDiff(serverManifest.files, cachedManifest.files);
-      await applyDiff(diff, serverManifest);
-      const { caches: cacheNames } = config;
-      await caches.delete(cacheNames.runtime);
-      await broadcast({
-        type:    MESSAGE_TYPES.UPDATE_READY,
-        version: serverManifest.version,
-      });
-      return { updated: true, version: serverManifest.version };
-    }
-
-    // Check if App version matches and no retry needed
-    if (!isFreshInstall && !needsRetry && cachedManifest?.version === serverManifest.version) {
-      console.log(`[NLPWA] App already up to date (v${cachedManifest.version})`);
-      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: cachedManifest.version });
-      return { updated: false };
-    }
-
-    // Fresh install: populate snapshot without showing "Update Available" banner
-    if (isFreshInstall) {
-      console.log(`[NLPWA] Initial installation: populating snapshot v${serverManifest.version}`);
-      const diff = computeDiff(serverManifest.files, null);
-      await applyDiff(diff, serverManifest);
-      return { updated: false, version: serverManifest.version, initial: true };
-    }
-
-    console.log(`[NLPWA] Update available: v${cachedManifest.version} → v${serverManifest.version}${needsRetry ? ' (retrying previous failures)' : ''}`);
-
-    // ── Step 3: Hash diff ──────────────────────────────────────────────────
-    const diff = computeDiff(serverManifest.files, cachedManifest?.files ?? null);
-    const hasChanges = diff.added.length + diff.modified.length + diff.removed.length > 0;
-
-    // ── Step 4: Apply diff ─────────────────────────────────────────────────
-    let applyResult = { success: true, applied: 0 };
-    if (hasChanges) {
-      applyResult = await applyDiff(diff, serverManifest);
-    } else {
-      await saveCachedManifest(serverManifest);
-      console.log(`[NLPWA] Version updated (no file changes): v${serverManifest.version}`);
-    }
-
-    // ── Step 5: Notify clients ─────────────────────────────────────────────
-    // Notify on full success, and also on partial success: files that did
-    // download are already live in the cache, so clients should know to reload.
-    const somethingApplied = applyResult.success || applyResult.applied > 0;
-    if (somethingApplied) {
-      await broadcast({
-        type:    MESSAGE_TYPES.UPDATE_READY,
-        version: serverManifest.version,
-        partial: !applyResult.success,
-      });
-    }
-
-    return { updated: somethingApplied, version: serverManifest.version };
-
+    return await runUpdateCheck();
   } finally {
-    _updateInProgress = false;
+    release();
   }
+}
+
+async function runUpdateCheck() {
+  const config = getConfig();
+
+  // ── Tier 1: lightweight version check ────────────────────────────────────
+  let serverVersion;
+  try {
+    serverVersion = (await fetchServerVersion()).version;
+  } catch (err) {
+    console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
+  }
+
+  const active = await loadCachedManifest();
+  const staged = await getStaged();
+
+  // A complete update is already staged and waiting for the next navigation.
+  if (staged?.complete && staged.swVersion === config.version
+      && (!serverVersion || serverVersion === staged.version)) {
+    await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, partial: Boolean(staged.partial), staged: true });
+    return { updated: true, version: staged.version, staged: true };
+  }
+
+  const isFresh = !active;
+  const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
+  const needsRetry = Boolean(active?.needsRetry); // snapshots written by older NLPWA versions
+  const isCurrent = (version) => !isFresh && !swVersionChanged && !needsRetry && version === active.version;
+
+  if (serverVersion && isCurrent(serverVersion)) {
+    console.log(`[NLPWA] App already up to date (v${active.version})`);
+    await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
+    return { updated: false };
+  }
+
+  // ── Tier 2: full manifest ────────────────────────────────────────────────
+  let serverManifest;
+  try {
+    serverManifest = await fetchServerManifest();
+  } catch (err) {
+    console.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
+    return { updated: false };
+  }
+
+  if (isCurrent(serverManifest.version)) {
+    console.log(`[NLPWA] App already up to date (v${active.version})`);
+    await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
+    return { updated: false };
+  }
+
+  console.log(isFresh
+    ? `[NLPWA] Initial installation: staging v${serverManifest.version}`
+    : `[NLPWA] Update available: v${active.version} → v${serverManifest.version}`);
+
+  // ── Stage (active version keeps serving) ─────────────────────────────────
+  const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
+
+  if (result.status === 'incomplete') {
+    return { updated: false, version: serverManifest.version, failed: result.failed };
+  }
+
+  if (isFresh) {
+    await commitStaged();
+    return { updated: false, version: serverManifest.version, initial: true };
+  }
+
+  await broadcast({
+    type: MESSAGE_TYPES.UPDATE_READY,
+    version: serverManifest.version,
+    partial: result.partial,
+    staged: true,
+  });
+  return { updated: true, version: serverManifest.version, staged: true };
 }
 
 /**

@@ -12,9 +12,13 @@ export const MANIFEST_CACHE_PATH = SNAPSHOT_CACHE_PATH;
 export const MESSAGE_TYPES = {
   UPDATE_READY:   'UPDATE_READY',   // SW → client: new version available
   CHECK_UPDATE:   'CHECK_UPDATE',   // client → SW: trigger manual check
-  UPDATE_APPLIED: 'UPDATE_APPLIED', // SW → client: update successfully applied
+  UPDATE_APPLIED: 'UPDATE_APPLIED', // SW → client: reply to APPLY_UPDATE ({ applied })
   NO_UPDATE:      'NO_UPDATE',      // SW → client: already up to date
+  APPLY_UPDATE:   'APPLY_UPDATE',   // client → SW: switch to the staged update now
 };
+
+/** Max parallel downloads while staging an update. */
+export const FETCH_CONCURRENCY = 6;
 
 /** Fetch strategy names */
 export const STRATEGIES = {

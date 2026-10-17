@@ -123,6 +123,20 @@ cache collisions.
 
 ---
 
+### `verifyHashes` · `'strict' | 'warn' | false` · default: `'strict'`
+
+How each downloaded update file is checked against the hash in the update manifest.
+
+- `'strict'` - a mismatch (or an HTML error page served with status 200) fails that file. The update is not applied until every file verifies, and it is retried on the next check. The running version is untouched.
+- `'warn'` - mismatches are logged but the file is stored. Use this only if a proxy or CDN rewrites your files after the build, which makes the build-time hash impossible to match.
+- `false` - no verification.
+
+```js
+verifyHashes: 'strict'
+```
+
+---
+
 ### `manifestCachePath` · `string` · default: `'/_nlpwa/manifest.json'`
 
 The key used to store the manifest snapshot inside the `offline` cache.

@@ -43,6 +43,16 @@ export const DEFAULTS = {
    */
   updateCheckInterval: 60 * 60 * 1000, // 1 hour
 
+  /**
+   * How downloaded update files are checked against the manifest hash:
+   *   'strict' - mismatch fails that file; the update is not applied until
+   *              every file verifies (retried on the next check)
+   *   'warn'   - mismatch is logged but the file is still stored
+   *   false    - no verification
+   * Use 'warn' only if a proxy/CDN rewrites your files after the build.
+   */
+  verifyHashes: 'strict',
+
   /** Cache storage names */
   caches: {
     offline: CACHE_NAMES.OFFLINE,

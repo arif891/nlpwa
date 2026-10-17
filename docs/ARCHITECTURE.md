@@ -21,6 +21,7 @@ Runtime configuration is completely decoupled from `sw.js` and loaded dynamicall
 src/
 ├── shared/                         ← Shared by both SW, client, and build tool
 │   ├── constants.js                Cache names, message types, strategy names
+│   ├── hash.js                     sha256Hex(), hashMatches()
 │   ├── glob.js                     Glob URL pattern matching (*, **, ?)
 │   └── version.js                  Semver comparison & incrementPatch (isNewer, compare)
 │
@@ -31,7 +32,8 @@ src/
 │   │   ├── schema.js               Config validation (returns error strings)
 │   │   └── index.js                loadConfigFromCache(), updateActiveConfig(), getUpdateEndpoints()
 │   ├── cache/
-│   │   ├── install.js              precacheFiles() — fetches config.json, then precaches app shell
+│   │   ├── store.js                nlpwa-meta pointers (active / staged), lock, old-cache cleanup
+│   │   ├── install.js              precacheFiles() — install-time stage + commit (manifest-driven)
 │   │   ├── runtime.js              get/put/delete helpers for offline + runtime caches, clearAllCaches()
 │   │   ├── evict.js                evictByRoute() — route-aware eviction on route changes
 │   │   └── index.js                Barrel re-export
@@ -42,7 +44,8 @@ src/
 │   └── update/
 │       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerManifest (Tier 2), save snapshot
 │       ├── diff.js                 computeDiff(newFiles, oldFiles) → { added, modified, removed }
-│       ├── apply.js                applyDiff(diff, newManifest) — updates caches, reloads dynamic config
+│       ├── stage.js                stageUpdate() — builds + hash-verifies the new version in a separate cache
+│       ├── commit.js               commitStaged() — one-write switch to the staged version
 │       └── index.js                checkForUpdate() with two-tier checks and concurrency lock
 │
 ├── client/                         ← Runs in main browser thread (built to build/client.js)
@@ -60,16 +63,26 @@ src/
 
 ```
 CacheStorage
-├── offline                         App shell + runtime config + manifest
-│   ├── /config.json                Active runtime config (routes, precache, endpoints)
-│   └── /_nlpwa/manifest.json       Internal: last-applied manifest snapshot
+├── nlpwa-meta                      Two tiny pointers (the atomic commit point)
+│   ├── /_nlpwa/active.json         { cache, version, swVersion } - which offline cache is live
+│   └── /_nlpwa/staged.json         { cache, version, complete, evict, ... } - update waiting to go live
+├── offline@1.0.1-k3x9              ACTIVE version: app shell + runtime config + snapshot
+│   ├── /config.json                Runtime config (routes, precache, endpoints)
+│   └── /_nlpwa/snapshot.json       Hash map of this version; written last = "complete"
+├── offline@1.0.2-m1q7              STAGED version (only exists while an update waits)
 └── runtime                         Lazily cached responses (filled by fetch strategies)
 ```
 
-### Why store the config & manifest inside `offline`?
+### Why a cache per version plus a pointer?
 
-- **Zero network roundtrips at fetch time**: The SW loads `/config.json` directly from `offline` cache.
-- **OTA Route updates**: Updating `config.js` does NOT require a byte-level reinstall of `sw.js`. The update engine downloads the new `config.json` into the `offline` cache and updates routes on the fly.
+- **Atomic**: the Cache API cannot rename or move caches. Building the next version in its own cache and flipping one pointer means a crash, a dropped connection or a failed download can never leave a half-updated app.
+- **Consistent pages**: the switch happens on a navigation request (or `APPLY_UPDATE`), never in the middle of a page load, so one page is not served partly from two versions.
+- **Cheap deltas**: unchanged files are copied from the active cache locally; only changed files use the network, and each is hash-verified.
+
+### Why store the config & snapshot inside the versioned cache?
+
+- **Zero network roundtrips at fetch time**: The SW loads `/config.json` directly from the active cache.
+- **OTA Route updates**: Updating `config.js` does NOT require a byte-level reinstall of `sw.js`. The new `config.json` is staged with the rest of the version and its routes apply when that version goes live.
 - **Persistence**: Survives SW restarts without requiring IndexedDB.
 
 ---

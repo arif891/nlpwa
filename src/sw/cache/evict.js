@@ -1,6 +1,7 @@
 import { getConfig } from '../config/index.js';
 import { matchGlob } from '../../shared/glob.js';
 import { CACHING_CAPABLE_STRATEGIES } from '../../shared/constants.js';
+import { openActive } from './store.js';
 
 /**
  * Determine if a URL should remain in any cache.
@@ -33,17 +34,18 @@ function isCacheableUrl(url) {
  *
  * @param {Cache}  cache
  * @param {string} cacheName  for logging
- * @param {string} [manifestCachePath]  path to skip (internal manifest entry)
+ * @param {Set<string>} protectedPaths  internal entries that must never be evicted
+ *                                      (snapshot and runtime config.json)
  */
-async function evictNonCacheable(cache, cacheName, manifestCachePath) {
+async function evictNonCacheable(cache, cacheName, protectedPaths) {
   const keys = await cache.keys();
 
   await Promise.all(
     keys.map(async (request) => {
       const { pathname } = new URL(request.url);
 
-      // Never evict the internal manifest snapshot
-      if (pathname === manifestCachePath) return;
+      // Never evict internal entries: the snapshot and the runtime config
+      if (protectedPaths.has(pathname)) return;
 
       if (!isCacheableUrl(request.url)) {
         await cache.delete(request);
@@ -60,15 +62,18 @@ async function evictNonCacheable(cache, cacheName, manifestCachePath) {
  * have been removed or changed to network-only in the latest config.
  */
 export async function evictByRoute() {
-  const { caches: cacheNames, manifestCachePath } = getConfig();
+  const { caches: cacheNames, manifestCachePath, snapshotCachePath, configPath } = getConfig();
+  const protectedPaths = new Set(
+    [manifestCachePath, snapshotCachePath, configPath || '/config.json'].filter(Boolean)
+  );
 
   const [offlineCache, runtimeCache] = await Promise.all([
-    caches.open(cacheNames.offline),
+    openActive(cacheNames.offline),
     caches.open(cacheNames.runtime),
   ]);
 
   await Promise.all([
-    evictNonCacheable(offlineCache, cacheNames.offline, manifestCachePath),
-    evictNonCacheable(runtimeCache, cacheNames.runtime, manifestCachePath),
+    evictNonCacheable(offlineCache, cacheNames.offline, protectedPaths),
+    evictNonCacheable(runtimeCache, cacheNames.runtime, protectedPaths),
   ]);
 }

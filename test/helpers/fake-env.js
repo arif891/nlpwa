@@ -1,5 +1,6 @@
 // Minimal in-memory stand-ins for CacheStorage / fetch so SW modules can run in Node.
 import { initConfig } from '../../src/sw/config/index.js';
+import { resetStoreMemo } from '../../src/sw/cache/store.js';
 
 function keyOf(req) {
   return typeof req === 'string' ? new URL(req, 'https://example.com').href : req.url;
@@ -20,6 +21,11 @@ class FakeCache {
     return undefined;
   }
   async put(req, res) { this.map.set(keyOf(req), res.clone()); }
+  async add(req) {
+    const res = await globalThis.fetch(req);
+    if (!res.ok) throw new TypeError(`Cache.add failed: HTTP ${res.status}`);
+    await this.put(req, res);
+  }
   async delete(req) { return this.map.delete(keyOf(req)); }
   async keys() { return [...this.map.keys()].map(u => new Request(u)); }
 }
@@ -31,6 +37,7 @@ class FakeCacheStorage {
     return this.stores.get(name);
   }
   async delete(name) { return this.stores.delete(name); }
+  async keys() { return [...this.stores.keys()]; }
 }
 
 /**
@@ -40,6 +47,7 @@ class FakeCacheStorage {
  */
 export function setupEnv(fetchImpl, config = {}) {
   globalThis.caches = new FakeCacheStorage();
+  resetStoreMemo();
   // Normalise relative strings to absolute Requests, like a real SW fetch would
   globalThis.fetch = async (req, init) =>
     fetchImpl(typeof req === 'string' ? new Request(new URL(req, 'https://example.com').href, init) : req, init);

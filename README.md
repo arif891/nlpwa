@@ -11,7 +11,8 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 - **Only offline files tracked** — build tool tracks & hashes only `config.json` and precached app shell files
 - **Two-tier update check** — lightweight version check first (~20 bytes); full manifest only downloaded when an update exists
 - **5 fetch strategies** per URL pattern (glob routing)
-- **Hash-based OTA delta updates** — only changed files are re-fetched
+- **Hash-based OTA delta updates** — only changed files are re-fetched, and every download is verified against its manifest hash
+- **Atomic updates** — new versions are staged in a separate cache and switched in with one pointer write; a failed or interrupted update never affects the running app
 - **Route-aware cache eviction** — stale entries removed automatically on route change
 - **Self-healing cache** — failed fetches retry on next update check
 - **Three drop-in files** — `sw.js` (core engine), `config.js` (routes/settings), and `client.js` (runtime SDK)
@@ -135,14 +136,15 @@ This generates:
 
 ## Cache Storage
 
-NLPWA uses exactly **two** named caches:
+NLPWA uses these caches:
 
 | Cache | Purpose |
-|---|---|
-| `offline` | App shell (`precache`) + runtime `config.json` + internal snapshot `/_nlpwa/manifest.json` |
+| --- | --- |
+| `offline@<version>-<id>` | One per app version: app shell (`precache`) + `config.json` + internal snapshot `/_nlpwa/snapshot.json`. Only the **active** one serves requests |
 | `runtime` | Assets cached lazily on first request; evicted when stale |
+| `nlpwa-meta` | Two tiny pointers: which `offline@…` cache is active, and whether a complete update is staged |
 
-The config file and manifest snapshot inside `offline` are the single source of truth for what's currently active.
+An update is built in a brand-new `offline@…` cache while the active one keeps serving. A cache that contains its snapshot is complete, and going live is a single write to the active pointer, so the app is always on either the old or the new version, never a mix. `config.json` lives inside the versioned cache, so routes switch together with the files they describe. An app installed by an older NLPWA (plain `offline` cache) is migrated on its first update.
 
 ---
 
@@ -151,18 +153,21 @@ The config file and manifest snapshot inside `offline` are the single source of 
 ```
 1. SW active → triggers check (on activate + every interval + tab focus)
 2. Tier 1: GET /api/update/version → { version }
-3. Compare against cached app version → already up to date? STOP immediately.
+3. Compare against the live version → already up to date? STOP immediately.
 4. Tier 2: GET /api/update/info → { version, files: [{path, hash}] }
-5. Load previous manifest snapshot from offline cache
-6. Hash diff: added | modified | removed
-7. Fetch & store added/modified in offline cache
-   - If /config.json was modified: updates offline cache & reloads routes dynamically!
-8. Delete removed files from offline cache
-9. Evict stale runtime entries
-10. Route-aware eviction: clean entries no longer matching cacheable routes
-11. Save new manifest snapshot
-12. postMessage UPDATE_READY → client shows update prompt
+5. Stage a new offline@<version> cache (the running app is not touched):
+   - unchanged files (same hash as live) are copied locally, no network
+   - added/modified files are fetched (no-store) and their SHA-256 is
+     checked against the manifest (config.verifyHashes)
+   - files that verified earlier are reused when a failed update is retried
+6. Write the snapshot last (marks the staged cache complete)
+7. postMessage UPDATE_READY → client shows the update prompt
+8. On the next page load (or NLPWAClient.applyUpdate()):
+   switch the active pointer, reload config.json, evict changed entries from
+   the runtime cache, route-aware eviction, delete the old offline cache
 ```
+
+First install runs the same pipeline during `install` and switches at once (no prompt), so the first update check has nothing left to download. If a file keeps failing, the old version stays live; after 5 consecutive failed checks the update goes ahead without that file (it keeps its old copy) and is retried on the next version bump.
 
 ---
 
@@ -183,7 +188,7 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 
 ### Client: `NLPWAClient.applyUpdate()`
 
-Reloads the page to apply the waiting update.
+Asks the SW to switch to the staged update, then reloads the page. (A plain reload also applies it, because the switch happens on navigation.)
 
 ### Client events
 

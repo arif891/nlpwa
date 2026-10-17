@@ -1,29 +1,62 @@
 import { getConfig, updateActiveConfig, loadConfigFromCache } from '../config/index.js';
+import { tryAcquire, release, openActive } from './store.js';
+import { fetchServerManifest, loadCachedSnapshot } from '../update/manifest.js';
+import { stageUpdate } from '../update/stage.js';
+import { commitStaged } from '../update/commit.js';
 
 /**
- * Pre-cache all files listed in config.precache into the offline cache.
- * Called during the SW `install` event via event.waitUntil().
+ * Install-time caching, called from the SW `install` event.
  *
- * First fetches and caches the runtime config file (e.g. /config.json)
- * in the offline cache, then precaches the app shell files.
+ * Normal path: take the server manifest and run the same stage → verify →
+ * commit pipeline as an update. On a first install nothing is running yet, so
+ * the staged cache is switched in immediately. When upgrading from an older
+ * SW the app is already running, so the staged cache waits for the next
+ * navigation like any other update.
+ *
+ * Because the snapshot is written during install, the first update check sees
+ * an up-to-date app instead of re-downloading everything.
+ *
+ * Fallback (no manifest, e.g. `nlpwa update` was never run): precache from
+ * config.precache without hashes. The first update check then builds the
+ * hashed snapshot.
  */
 export async function precacheFiles() {
-  const config = getConfig();
-  const cacheNames = config.caches;
-  const configPath = config.configPath || '/config.json';
-  const offlineCache = await caches.open(cacheNames.offline);
-
-  // 1. Fetch & store config file in offline cache
+  if (!tryAcquire()) return;
   try {
-    const configRes = await fetch(configPath, {
-      cache: 'no-store',
-      headers: { 'Accept': 'application/json' },
-    });
+    let manifest = null;
+    try {
+      manifest = await fetchServerManifest();
+    } catch (err) {
+      console.warn(`[NLPWA] No update manifest at install (${err.message})`);
+    }
+
+    const activeSnapshot = await loadCachedSnapshot();
+
+    if (manifest) {
+      const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
+      const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
+      // Incomplete staging is resumed by the update check on activate.
+      if (result.status === 'ready' && !activeSnapshot) await commitStaged();
+      return;
+    }
+
+    if (!activeSnapshot) await precacheWithoutManifest();
+  } finally {
+    release();
+  }
+}
+
+async function precacheWithoutManifest() {
+  const config = getConfig();
+  const configPath = config.configPath || '/config.json';
+  
+  const offlineCache = await openActive(config.caches.offline);
+
+  try {
+    const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
     if (configRes.ok) {
       await offlineCache.put(configPath, configRes.clone());
-      const runtimeConfig = await configRes.json();
-      updateActiveConfig(runtimeConfig);
-      console.log(`[NLPWA] Runtime config cached: ${configPath}`);
+      updateActiveConfig(await configRes.json());
     } else {
       console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
       await loadConfigFromCache();
@@ -33,21 +66,12 @@ export async function precacheFiles() {
     await loadConfigFromCache();
   }
 
-  // 2. Precache files defined in config.precache
-  const activeConfig = getConfig();
-  const precache = activeConfig.precache || [];
-
-  if (!precache.length) return;
-
+  const precache = getConfig().precache || [];
+  // cache: 'reload' skips the HTTP cache so stale bytes are never stored
   const results = await Promise.allSettled(
-    precache.map(url => offlineCache.add(url))
+    precache.map((url) => offlineCache.add(new Request(new URL(url, self.location.href), { cache: 'reload' })))
   );
-
   results.forEach((result, i) => {
-    if (result.status === 'rejected') {
-      console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
-    } else {
-      console.log(`[NLPWA] Precached: ${precache[i]}`);
-    }
+    if (result.status === 'rejected') console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
   });
 }

@@ -14,8 +14,8 @@ export default {
 
   // Two-tier update check endpoints
   updateAPI: {
-    version: '/api/update/version',
-    info: '/api/update/info',
+    version: '/api/update/version.json',
+    info: '/api/update/info.json',
   },
 
   // Update polling interval in ms (set to 0 to disable periodic polling)

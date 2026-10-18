@@ -100,9 +100,6 @@ export default {
     info:    '/api/update/info.json',
   },
 
-  // Check for updates every hour
-  updateCheckInterval: 60 * 60 * 1000,
-
   // Verify SHA-256 hashes against update manifest ('strict' | 'warn' | false)
   verifyHashes: 'strict',
 

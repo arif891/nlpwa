@@ -2,7 +2,7 @@ import { initConfig, loadConfigFromCache } from './config/index.js';
 import { precacheFiles } from './cache/install.js';
 import { getStorageQuotaInfo, cleanRuntimeCache } from './cache/cleanup.js';
 import { handleFetch } from './fetch/index.js';
-import { checkForUpdate, startUpdatePolling } from './update/index.js';
+import { checkForUpdate } from './update/index.js';
 import { commitIfReady, sweepOrphanCaches } from './update/commit.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
 
@@ -43,7 +43,6 @@ export function initSW(userConfig = {}) {
       self.clients.claim().then(async () => {
         await sweepOrphanCaches().catch(() => {});
         await loadConfigFromCache();
-        startUpdatePolling();
         return checkForUpdate();
       })
     );

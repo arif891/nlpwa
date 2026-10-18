@@ -302,15 +302,15 @@ async function onUserClickUpdate() {
 
 ## Update Triggers
 
-Updates are checked in four complementary ways:
+Updates are checked through complementary triggers:
 
 | Trigger | Who | Frequency |
 |---|---|---|
-| Activation | SW | Every time the SW activates (app open / reload) |
+| Activation | SW | Once whenever the SW activates (app install / reload) |
 | Active Tab Interval | Client | Every `options.pollIntervalMs` (default: 1 hr) while tab is open |
-| Tab focus / visibility | Client | Throttled by `options.focusThrottleMs` (default: 5 min) |
-| Periodic Background Sync | Browser | Periodically when supported by browser for installed PWAs |
-| Manual | Client | Via `postMessage({ type: 'CHECK_UPDATE' })` |
+| Tab focus / visibility | Client | Throttled by `options.focusThrottleMs` (default: 1 hr) |
+| Periodic Background Sync | Browser | Periodically (12-24 hrs) when supported by browser for installed PWAs |
+| Manual | Client | Via `requestUpdateCheck()` / `postMessage({ type: 'CHECK_UPDATE' })` |
 
 A concurrency lock prevents two update runs from overlapping regardless of
 which trigger fires.

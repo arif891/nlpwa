@@ -86,7 +86,7 @@ test('cli update: changing config settings (throwOnFailure, timeouts, intervals)
       precache: ['/index.html'],
       throwOnFailure: true,
       networkTimeoutMs: 5000,
-      updateCheckInterval: 1800000,
+      navigationFallback: '/offline.html',
     }),
   );
 

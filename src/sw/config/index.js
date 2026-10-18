@@ -2,22 +2,6 @@ import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
 import { openActive } from '../cache/store.js';
 
-const _intervalChangeHandlers = new Set();
-
-/**
- * Register a callback to be notified if updateCheckInterval changes at runtime.
- *
- * @param {(newInterval: number) => void} handler
- * @returns {() => void} Unsubscribe function
- */
-export function onUpdateIntervalChange(handler) {
-  if (typeof handler === 'function') {
-    _intervalChangeHandlers.add(handler);
-    return () => _intervalChangeHandlers.delete(handler);
-  }
-  return () => {};
-}
-
 /** Singleton config instance, set by initConfig() */
 let _config = null;
 
@@ -132,20 +116,8 @@ export async function loadConfigFromCache() {
       if (!response) return null;
 
       const runtimeJson = await response.json();
-      const oldInterval = _config?.updateCheckInterval;
       updateActiveConfig(runtimeJson);
       console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
-
-      // Restart update polling if the interval changed after hydrating from cache
-      if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
-        for (const handler of _intervalChangeHandlers) {
-          try {
-            handler(runtimeJson.updateCheckInterval);
-          } catch (err) {
-            console.error('[NLPWA] Interval change handler error:', err);
-          }
-        }
-      }
       return runtimeJson;
     } catch (err) {
       console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);

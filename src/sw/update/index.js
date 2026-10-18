@@ -1,4 +1,4 @@
-import { getConfig, onUpdateIntervalChange } from '../config/index.js';
+import { getConfig } from '../config/index.js';
 import { getStaged, tryAcquire, release } from '../cache/store.js';
 import { fetchServerVersion, fetchServerManifest, loadCachedManifest } from './manifest.js';
 import { stageUpdate } from './stage.js';
@@ -138,42 +138,3 @@ async function runUpdateCheck({ force = false } = {}) {
   });
   return { updated: true, version: serverManifest.version, staged: true };
 }
-
-let _pollTimer = null;
-
-/**
- * Stop automatic update polling if running.
- */
-export function stopUpdatePolling() {
-  if (_pollTimer !== null) {
-    clearInterval(_pollTimer);
-    _pollTimer = null;
-  }
-}
-
-/**
- * Start automatic update polling based on config.updateCheckInterval.
- * Clears any existing interval timer before starting.
- * No-op if updateCheckInterval is 0 (manual-only mode).
- */
-export function startUpdatePolling() {
-  stopUpdatePolling();
-
-  const { updateCheckInterval } = getConfig();
-  if (!updateCheckInterval) return;
-
-  const intervalMs = updateCheckInterval;
-  console.log(`[NLPWA] Update polling every ${intervalMs / 1000}s`);
-
-  _pollTimer = setInterval(() => {
-    checkForUpdate().catch(err => console.error('[NLPWA] Update check error:', err));
-  }, intervalMs);
-  if (_pollTimer && typeof _pollTimer.unref === 'function') {
-    _pollTimer.unref();
-  }
-}
-
-// Re-invoke polling if updateCheckInterval changes at runtime
-onUpdateIntervalChange(() => {
-  startUpdatePolling();
-});

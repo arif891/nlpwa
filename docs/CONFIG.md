@@ -37,9 +37,6 @@ export default {
     info:    '/api/update/info.json',
   },
 
-  // Update check polling interval
-  updateCheckInterval: 60 * 60 * 1000,
-
   // App shell files to track & offline-cache
   precache: [
     '/',
@@ -99,20 +96,19 @@ updateAPI: {
 
 ---
 
-### `updateCheckInterval` · `number` (ms) · default: `3600000` (1 hour)
+### Polling for Updates · Client SDK (`pollIntervalMs`)
 
-How often the SW automatically polls for updates. Set to `0` to disable
-automatic polling (updates are then triggered only by tab focus or a manual
-`CHECK_UPDATE` postMessage).
+Because modern browsers terminate idle Service Workers after ~30 seconds of inactivity, in-worker `setInterval` polling cannot run reliably when the SW is idle. Reliable periodic polling is configured via the **client SDK** running in open browser tabs:
 
 ```js
-updateCheckInterval: 30 * 60 * 1000,  // every 30 minutes
-updateCheckInterval: 0,                // manual only
-```
+import { NLPWAClient } from 'nlpwa/client';
 
-> **Note:** An update check also runs immediately on every SW activation, and
-> the client library triggers an additional check when a tab regains focus
-> (throttled by `focusThrottleMs`).
+NLPWAClient.register('/sw.js', {
+  pollIntervalMs: 60 * 60 * 1000, // Poll every hour while the app is open
+  checkOnFocus: true,             // Check whenever user switches back to the tab
+  periodicSync: true,             // Periodic Background Sync for installed PWAs
+});
+```
 
 ---
 
@@ -363,7 +359,6 @@ export default {
     version: '/api/update/version.json',
     info:    '/api/update/info.json',
   },
-  updateCheckInterval: 60 * 60 * 1000,          // 1 hour
   verifyHashes: 'strict',                        // 'strict' | 'warn' | false
 
   // ── Caches ─────────────────────────────────────────────────────────────────

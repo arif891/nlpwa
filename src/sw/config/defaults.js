@@ -40,12 +40,6 @@ export const DEFAULTS = {
   },
 
   /**
-   * How often (ms) to automatically check for updates.
-   * Set to 0 to disable automatic polling (manual only).
-   */
-  updateCheckInterval: 60 * 60 * 1000, // 1 hour
-
-  /**
    * How downloaded update files are checked against the manifest hash:
    *   'strict' - mismatch fails that file; the update is not applied until
    *              every file verifies (retried on the next check)

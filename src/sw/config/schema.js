@@ -35,10 +35,6 @@ export function validateConfig(config) {
     errors.push("config.verifyHashes must be 'strict', 'warn' or false");
   }
 
-  if (typeof config.updateCheckInterval !== 'number' || config.updateCheckInterval < 0) {
-    errors.push('config.updateCheckInterval must be a non-negative number (ms)');
-  }
-
   if (!config.caches || typeof config.caches.offline !== 'string') {
     errors.push('config.caches.offline must be a string');
   }

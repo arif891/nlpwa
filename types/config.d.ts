@@ -53,8 +53,6 @@ export interface NLPWAConfig {
   configPath?: string;
   /** Two-tier update check endpoints */
   updateAPI?: UpdateAPIConfig;
-  /** How often (in ms) to poll for updates (0 to disable) */
-  updateCheckInterval?: number;
   /** Hash verification mode for update downloads */
   verifyHashes?: 'strict' | 'warn' | false;
   /** Cache storage names */

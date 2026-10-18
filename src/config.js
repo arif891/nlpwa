@@ -18,9 +18,6 @@ export default {
     info: '/api/update/info.json',
   },
 
-  // Update polling interval in ms (set to 0 to disable periodic polling)
-  updateCheckInterval: 0, // Default: disabled
-
   // App shell files to track and offline-cache (tracked alongside config.json)
   precache: [
     '/',

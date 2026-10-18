@@ -5,7 +5,6 @@ export default {
     version: '/api/update/version.json',
     info: '/api/update/info.json',
   },
-  updateCheckInterval: 300000,
   precache: [
     '/',
     '/index.html',

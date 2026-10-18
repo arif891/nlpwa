@@ -5,7 +5,6 @@
     "version": "/api/update/version.json",
     "info": "/api/update/info.json"
   },
-  "updateCheckInterval": 0,
   "precache": [
     "/",
     "/index.html",

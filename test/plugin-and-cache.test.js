@@ -4,8 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isCacheableUrl } from '../src/sw/cache/evict.js';
-import { initConfig, updateActiveConfig, loadConfigFromCache, onUpdateIntervalChange, ensureConfigReady } from '../src/sw/config/index.js';
-import { startUpdatePolling, stopUpdatePolling } from '../src/sw/update/index.js';
+import { initConfig, updateActiveConfig, loadConfigFromCache, ensureConfigReady } from '../src/sw/config/index.js';
 import { nlpwaPlugin } from '../src/rollup-plugin.js';
 import { setupEnv, req } from './helpers/fake-env.js';
 import { makeServer } from './helpers/fake-server.js';
@@ -94,15 +93,6 @@ test('nlpwaPlugin: custom configPath is emitted to correct subpath and tracked',
   assert.ok(info.files.some(f => f.path === '/assets/custom-config.json'));
 });
 
-test('startUpdatePolling: replaces existing timer and cleans up on stop', () => {
-  initConfig({ updateCheckInterval: 5000 });
-  startUpdatePolling();
-  // Call again with new interval; must replace without error
-  initConfig({ updateCheckInterval: 10000 });
-  startUpdatePolling();
-  stopUpdatePolling();
-});
-
 test('precacheWithoutManifest: guards against HTML soft-404 responses', async () => {
   const caches = setupEnv(async (request) => {
     const url = new URL(request.url);
@@ -130,42 +120,20 @@ test('precacheWithoutManifest: guards against HTML soft-404 responses', async ()
   assert.equal(storedConfig, undefined);
 });
 
-test('onUpdateIntervalChange: supports multiple subscribers and unsubscribe', async () => {
-  const eventsA = [];
-  const eventsB = [];
-
-  const unsubA = onUpdateIntervalChange((val) => eventsA.push(val));
-  const unsubB = onUpdateIntervalChange((val) => eventsB.push(val));
-
+test('loadConfigFromCache: rehydrates runtime config from offline cache', async () => {
   const caches = setupEnv(async () => new Response('ok'));
   await (await caches.open('offline')).put(
     req('/config.json'),
-    new Response(JSON.stringify({ version: '1.0.0', updateCheckInterval: 15000 }), {
+    new Response(JSON.stringify({ version: '1.0.0', networkTimeoutMs: 12345 }), {
       headers: { 'Content-Type': 'application/json' },
     }),
   );
 
-  initConfig({ updateCheckInterval: 5000 });
-  await loadConfigFromCache();
+  const initial = initConfig({ networkTimeoutMs: 5000 });
+  assert.equal(initial.networkTimeoutMs, 5000);
 
-  assert.deepEqual(eventsA, [15000]);
-  assert.deepEqual(eventsB, [15000]);
-
-  // Unsubscribe A, change again
-  unsubA();
-  await (await caches.open('offline')).put(
-    req('/config.json'),
-    new Response(JSON.stringify({ version: '1.0.0', updateCheckInterval: 30000 }), {
-      headers: { 'Content-Type': 'application/json' },
-    }),
-  );
-  await loadConfigFromCache();
-
-  assert.deepEqual(eventsA, [15000]); // didn't receive second event
-  assert.deepEqual(eventsB, [15000, 30000]);
-
-  unsubB();
-  stopUpdatePolling();
+  const loaded = await loadConfigFromCache();
+  assert.equal(loaded.networkTimeoutMs, 12345);
 });
 
 test('build-utils: findConfigFile discovers nlpwa.config.json', () => {

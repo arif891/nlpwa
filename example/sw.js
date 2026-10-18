@@ -107,12 +107,6 @@
     },
 
     /**
-     * How often (ms) to automatically check for updates.
-     * Set to 0 to disable automatic polling (manual only).
-     */
-    updateCheckInterval: 60 * 60 * 1000, // 1 hour
-
-    /**
      * How downloaded update files are checked against the manifest hash:
      *   'strict' - mismatch fails that file; the update is not applied until
      *              every file verifies (retried on the next check)
@@ -210,10 +204,6 @@
 
     if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
       errors.push("config.verifyHashes must be 'strict', 'warn' or false");
-    }
-
-    if (typeof config.updateCheckInterval !== 'number' || config.updateCheckInterval < 0) {
-      errors.push('config.updateCheckInterval must be a non-negative number (ms)');
     }
 
     if (!config.caches || typeof config.caches.offline !== 'string') {
@@ -368,22 +358,6 @@
     );
   }
 
-  const _intervalChangeHandlers = new Set();
-
-  /**
-   * Register a callback to be notified if updateCheckInterval changes at runtime.
-   *
-   * @param {(newInterval: number) => void} handler
-   * @returns {() => void} Unsubscribe function
-   */
-  function onUpdateIntervalChange(handler) {
-    if (typeof handler === 'function') {
-      _intervalChangeHandlers.add(handler);
-      return () => _intervalChangeHandlers.delete(handler);
-    }
-    return () => {};
-  }
-
   /** Singleton config instance, set by initConfig() */
   let _config = null;
 
@@ -498,20 +472,8 @@
         if (!response) return null;
 
         const runtimeJson = await response.json();
-        const oldInterval = _config?.updateCheckInterval;
         updateActiveConfig(runtimeJson);
         console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
-
-        // Restart update polling if the interval changed after hydrating from cache
-        if (runtimeJson.updateCheckInterval !== undefined && runtimeJson.updateCheckInterval !== oldInterval) {
-          for (const handler of _intervalChangeHandlers) {
-            try {
-              handler(runtimeJson.updateCheckInterval);
-            } catch (err) {
-              console.error('[NLPWA] Interval change handler error:', err);
-            }
-          }
-        }
         return runtimeJson;
       } catch (err) {
         console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
@@ -2534,45 +2496,6 @@
     return { updated: true, version: serverManifest.version, staged: true };
   }
 
-  let _pollTimer = null;
-
-  /**
-   * Stop automatic update polling if running.
-   */
-  function stopUpdatePolling() {
-    if (_pollTimer !== null) {
-      clearInterval(_pollTimer);
-      _pollTimer = null;
-    }
-  }
-
-  /**
-   * Start automatic update polling based on config.updateCheckInterval.
-   * Clears any existing interval timer before starting.
-   * No-op if updateCheckInterval is 0 (manual-only mode).
-   */
-  function startUpdatePolling() {
-    stopUpdatePolling();
-
-    const { updateCheckInterval } = getConfig();
-    if (!updateCheckInterval) return;
-
-    const intervalMs = updateCheckInterval;
-    console.log(`[NLPWA] Update polling every ${intervalMs / 1000}s`);
-
-    _pollTimer = setInterval(() => {
-      checkForUpdate().catch(err => console.error('[NLPWA] Update check error:', err));
-    }, intervalMs);
-    if (_pollTimer && typeof _pollTimer.unref === 'function') {
-      _pollTimer.unref();
-    }
-  }
-
-  // Re-invoke polling if updateCheckInterval changes at runtime
-  onUpdateIntervalChange(() => {
-    startUpdatePolling();
-  });
-
   /**
    * Initialize the NLPWA Service Worker.
    *
@@ -2610,7 +2533,6 @@
         self.clients.claim().then(async () => {
           await sweepOrphanCaches().catch(() => {});
           await loadConfigFromCache();
-          startUpdatePolling();
           return checkForUpdate();
         })
       );

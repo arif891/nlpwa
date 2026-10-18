@@ -9,7 +9,7 @@ NLPWA separates **Service Worker engine configuration** (`sw.js`) from **Applica
 In your `sw.js`, call `initSW()` with the SW engine version:
 
 ```js
-import { initSW } from '/nlpwa.sw.js';
+import { initSW } from 'nlpwa/sw';
 
 initSW({
   // SW engine logic version — managed manually by the developer
@@ -291,7 +291,7 @@ Must be one of the five strategy names listed above.
 ### `sw.js` (Service Worker Engine)
 
 ```js
-import { initSW } from '/nlpwa.sw.js';
+import { initSW } from 'nlpwa/sw';
 
 initSW({
   // SW engine logic version — managed manually by the developer

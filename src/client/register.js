@@ -6,8 +6,8 @@ import { requestUpdateCheck } from './messaging.js';
  *
  * Usage (in your main client JS):
  *
- *   import { register } from './nlpwa/src/client/register.js';
- *   // or from the built file: <script src="/nlpwa.client.js"></script>
+ *   import { register } from 'nlpwa/client';
+ *   // or from the built file: <script src="/client.js"></script>
  *
  *   NLPWAClient.register('/sw.js', {
  *     onUpdateReady: ({ version }) => {

@@ -2,7 +2,8 @@
 // computing the same 8-char sha256 hashes the CLI emits.
 import { createHash } from 'node:crypto';
 
-export const hash8 = (body) => createHash('sha256').update(body).digest('hex').slice(0, 8);
+export const hash32 = (body) => createHash('sha256').update(body).digest('hex').slice(0, 32);
+export const hash8 = hash32;
 
 export function makeServer(version, files) {
   const state = { version, files: { ...files }, calls: [], broken: new Set(), lie: new Map() };

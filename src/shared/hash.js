@@ -13,15 +13,15 @@ export async function sha256Hex(buffer) {
 /**
  * Compare a full SHA-256 hex digest with a manifest hash.
  *
- * The CLI emits the first 32 hex characters (older builds emitted 8), so the
- * manifest hash is treated as a prefix. Anything shorter than 8 characters is rejected so a
- * truncated or empty hash can never "match" by accident.
+ * The CLI emits the first 32 hex characters, so the manifest hash is treated
+ * as a prefix of the full digest. Anything shorter than 32 characters is rejected
+ * so a truncated or empty hash can never "match" by accident.
  *
  * @param {string} actualHex  full digest from sha256Hex()
- * @param {string} expected   hash from the manifest (prefix of the digest)
+ * @param {string} expected   hash from the manifest (prefix of the digest, min 32 chars)
  * @returns {boolean}
  */
 export function hashMatches(actualHex, expected) {
-  if (typeof expected !== 'string' || expected.length < 8) return false;
+  if (typeof expected !== 'string' || expected.length < 32) return false;
   return actualHex.startsWith(expected.toLowerCase());
 }

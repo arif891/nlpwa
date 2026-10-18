@@ -39,6 +39,18 @@ function safePutInRuntime(request, response, event) {
   }
 }
 
+/**
+ * Determine whether a strategy failure should rethrow/reject instead of returning a 503 response.
+ */
+function getShouldThrow(options) {
+  return Boolean(
+    options?.throwOnFailure ??
+    options?.throwOfflineError ??
+    getConfig().throwOnFailure ??
+    false
+  );
+}
+
 // ── cache-first ──────────────────────────────────────────────────────────
 
 /**
@@ -67,7 +79,7 @@ export async function cacheFirst(request, event, options = {}) {
     const response = await fetch(request);
     safePutInRuntime(request, response, event);
     return tagResponse(response, CACHE_STATUS.NETWORK);
-  } catch {
+  } catch (err) {
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate') {
       const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
@@ -75,6 +87,10 @@ export async function cacheFirst(request, event, options = {}) {
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
       }
+    }
+
+    if (getShouldThrow(options)) {
+      throw err;
     }
 
     // Return a typed offline error response instead of throwing
@@ -162,7 +178,7 @@ export async function networkFirst(request, event, options = {}) {
 
     safePutInRuntime(request, response, event);
     return tagResponse(response, CACHE_STATUS.NETWORK);
-  } catch {
+  } catch (err) {
     const cached = await lookupCache();
     if (cached) return cached;
 
@@ -173,6 +189,10 @@ export async function networkFirst(request, event, options = {}) {
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
       }
+    }
+
+    if (getShouldThrow(options)) {
+      throw err;
     }
 
     // Return a typed offline error response instead of throwing
@@ -196,12 +216,17 @@ export async function networkFirst(request, event, options = {}) {
  * Response header: X-Cache-Status: network
  *
  * @param {Request} request
+ * @param {FetchEvent} [event]
+ * @param {Object} [options]
  * @returns {Promise<Response>}
  */
-export async function networkOnly(request) {
+export async function networkOnly(request, event, options = {}) {
   try {
     return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
-  } catch {
+  } catch (err) {
+    if (getShouldThrow(options)) {
+      throw err;
+    }
     return tagResponse(
       new Response('Offline — network request failed.', {
         status: 503,
@@ -250,7 +275,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   try {
     const response = await revalidate;
     return tagResponse(response, CACHE_STATUS.NETWORK);
-  } catch {
+  } catch (err) {
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate') {
       const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
@@ -258,6 +283,10 @@ export async function staleWhileRevalidate(request, event, options = {}) {
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
       }
+    }
+
+    if (getShouldThrow(options)) {
+      throw err;
     }
 
     // Return a typed offline error response instead of throwing
@@ -275,7 +304,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
 
 /**
  * Serve exclusively from cache. Never hit the network.
- * Returns a 503 if the resource is not cached.
+ * Returns a 503 if the resource is not cached (or throws if throwOnFailure is true).
  *
  * Best for: offline-only fallback resources (placeholder pages, offline.html).
  *
@@ -301,6 +330,10 @@ export async function cacheOnly(request, event, options = {}) {
     if (fallbackRes) {
       return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
     }
+  }
+
+  if (getShouldThrow(options)) {
+    throw new TypeError('Failed to fetch: not available in offline cache.');
   }
 
   return tagResponse(

@@ -1,5 +1,5 @@
 import { getConfig } from '../config/index.js';
-import { openActive, getActiveName, resetMeta } from './store.js';
+import { openActive, getActive, getActiveName, resetMeta } from './store.js';
 
 // ── Offline cache helpers ────────────────────────────────────────────────────
 
@@ -10,9 +10,21 @@ import { openActive, getActiveName, resetMeta } from './store.js';
  * @returns {Promise<Response|undefined>}
  */
 export async function getFromOffline(request, matchOptions) {
-  const { caches: cacheNames } = getConfig();
+  const { caches: cacheNames, retainPreviousVersionCache } = getConfig();
   const cache = await openActive(cacheNames.offline);
-  return cache.match(request, matchOptions);
+  let hit = await cache.match(request, matchOptions);
+  if (!hit && retainPreviousVersionCache) {
+    const active = await getActive();
+    if (active?.previousCache) {
+      try {
+        const prev = await caches.open(active.previousCache);
+        hit = await prev.match(request, matchOptions);
+      } catch {
+        // previous cache may have been removed
+      }
+    }
+  }
+  return hit;
 }
 
 /**

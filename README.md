@@ -272,17 +272,80 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `onUpdateReady` | `Function` | — | Called with `{ version, partial }` when update is ready |
-| `autoReload` | `boolean` | `false` | Reload automatically on update (deferred if user is typing in inputs) |
+| `onUpdateReady` | `Function` | — | Called with `{ version, partial }` when update is staged |
+| `onNoUpdate` | `Function` | — | Called with `{ version }` when app is confirmed up to date |
+| `onUpdateApplied` | `Function` | — | Called with `{ version }` when update is committed across any tab |
+| `autoReload` | `boolean` | `false` | Automatically apply update and reload when staged (deferred if typing in inputs) |
+| `reloadOnUpdateApplied` | `boolean` | `false` | Automatically reload this tab if another tab commits an update (deferred if typing) |
 | `checkOnFocus` | `boolean` | `true` | Check for update when tab gains focus |
 | `focusThrottleMs` | `number` | `3600000` | Min ms between focus-triggered checks (1 hr) |
 | `pollIntervalMs` | `number` | `3600000` | Client interval (ms) to check updates while tab is active (1 hr) |
 
 ### Client: `NLPWAClient.applyUpdate(options)`
 
-Asks the SW to switch to the staged update via `APPLY_UPDATE` message, waits for `UPDATE_APPLIED` confirmation (default timeout: 3000ms), and then reloads the page. (A plain navigation or reload also applies the update automatically.)
+Asks the SW to switch to the staged update via `APPLY_UPDATE` message, waits for `UPDATE_APPLIED` confirmation (default timeout: 3000ms), and then reloads the page.
 
-### Client events
+Options:
+- `timeoutMs` (`number`, default: `3000`): Max wait for SW confirmation before forcing reload.
+- `reload` (`boolean`, default: `true`): Set to `false` in SPAs if you want to commit the staged cache in the SW without triggering a full browser window reload.
+
+---
+
+## Multi-Tab Coherence & Single-Page Applications (SPAs)
+
+Standard PWAs struggle with two common lifecycle challenges:
+1. **The Multi-Tab Chunk 404 Problem:** Tab 1 reloads to version 2. Tab 2 stays open running version 1 JS. When Tab 2 attempts a dynamic `import('./lazy-chunk-v1.js')`, the old chunk is gone, crashing Tab 2.
+2. **The SPA Navigation Dilemma:** In client-side routed SPAs (React Router, Vue Router, SvelteKit, etc.), route changes use `history.pushState` rather than browser document navigations. As a result, the SW never sees a `mode: 'navigate'` request, so staged updates never commit during in-app navigation unless coordinated.
+
+NLPWA solves both cleanly:
+
+### 1. Protect Open Tabs with `retainPreviousVersionCache`
+Enable in `config.js`:
+```js
+// config.js
+export default {
+  retainPreviousVersionCache: true, // keeps immediate prior version's cache in storage
+};
+```
+When enabled, the SW preserves the previous offline cache. If an older open tab requests an older hashed chunk (`import('./chunk-hash1.js')`), `getFromOffline` seamlessly falls back to the retained cache and serves it without throwing a chunk mismatch error.
+
+### 2. Auto-Reload Background Tabs on Switch
+Enable `reloadOnUpdateApplied: true` (or `autoReload: true`):
+```js
+NLPWAClient.register('/sw.js', {
+  reloadOnUpdateApplied: true, // reloads this tab when another tab updates
+});
+```
+When Tab 1 commits an update, the SW broadcasts `UPDATE_APPLIED` to all windows. Open tabs automatically reload. If the user is actively typing in a form input, textarea, or contentEditable element, **the reload is safely deferred** until the user finishes editing (`blur` / `change`).
+
+### 3. SPA Router Integration
+In an SPA, you can apply updates smoothly during in-app page transitions:
+
+```js
+// Example: Vue Router, React Router, or SvelteKit navigation hook
+let hasStagedUpdate = false;
+
+document.addEventListener('nlpwa:update-ready', () => {
+  hasStagedUpdate = true;
+});
+
+// On route change:
+router.beforeEach(async (to, from) => {
+  if (hasStagedUpdate) {
+    // Option A: Full reload to boot new bundle cleanly on route change
+    NLPWAClient.applyUpdate();
+    return false;
+
+    // Option B: Atomically swap cache without full reload (if new routes are backwards-compatible)
+    // await NLPWAClient.applyUpdate({ reload: false });
+    // hasStagedUpdate = false;
+  }
+});
+```
+
+---
+
+### Client Events
 
 ```js
 // Fired when an update is staged and ready to apply
@@ -295,9 +358,9 @@ document.addEventListener('nlpwa:no-update', (e) => {
   console.log('Already on latest version:', e.detail.version);
 });
 
-// Fired when an update switch has been committed
-document.addEventListener('nlpwa:update-applied', () => {
-  console.log('Update switched to active version');
+// Fired when an update switch has been committed (in this tab or another tab)
+document.addEventListener('nlpwa:update-applied', (e) => {
+  console.log('Update switched to active version:', e.detail.version);
 });
 ```
 

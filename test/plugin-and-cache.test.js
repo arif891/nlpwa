@@ -11,7 +11,7 @@ import { setupEnv, req } from './helpers/fake-env.js';
 import { makeServer } from './helpers/fake-server.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
 import { findConfigFile, syncSourceConfigVersion } from '../bin/build-utils.js';
-import { putInRuntime, getFromRuntime } from '../src/sw/cache/runtime.js';
+import { putInRuntime, getFromRuntime, getFromOffline } from '../src/sw/cache/runtime.js';
 import { resolveStrategy } from '../src/sw/fetch/router.js';
 import { stageUpdate } from '../src/sw/update/stage.js';
 import { commitStaged } from '../src/sw/update/commit.js';
@@ -252,17 +252,19 @@ test('resolveStrategy: automatically bypasses Vite dev server and HMR URLs', () 
   assert.ok(appRoute);
 });
 
-test('commitStaged: retainPreviousVersionCache keeps prior active cache for multi-tab setups', async () => {
-  const v1 = { '/config.json': JSON.stringify({ version: '1.0.0' }), '/app.js': 'v1' };
+test('commitStaged: retainPreviousVersionCache keeps prior active cache and serves old chunks', async () => {
+  const routes = [{ match: '**', strategy: 'cache-first' }];
+  const v1 = { '/config.json': JSON.stringify({ version: '1.0.0', retainPreviousVersionCache: true, routes }), '/app.js': 'v1', '/chunk-v1.js': 'chunk v1' };
   const server = makeServer('1.0.0', v1);
-  const caches = setupEnv(server.fetch, { retainPreviousVersionCache: true });
+  const caches = setupEnv(server.fetch, { retainPreviousVersionCache: true, routes });
 
   const r1 = await stageUpdate(await fetchServerManifest());
   assert.equal(r1.status, 'ready');
   assert.equal(await commitStaged(), true);
   const activeV1 = (await getActive()).cache;
 
-  server.set('1.0.1', { ...v1, '/app.js': 'v2' });
+  // New version replaces chunk-v1 with chunk-v2
+  server.set('1.0.1', { '/config.json': JSON.stringify({ version: '1.0.1', retainPreviousVersionCache: true, routes }), '/app.js': 'v2', '/chunk-v2.js': 'chunk v2' });
   const r2 = await stageUpdate(await fetchServerManifest());
   assert.equal(r2.status, 'ready');
 
@@ -271,9 +273,18 @@ test('commitStaged: retainPreviousVersionCache keeps prior active cache for mult
 
   assert.notEqual(activeV1, activeV2);
   const currentKeys = await caches.keys();
-  // With retainPreviousVersionCache: true, activeV1 is still preserved in storage
   assert.ok(currentKeys.includes(activeV1), 'prior version cache retained');
   assert.ok(currentKeys.includes(activeV2), 'new version cache active');
+
+  // Verify that an open tab requesting the older chunk still gets it via getFromOffline!
+  const oldChunkHit = await getFromOffline(req('/chunk-v1.js'));
+  assert.ok(oldChunkHit, 'older chunk served from retained previous cache');
+  assert.equal(await oldChunkHit.text(), 'chunk v1');
+
+  // And the new chunk is also served from active cache
+  const newChunkHit = await getFromOffline(req('/chunk-v2.js'));
+  assert.ok(newChunkHit, 'new chunk served from active cache');
+  assert.equal(await newChunkHit.text(), 'chunk v2');
 });
 
 test('cross-origin routing: matches and caches full URL patterns like onnxruntime-web CDN', () => {

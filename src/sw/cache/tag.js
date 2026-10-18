@@ -55,9 +55,27 @@ export function tagResponse(response, status) {
   const headers = new Headers(response.headers);
   headers.set(CACHE_STATUS_HEADER, status);
 
-  return new Response(response.body, {
+  const tagged = new Response(response.body, {
     status:     response.status,
     statusText: response.statusText,
     headers,
   });
+
+  if (response.url) {
+    try {
+      Object.defineProperty(tagged, 'url', { value: response.url });
+    } catch {
+      // ignore in environments that do not permit defining url
+    }
+  }
+
+  if (response.redirected) {
+    try {
+      Object.defineProperty(tagged, 'redirected', { value: response.redirected });
+    } catch {
+      // ignore
+    }
+  }
+
+  return tagged;
 }

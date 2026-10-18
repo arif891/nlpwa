@@ -235,6 +235,20 @@ You can define cross-origin routes in either of two ways:
 
 Cross-origin responses—including opaque responses (`status: 0`) from `<script>` or WebAssembly workers—are safely stored in the `runtime` cache and served offline.
 
+#### `throwOnFailure` · `boolean` · default: `false`
+
+Controls whether network and cache lookup failures throw an error instead of returning a synthetic `503 Service Unavailable` response.
+
+- `false` (default): Network or cache failures produce a synthetic `503 Service Unavailable` response with an `X-Cache-Status: offline-fallback` header. This prevents unhandled promise rejections in simple websites.
+- `true`: When a request cannot be fulfilled (e.g. offline with `network-only`, or cache miss with `cache-only`), the strategy re-throws the underlying `TypeError: Failed to fetch`. This allows client application code (`fetch().catch(...)`, TanStack Query, SWR, Axios, or offline mutation queues) to detect offline states and queue background writes reliably.
+
+Can also be set globally in `config.js` to apply to all routes by default.
+
+```js
+// Rethrow errors on API endpoints so client code can catch offline state
+{ match: '/api/**', strategy: 'network-only', throwOnFailure: true }
+```
+
 #### `strategy` — Fetch strategy
 
 | Value | Description |
@@ -243,7 +257,7 @@ Cross-origin responses—including opaque responses (`status: 0`) from `<script>
 | `'network-first'` | Network → Cache fallback. Best for: HTML pages |
 | `'network-only'` | Network always. Best for: API writes |
 | `'stale-while-revalidate'` | Cache instantly, update in background. Best for: feeds |
-| `'cache-only'` | Cache only, 503 on miss. Best for: offline fallback |
+| `'cache-only'` | Cache only, 503 on miss (or throws if `throwOnFailure: true`). Best for: offline fallback |
 
 See [STRATEGIES.md](STRATEGIES.md) for full strategy behaviour.
 
@@ -265,7 +279,7 @@ base: '/my-app/'
 Controls whether the immediate prior version's offline cache is preserved when an update commits.
 
 - `false` (default): Immediately prunes the old offline cache on commit to conserve storage quota.
-- `true`: Keeps the immediate prior version's cache in storage alongside the new version. Recommended for multi-tab applications so open background tabs don't experience 404s when lazy-loading older chunk files before they navigate/reload.
+- `true`: Keeps the immediate prior version's cache in storage alongside the new version. `getFromOffline` automatically falls back to the retained cache if an asset misses in the active cache. Recommended for multi-tab applications and SPAs so open background tabs don't experience 404s when lazy-loading older chunk files (`import('./chunk-v1.js')`) before they navigate or reload.
 
 ```js
 retainPreviousVersionCache: true

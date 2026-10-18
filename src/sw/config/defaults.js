@@ -93,4 +93,11 @@ export const DEFAULTS = {
 
   /** Strategy to use when no route matches */
   defaultStrategy: STRATEGIES.NETWORK_FIRST,
+
+  /**
+   * Whether fetch failures should throw/reject instead of returning a synthetic 503 response.
+   * Can also be set per route in routes: [{ match: '/api/**', strategy: 'network-only', throwOnFailure: true }].
+   * Default: false (returns 503 response)
+   */
+  throwOnFailure: false,
 };

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setupEnv, req, fakeEvent, sleep } from './helpers/fake-env.js';
 import { networkFirst, staleWhileRevalidate, cacheFirst, networkOnly } from '../src/sw/fetch/strategies.js';
+import { tagResponse } from '../src/sw/cache/tag.js';
 
 const text = (r) => r.text();
 
@@ -152,4 +153,35 @@ test('networkOnly: network failure returns 503 without throwing unhandled error'
   const res = await networkOnly(req('/api/users'));
   assert.equal(res.status, 503);
   assert.equal(res.headers.get('X-Cache-Status'), 'offline-fallback');
+});
+
+test('networkOnly: throwOnFailure rethrows network rejection for offline API handling', async () => {
+  setupEnv(async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(
+    async () => networkOnly(req('/api/users'), undefined, { throwOnFailure: true }),
+    { name: 'TypeError', message: 'Failed to fetch' }
+  );
+});
+
+test('networkFirst & cacheFirst: throwOnFailure rethrows when resource is not cached', async () => {
+  setupEnv(async () => { throw new TypeError('Failed to fetch'); });
+  await assert.rejects(
+    async () => networkFirst(req('/api/users'), undefined, { throwOnFailure: true }),
+    { name: 'TypeError' }
+  );
+  await assert.rejects(
+    async () => cacheFirst(req('/api/users'), undefined, { throwOnFailure: true }),
+    { name: 'TypeError' }
+  );
+});
+
+test('tagResponse: preserves response.url and response.redirected', () => {
+  const original = new Response('content', { status: 200 });
+  Object.defineProperty(original, 'url', { value: 'https://example.com/api/v1/resource' });
+  Object.defineProperty(original, 'redirected', { value: true });
+
+  const tagged = tagResponse(original, 'network');
+  assert.equal(tagged.headers.get('X-Cache-Status'), 'network');
+  assert.equal(tagged.url, 'https://example.com/api/v1/resource');
+  assert.equal(tagged.redirected, true);
 });

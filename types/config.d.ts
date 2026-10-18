@@ -18,6 +18,10 @@ export interface RouteConfig {
   navigationFallback?: string;
   /** Ignore URL search query parameters when matching cache */
   ignoreSearch?: boolean;
+  /** Whether failures should throw/reject instead of returning a synthetic 503 response */
+  throwOnFailure?: boolean;
+  /** Alias for throwOnFailure */
+  throwOfflineError?: boolean;
 }
 
 export interface UpdateAPIConfigObject {
@@ -68,6 +72,10 @@ export interface NLPWAConfig {
   base?: string;
   /** Retain immediate prior version cache on commit for multi-tab grace retention */
   retainPreviousVersionCache?: boolean;
+  /** Whether fetch failures should throw/reject instead of returning a synthetic 503 response */
+  throwOnFailure?: boolean;
+  /** Alias for throwOnFailure */
+  throwOfflineError?: boolean;
 }
 
 declare const defaultConfig: NLPWAConfig;

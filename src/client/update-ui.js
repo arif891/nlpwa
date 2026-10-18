@@ -69,10 +69,10 @@ export function onNoUpdate(callback) {
  *
  * Call this from your update prompt's "Refresh" button.
  *
- * @param {{ timeoutMs?: number }} [options]
+ * @param {{ timeoutMs?: number, reload?: boolean }} [options]
  * @returns {Promise<void>}
  */
-export async function applyUpdate({ timeoutMs = 3000 } = {}) {
+export async function applyUpdate({ timeoutMs = 3000, reload = true } = {}) {
   try {
     let off = () => {};
     const reply = new Promise((resolve) => {
@@ -88,5 +88,7 @@ export async function applyUpdate({ timeoutMs = 3000 } = {}) {
   document.dispatchEvent(
     new CustomEvent('nlpwa:update-applied', { bubbles: true })
   );
-  window.location.reload();
+  if (reload) {
+    window.location.reload();
+  }
 }

@@ -159,6 +159,13 @@
 
     /** Strategy to use when no route matches */
     defaultStrategy: STRATEGIES.NETWORK_FIRST,
+
+    /**
+     * Whether fetch failures should throw/reject instead of returning a synthetic 503 response.
+     * Can also be set per route in routes: [{ match: '/api/**', strategy: 'network-only', throwOnFailure: true }].
+     * Default: false (returns 503 response)
+     */
+    throwOnFailure: false,
   };
 
   const VALID_STRATEGIES = new Set(Object.values(STRATEGIES));
@@ -909,9 +916,21 @@
    * @returns {Promise<Response|undefined>}
    */
   async function getFromOffline(request, matchOptions) {
-    const { caches: cacheNames } = getConfig();
+    const { caches: cacheNames, retainPreviousVersionCache } = getConfig();
     const cache = await openActive(cacheNames.offline);
-    return cache.match(request, matchOptions);
+    let hit = await cache.match(request, matchOptions);
+    if (!hit && retainPreviousVersionCache) {
+      const active = await getActive();
+      if (active?.previousCache) {
+        try {
+          const prev = await caches.open(active.previousCache);
+          hit = await prev.match(request, matchOptions);
+        } catch {
+          // previous cache may have been removed
+        }
+      }
+    }
+    return hit;
   }
 
   // ── Runtime cache helpers ────────────────────────────────────────────────────
@@ -1207,7 +1226,12 @@
     }
 
     const previousActive = await getActive();
-    await setActive({ cache: staged.cache, version: staged.version, swVersion: staged.swVersion });
+    await setActive({
+      cache: staged.cache,
+      version: staged.version,
+      swVersion: staged.swVersion,
+      ...(config.retainPreviousVersionCache && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
+    });
     await clearStaged();
 
     // Everything below is cleanup after the switch; the new version is already live.
@@ -1749,11 +1773,29 @@
     const headers = new Headers(response.headers);
     headers.set(CACHE_STATUS_HEADER, status);
 
-    return new Response(response.body, {
+    const tagged = new Response(response.body, {
       status:     response.status,
       statusText: response.statusText,
       headers,
     });
+
+    if (response.url) {
+      try {
+        Object.defineProperty(tagged, 'url', { value: response.url });
+      } catch {
+        // ignore in environments that do not permit defining url
+      }
+    }
+
+    if (response.redirected) {
+      try {
+        Object.defineProperty(tagged, 'redirected', { value: response.redirected });
+      } catch {
+        // ignore
+      }
+    }
+
+    return tagged;
   }
 
   /**
@@ -1787,6 +1829,18 @@
     }
   }
 
+  /**
+   * Determine whether a strategy failure should rethrow/reject instead of returning a 503 response.
+   */
+  function getShouldThrow(options) {
+    return Boolean(
+      options?.throwOnFailure ??
+      options?.throwOfflineError ??
+      getConfig().throwOnFailure ??
+      false
+    );
+  }
+
   // ── cache-first ──────────────────────────────────────────────────────────
 
   /**
@@ -1815,7 +1869,7 @@
       const response = await fetch(request);
       safePutInRuntime(request, response, event);
       return tagResponse(response, CACHE_STATUS.NETWORK);
-    } catch {
+    } catch (err) {
       // Navigation fallback for SPAs or offline pages
       if (request.mode === 'navigate') {
         const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
@@ -1823,6 +1877,10 @@
         if (fallbackRes) {
           return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
         }
+      }
+
+      if (getShouldThrow(options)) {
+        throw err;
       }
 
       // Return a typed offline error response instead of throwing
@@ -1910,7 +1968,7 @@
 
       safePutInRuntime(request, response, event);
       return tagResponse(response, CACHE_STATUS.NETWORK);
-    } catch {
+    } catch (err) {
       const cached = await lookupCache();
       if (cached) return cached;
 
@@ -1921,6 +1979,10 @@
         if (fallbackRes) {
           return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
         }
+      }
+
+      if (getShouldThrow(options)) {
+        throw err;
       }
 
       // Return a typed offline error response instead of throwing
@@ -1944,12 +2006,17 @@
    * Response header: X-Cache-Status: network
    *
    * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
    * @returns {Promise<Response>}
    */
-  async function networkOnly(request) {
+  async function networkOnly(request, event, options = {}) {
     try {
       return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
-    } catch {
+    } catch (err) {
+      if (getShouldThrow(options)) {
+        throw err;
+      }
       return tagResponse(
         new Response('Offline — network request failed.', {
           status: 503,
@@ -1998,7 +2065,7 @@
     try {
       const response = await revalidate;
       return tagResponse(response, CACHE_STATUS.NETWORK);
-    } catch {
+    } catch (err) {
       // Navigation fallback for SPAs or offline pages
       if (request.mode === 'navigate') {
         const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
@@ -2006,6 +2073,10 @@
         if (fallbackRes) {
           return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
         }
+      }
+
+      if (getShouldThrow(options)) {
+        throw err;
       }
 
       // Return a typed offline error response instead of throwing
@@ -2023,7 +2094,7 @@
 
   /**
    * Serve exclusively from cache. Never hit the network.
-   * Returns a 503 if the resource is not cached.
+   * Returns a 503 if the resource is not cached (or throws if throwOnFailure is true).
    *
    * Best for: offline-only fallback resources (placeholder pages, offline.html).
    *
@@ -2049,6 +2120,10 @@
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
       }
+    }
+
+    if (getShouldThrow(options)) {
+      throw new TypeError('Failed to fetch: not available in offline cache.');
     }
 
     return tagResponse(

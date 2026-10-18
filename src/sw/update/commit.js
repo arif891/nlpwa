@@ -30,7 +30,12 @@ export async function commitStaged() {
   }
 
   const previousActive = await getActive();
-  await setActive({ cache: staged.cache, version: staged.version, swVersion: staged.swVersion });
+  await setActive({
+    cache: staged.cache,
+    version: staged.version,
+    swVersion: staged.swVersion,
+    ...(config.retainPreviousVersionCache && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
+  });
   await clearStaged();
 
   // Everything below is cleanup after the switch; the new version is already live.

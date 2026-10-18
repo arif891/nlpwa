@@ -123,10 +123,10 @@ var NLPWAClient = (function (exports) {
    *
    * Call this from your update prompt's "Refresh" button.
    *
-   * @param {{ timeoutMs?: number }} [options]
+   * @param {{ timeoutMs?: number, reload?: boolean }} [options]
    * @returns {Promise<void>}
    */
-  async function applyUpdate({ timeoutMs = 3000 } = {}) {
+  async function applyUpdate({ timeoutMs = 3000, reload = true } = {}) {
     try {
       let off = () => {};
       const reply = new Promise((resolve) => {
@@ -142,7 +142,9 @@ var NLPWAClient = (function (exports) {
     document.dispatchEvent(
       new CustomEvent('nlpwa:update-applied', { bubbles: true })
     );
-    window.location.reload();
+    if (reload) {
+      window.location.reload();
+    }
   }
 
   /**
@@ -295,11 +297,13 @@ var NLPWAClient = (function (exports) {
    *
    * @param {string} swUrl  path to the bundled sw.js  (default: '/sw.js')
    * @param {Object} options
-   * @param {Function} [options.onUpdateReady]   called when SW signals update ready
-   * @param {Function} [options.onNoUpdate]      called when SW signals already up to date
-   * @param {boolean}  [options.autoReload]      automatically reload on update (default: false)
-   * @param {boolean}  [options.checkOnFocus]    check for update when tab regains focus (default: true)
-   * @param {number}   [options.focusThrottleMs] min ms between focus-triggered checks (default: 1 hour)
+   * @param {Function} [options.onUpdateReady]         called when SW signals update ready
+   * @param {Function} [options.onNoUpdate]            called when SW signals already up to date
+   * @param {Function} [options.onUpdateApplied]       called when update is committed across any tab
+   * @param {boolean}  [options.autoReload]            automatically reload on update (default: false)
+   * @param {boolean}  [options.reloadOnUpdateApplied] automatically reload when another tab applies update
+   * @param {boolean}  [options.checkOnFocus]          check for update when tab regains focus (default: true)
+   * @param {number}   [options.focusThrottleMs]       min ms between focus-triggered checks (default: 1 hour)
    * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
    */
   async function register(swUrl = '/sw.js', options = {}) {
@@ -341,6 +345,36 @@ var NLPWAClient = (function (exports) {
             activeElem?.removeEventListener('change', onFinishEditing);
             console.log('[NLPWA] Input focus cleared, applying deferred reload.');
             applyUpdate();
+          };
+          activeElem?.addEventListener('blur', onFinishEditing, { once: true });
+          activeElem?.addEventListener('change', onFinishEditing, { once: true });
+        }
+      }
+    });
+
+    // ── Update-applied handler (cross-tab coordination) ────────────────────────
+    let unsubscribeApplied = onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, (data) => {
+      document.dispatchEvent(
+        new CustomEvent('nlpwa:update-applied', {
+          bubbles: true,
+          detail: { version: data?.version },
+        })
+      );
+      if (typeof options.onUpdateApplied === 'function') {
+        options.onUpdateApplied(data);
+      }
+      if (options.reloadOnUpdateApplied || options.autoReload) {
+        const activeElem = typeof document !== 'undefined' ? document.activeElement : null;
+        const activeTag = activeElem?.tagName?.toLowerCase();
+        const isEditing = activeTag === 'input' || activeTag === 'textarea' || activeElem?.isContentEditable;
+        if (!isEditing) {
+          window.location.reload();
+        } else {
+          console.warn('[NLPWA] Reload on update-applied deferred: active input focused.');
+          const onFinishEditing = () => {
+            activeElem?.removeEventListener('blur', onFinishEditing);
+            activeElem?.removeEventListener('change', onFinishEditing);
+            window.location.reload();
           };
           activeElem?.addEventListener('blur', onFinishEditing, { once: true });
           activeElem?.addEventListener('change', onFinishEditing, { once: true });
@@ -401,6 +435,7 @@ var NLPWAClient = (function (exports) {
 
     const unsubscribe = () => {
       unsubscribeUpdate();
+      if (unsubscribeApplied) unsubscribeApplied();
       if (unsubscribeNoUpdate) unsubscribeNoUpdate();
       if (intervalTimer) clearInterval(intervalTimer);
       if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -409,10 +444,31 @@ var NLPWAClient = (function (exports) {
     return { registration, unsubscribe };
   }
 
+  /**
+   * Register a listener for when an update is committed/applied (in this tab or another tab).
+   *
+   * @param {(data: { version: string }) => void} callback
+   * @returns {Function} unsubscribe function
+   */
+  function onUpdateApplied(callback) {
+    return onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, (data) => {
+      document.dispatchEvent(
+        new CustomEvent('nlpwa:update-applied', {
+          bubbles: true,
+          detail: { version: data?.version },
+        })
+      );
+      if (typeof callback === 'function') {
+        callback({ version: data?.version });
+      }
+    });
+  }
+
   exports.applyUpdate = applyUpdate;
   exports.cleanupRuntimeCache = cleanupRuntimeCache;
   exports.getCacheInfo = getCacheInfo;
   exports.onNoUpdate = onNoUpdate;
+  exports.onUpdateApplied = onUpdateApplied;
   exports.onUpdateReady = onUpdateReady;
   exports.register = register;
   exports.requestUpdateCheck = requestUpdateCheck;

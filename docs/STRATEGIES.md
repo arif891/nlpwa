@@ -18,7 +18,7 @@ directly to the network.
 | `stale-while-revalidate` | Cache (instant) | Blocks if no cache | ✅ Runtime | Feeds, listings |
 | `cache-only` | Cache | 503 response | ❌ Never | Offline fallback |
 
-### `X-Cache-Status` Headers
+### `X-Cache-Status` Headers & Response Fidelity
 
 Every response intercepted by NLPWA includes an `X-Cache-Status` response header for debugging and observability:
 
@@ -30,6 +30,23 @@ Every response intercepted by NLPWA includes an `X-Cache-Status` response header
 | `stale` | Served immediately from cache while revalidating in background |
 | `offline-fallback` | Offline fallback served for navigation or cache misses when offline |
 | `bypass` | Request bypassed the Service Worker cache |
+
+> **Response Fidelity:** When injecting `X-Cache-Status`, NLPWA preserves the original `response.url` and `response.redirected` properties on the rebuilt `Response` object. Your client code can inspect `response.url` and `response.redirected` exactly as if it came directly from native `fetch()`.
+
+### Handling Offline Errors: `throwOnFailure`
+
+By default, when a network request fails and no cached copy is available, strategies return a synthetic `503 Service Unavailable` text response. While this avoids unhandled promise rejections on simple static sites, modern web applications often rely on `fetch().catch(...)` to detect offline connectivity or queue mutations (e.g. TanStack Query, SWR, Axios, Workbox Background Sync equivalents).
+
+With `throwOnFailure: true`, strategies re-throw the original `TypeError: Failed to fetch` whenever a request cannot be satisfied:
+
+```js
+// In your config.js
+routes: [
+  // Let fetch('/api/...').catch(...) fire when offline
+  { match: '/api/**', strategy: 'network-only', throwOnFailure: true },
+  { match: '/items/**', strategy: 'network-first', throwOnFailure: true },
+]
+```
 
 ---
 
@@ -104,7 +121,9 @@ Request → network → return (no caching)
 **Behaviour:**
 1. Always fetch from network
 2. Response is never stored in any cache
-3. If the network is unavailable, the request fails naturally
+3. If the network is unavailable:
+   - When `throwOnFailure: false` (default): returns a synthetic `503 Service Unavailable` response.
+   - When `throwOnFailure: true`: re-throws the underlying network error (`TypeError: Failed to fetch`) so `fetch().catch(...)` fires as expected in client apps.
 
 **Characteristics:**
 - Zero caching overhead
@@ -119,7 +138,7 @@ Request → network → return (no caching)
 
 **Route example:**
 ```js
-{ match: '/api/**', strategy: 'network-only' }
+{ match: '/api/**', strategy: 'network-only', throwOnFailure: true }
 ```
 
 > **Note:** Even though `network-only` is listed in routes, it is not considered

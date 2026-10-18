@@ -48,6 +48,11 @@ class FakeCacheStorage {
 export function setupEnv(fetchImpl, config = {}) {
   globalThis.caches = new FakeCacheStorage();
   resetStoreMemo();
+  const existingClients = globalThis.self?.clients;
+  globalThis.self = {
+    location: { origin: 'https://example.com', href: 'https://example.com/sw.js' },
+    ...(existingClients ? { clients: existingClients } : {}),
+  };
   // Normalise relative strings to absolute Requests, like a real SW fetch would
   globalThis.fetch = async (req, init) =>
     fetchImpl(typeof req === 'string' ? new Request(new URL(req, 'https://example.com').href, init) : req, init);

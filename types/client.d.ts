@@ -7,6 +7,10 @@ export interface NoUpdateData {
   version: string;
 }
 
+export interface UpdateAppliedData {
+  version?: string;
+}
+
 export interface CacheInfoData {
   quota: number | null;
   usage: number | null;
@@ -61,8 +65,12 @@ export interface RegisterOptions {
   onUpdateReady?: (data: UpdateReadyData) => void;
   /** Called when the SW signals that the app is already up to date */
   onNoUpdate?: (data: NoUpdateData) => void;
+  /** Called when an update is committed/applied (in this tab or another tab) */
+  onUpdateApplied?: (data: UpdateAppliedData) => void;
   /** Automatically apply update and reload on update (default: false) */
   autoReload?: boolean;
+  /** Automatically reload when another tab applies an update (default: false) */
+  reloadOnUpdateApplied?: boolean;
   /** Check for update when tab regains focus (default: true) */
   checkOnFocus?: boolean;
   /** Min ms between focus-triggered checks (default: 1 hour) */
@@ -101,11 +109,19 @@ export function onUpdateReady(callback?: (data: UpdateReadyData) => void): () =>
 export function onNoUpdate(callback?: (data: NoUpdateData) => void): () => void;
 
 /**
- * Switch to the staged update, then reload the page.
+ * Register a handler to be called when an update is committed/applied (in this tab or another tab).
  *
- * @param options Options including timeout before fallback reload
+ * @param callback Callback receiving applied version
+ * @returns Unsubscribe function
  */
-export function applyUpdate(options?: { timeoutMs?: number }): Promise<void>;
+export function onUpdateApplied(callback?: (data: UpdateAppliedData) => void): () => void;
+
+/**
+ * Switch to the staged update, then reload the page (or commit without reloading in SPAs).
+ *
+ * @param options Options including timeout and whether to reload (default: true)
+ */
+export function applyUpdate(options?: { timeoutMs?: number; reload?: boolean }): Promise<void>;
 
 /**
  * Trigger a manual update check from the client side.
@@ -134,6 +150,7 @@ export interface NLPWAClientAPI {
   register: typeof register;
   onUpdateReady: typeof onUpdateReady;
   onNoUpdate: typeof onNoUpdate;
+  onUpdateApplied: typeof onUpdateApplied;
   applyUpdate: typeof applyUpdate;
   requestUpdateCheck: typeof requestUpdateCheck;
   sendToSW: typeof sendToSW;

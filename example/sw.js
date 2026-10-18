@@ -1,1 +1,2973 @@
-!function(){"use strict";const e="offline",t="runtime",a="UPDATE_READY",n="CHECK_UPDATE",i="UPDATE_APPLIED",s="NO_UPDATE",o="APPLY_UPDATE",r="GET_CACHE_INFO",c="CACHE_INFO",l="CLEANUP_RUNTIME",u="RUNTIME_CLEANED",f="UPDATE_FAILED",h="largest",d="lru",p="max-age",w="quota",m="pattern",g="all",y={CACHE_FIRST:"cache-first",NETWORK_FIRST:"network-first",NETWORK_ONLY:"network-only",STALE_WHILE_REVALIDATE:"stale-while-revalidate",CACHE_ONLY:"cache-only"},v=new Set([y.CACHE_FIRST,y.NETWORK_FIRST,y.STALE_WHILE_REVALIDATE,y.CACHE_ONLY]),A={version:"1",configPath:"/config.json",updateAPI:{version:"/api/update/version.json",info:"/api/update/info.json"},verifyHashes:"strict",maxVerifyBytes:20971520,base:"",retainPreviousVersionCache:!0,clearRuntimeOnUpdate:!1,cacheOpaque:!1,dev:!1,devBypass:!1,caches:{offline:e,runtime:t},snapshotCachePath:"/_nlpwa/snapshot.json",precache:[],routes:[],defaultStrategy:y.NETWORK_FIRST,throwOnFailure:!1},P=new Set(Object.values(y)),b=new Set(["match","strategy","origin","networkTimeoutMs","navigationFallback","ignoreSearch","throwOnFailure","maxAge","cacheOpaque"]),x=new Set(["version","appVersion","configPath","updateAPI","verifyHashes","maxVerifyBytes","caches","snapshotCachePath","precache","routes","defaultStrategy","networkTimeoutMs","navigationFallback","base","retainPreviousVersionCache","clearRuntimeOnUpdate","cacheOpaque","throwOnFailure","dev","devBypass"]);const L="nlpwa-meta",N="/_nlpwa/active.json",E="/_nlpwa/staged.json";async function $(e){const t=await caches.open(L),a=await t.match(e);if(!a)return null;try{return await a.json()}catch{return null}}async function W(e,t){const a=await caches.open(L);await a.put(e,new Response(JSON.stringify(t),{headers:{"Content-Type":"application/json"}}))}let S=null;function C(){return S||(S=$(N)),S}async function T(e){return(await C())?.cache??e}async function R(e){return caches.open(await T(e))}const I=()=>$(E),k=e=>W(E,e),B=()=>async function(e){const t=await caches.open(L);await t.delete(e)}(E);let j=!1;function O(){return!j&&(j=!0,!0)}function U(){j=!1}async function M({base:e,runtime:t,keep:a}){const n=new Set(a.filter(Boolean)),i=await caches.keys();await Promise.all(i.filter(e=>e!==t&&e!==L&&!n.has(e)).filter(t=>t.startsWith(`${e}@`)).map(e=>(console.log(`[NLPWA] Removed old cache: ${e}`),caches.delete(e))))}async function F(){const{infoEndpoint:e}=G(),t="undefined"!=typeof AbortSignal&&"function"==typeof AbortSignal.timeout?AbortSignal.timeout(3e4):void 0,a=await fetch(e,{cache:"no-store",headers:{Accept:"application/json"},signal:t});if(!a.ok)throw new Error(`[NLPWA] Update info fetch failed: HTTP ${a.status} ${a.statusText}`);let n;try{n=await a.json()}catch(e){throw new Error(`[NLPWA] Update info response is not valid JSON (is the endpoint returning HTML?): ${e.message}`)}if("string"!=typeof n.version||!n.version)throw new Error('[NLPWA] Update info missing or invalid "version" field (expected a non-empty string)');if(!Array.isArray(n.files))throw new Error('[NLPWA] Update info missing "files" array');return n}function H(){return K().snapshotCachePath}let V=null;async function _(){const e=await R(K().caches.offline),t=await e.match(H());if(!t)return V=null,null;const a=await t.json();return Array.isArray(a?.files)&&(V=new Set(a.files.map(e=>e.path))),a}function z(e,t){if(!e||!t||/^[a-z][a-z0-9+.-]*:/i.test(e)||e.startsWith("//"))return e;const a=t.endsWith("/")?t.slice(0,-1):t;if(!a)return e;const n=e.startsWith("/")?e:`/${e}`;return n===a||n.startsWith(`${a}/`)?n:`${a}${n}`}let D=null;function q(e={}){const t={...A,...e,caches:{...A.caches,...e.caches??{}}},a=function(e){const t=[];"string"==typeof e.version&&e.version||t.push('config.version must be a non-empty string (e.g. "1", "2", "v3")'),e.configPath&&"string"!=typeof e.configPath&&t.push('config.configPath must be a string (e.g. "/config.json")'),!e.updateAPI||"object"!=typeof e.updateAPI||Array.isArray(e.updateAPI)?t.push("config.updateAPI must be an object with { version, info } endpoints"):("string"==typeof e.updateAPI.version&&e.updateAPI.version||t.push('config.updateAPI.version must be a non-empty string endpoint (e.g. "/api/update/version.json")'),"string"==typeof e.updateAPI.info&&e.updateAPI.info||t.push('config.updateAPI.info must be a non-empty string endpoint (e.g. "/api/update/info.json")'));for(const a of Object.keys(e))x.has(a)||t.push(`config.${a} is not a recognized configuration option.`);return["strict","warn",!1].includes(e.verifyHashes)||t.push("config.verifyHashes must be 'strict', 'warn' or false"),void 0!==e.maxVerifyBytes&&("number"!=typeof e.maxVerifyBytes||e.maxVerifyBytes<0)&&t.push("config.maxVerifyBytes must be a non-negative number"),e.caches&&"string"==typeof e.caches.offline||t.push("config.caches.offline must be a string"),e.caches&&"string"==typeof e.caches.runtime||t.push("config.caches.runtime must be a string"),void 0!==e.clearRuntimeOnUpdate&&"boolean"!=typeof e.clearRuntimeOnUpdate&&t.push("config.clearRuntimeOnUpdate must be a boolean"),Array.isArray(e.precache)||t.push("config.precache must be an array of URL strings"),Array.isArray(e.routes)?e.routes.forEach((e,a)=>{for(const n of Object.keys(e))b.has(n)||t.push(`config.routes[${a}] has unrecognized option "${n}". Only canonical route options are supported.`);"string"!=typeof e.match&&t.push(`config.routes[${a}].match must be a string (glob pattern)`),P.has(e.strategy)||t.push(`config.routes[${a}].strategy "${e.strategy}" is invalid. Valid: ${[...P].join(", ")}`)}):t.push("config.routes must be an array"),P.has(e.defaultStrategy)||t.push(`config.defaultStrategy "${e.defaultStrategy}" is invalid. Valid: ${[...P].join(", ")}`),t}(t);return a.length>0&&console.error("[NLPWA] Config errors:\n"+a.map(e=>`  • ${e}`).join("\n")),D=Object.freeze(t),D}function K(){if(!D)throw new Error("[NLPWA] Config not initialized. Call initConfig(userConfig) first.");return D}function X(e={}){D||q();const t={...D,...e,version:D.version,appVersion:e.version??D.appVersion??e.appVersion,verifyHashes:D.verifyHashes,maxVerifyBytes:D.maxVerifyBytes,caches:D.caches,snapshotCachePath:D.snapshotCachePath,routes:Array.isArray(e.routes)?e.routes:D.routes,precache:Array.isArray(e.precache)?e.precache:D.precache,updateAPI:e.updateAPI??D.updateAPI};return D=Object.freeze(t),D}let Q=null;async function Y(){const e=(async()=>{const e=D||q(),t=e.caches?.offline||"offline",a=z(e.configPath||"/config.json",e.base);try{const e=await R(t),i=await e.match(a);if(!i)return null;const s=await i.json();X(s),console.log(`[NLPWA] Runtime config loaded from offline cache (${a})`);try{const t=await e.match("/_nlpwa/snapshot.json");if(t){const e=await t.json();Array.isArray(e?.files)&&(n=e.files.map(e=>e.path),V=n?n instanceof Set?n:new Set(n):null)}}catch{}return s}catch(e){return console.warn(`[NLPWA] Could not load config from offline cache: ${e.message}`),null}var n})();return Q=e,e}function G(){const e=K();let t="/api/update/version.json",a="/api/update/info.json";return e.updateAPI&&"object"==typeof e.updateAPI&&!Array.isArray(e.updateAPI)&&(e.updateAPI.version&&(t=e.updateAPI.version),e.updateAPI.info&&(a=e.updateAPI.info)),{versionEndpoint:z(t,e.base),infoEndpoint:z(a,e.base)}}function J(e){return!("string"!=typeof e||!e)&&(!!/^\/(?![\/\\])/.test(e)&&(!/^[a-z][a-z0-9+.-]*:/i.test(e)&&(!e.includes("\\")&&!/(?:^|\/)\.\.(?:\/|$)/.test(e))))}const Z=new Map;function ee(e){if(Z.has(e))return Z.get(e);const t=e.replace(/[.+^${}()|[\]\\]/g,"\\$&").replace(/\/\*\*\//g,"\0GLOBSTARSLASH\0").replace(/\*\*/g,"\0GLOBSTAR\0").replace(/\*/g,"[^/]*").replace(/\?/g,"[^/]").replace(/\x00GLOBSTARSLASH\x00/g,"/(?:.*/)?").replace(/\x00GLOBSTAR\x00/g,".*"),a=new RegExp("^"+t+"$");return Z.set(e,a),a}function te(e,t){try{if(e.startsWith("http://")||e.startsWith("https://")||e.startsWith("//")){const a="string"==typeof t?t:t.href;return ee(e).test(a)}const{pathname:a}=new URL(t,"http://localhost");return ee(e).test(a)}catch{return!1}}async function ae(e){let t=0;const a=e.headers?.get("X-NLPWA-Content-Length")||e.headers?.get("Content-Length");if(a){const e=parseInt(a,10);!Number.isNaN(e)&&e>=0&&(t=e)}else try{t=(await e.clone().arrayBuffer()).byteLength}catch{t=0}let n=0;const i=e.headers?.get("X-NLPWA-Cached-At");if(i){const e=parseInt(i,10);!Number.isNaN(e)&&e>0&&(n=e)}else{const t=e.headers?.get("Date");if(t){const e=new Date(t).getTime();!Number.isNaN(e)&&e>0&&(n=e)}}return{size:t,cachedAt:n}}async function ne(){let e=null,t=null,a=null,n=null;const i="undefined"!=typeof self&&self.navigator?.storage||"undefined"!=typeof navigator&&navigator?.storage;if(i&&"function"==typeof i.estimate)try{const s=await i.estimate();e=s.quota??null,t=s.usage??null,e&&null!=t&&(a=Number((t/e*100).toFixed(2)),n=Math.max(0,e-t))}catch{}const{caches:s}=K(),o=await caches.open(s.runtime),r=await o.keys();let c=0;const l=[];for(const e of r){const t=await o.match(e);if(t){const a=await ae(t);c+=a.size,l.push({url:"string"==typeof e?e:e.url,size:a.size,cachedAt:a.cachedAt})}}const u=[...l].sort((e,t)=>t.size-e.size).slice(0,5);return{quota:e,usage:t,percentUsed:a,remaining:n,runtimeEntries:r.length,runtimeBytes:c,largestEntries:u}}function ie(e,t,a){if(null!=e){if("string"==typeof e){const t=e.trim().match(/^([\d.]+)\s*(gb|mb|kb|b)?$/i);if(t){const e=parseFloat(t[1]),a=(t[2]||"b").toLowerCase();return"gb"===a?Math.round(1024*e*1024*1024):"mb"===a?Math.round(1024*e*1024):"kb"===a?Math.round(1024*e):Math.round(e)}}const t=Number(e);return Number.isNaN(t)?null:t}if(null!=t){const e=Number(t);return Number.isNaN(e)?null:Math.round(1024*e*1024)}if(null!=a){const e=Number(a);return Number.isNaN(e)?null:Math.round(1024*e)}return null}async function se(e={}){const t=e.strategy||d,a=ie(e.maxTotalBytes??e.maxTotal,e.maxTotalMB,e.maxTotalKB),n=ie(e.maxItemBytes??e.maxItem,e.maxItemMB,e.maxItemKB),i=ie(e.minItemBytes??e.minItem,e.minItemMB,e.minItemKB),s=ie(e.maxQuotaBytes??e.maxQuota,e.maxQuotaMB,e.maxQuotaKB),{caches:o}=K(),r=await caches.open(o.runtime),c=await r.keys(),l=[];let u=0;for(const e of c){const t=await r.match(e);if(t){const a=await ae(t);u+=a.size,l.push({req:e,url:"string"==typeof e?e:e.url,size:a.size,cachedAt:a.cachedAt})}}const f=new Set;let y=u;const v=e=>{f.has(e)||(f.add(e),y=Math.max(0,y-e.size))};if(null!=n)for(const e of l)e.size>n&&v(e);if(null!=i)for(const e of l)e.size>=i&&v(e);if(null!=e.maxAgeMs&&t!==p){const t=Date.now()-e.maxAgeMs;for(const e of l)e.cachedAt>0&&e.cachedAt<t&&v(e)}const A=l.filter(e=>!f.has(e));if(t===g)for(const e of A)v(e);else if(t===m){const t=e.match||e.pattern;if(t)for(const e of A)te(t,e.url)&&v(e)}else if(t===p){const t=e.maxAgeMs??6048e5,a=Date.now()-t;for(const e of A)e.cachedAt>0&&e.cachedAt<a&&v(e)}else if(t===h){A.sort((e,t)=>t.size-e.size);let t=l.length-f.size;for(const n of A){const i=null!=a&&y>a,s=null!=e.maxEntries&&t>e.maxEntries;if(null!=e.count&&f.size>=e.count)break;(i||s)&&(v(n),t--)}}else if(t===d){A.sort((e,t)=>(e.cachedAt||0)-(t.cachedAt||0));let t=l.length-f.size;for(const n of A){const i=null!=e.maxEntries&&t>e.maxEntries,s=null!=a&&y>a;if(null!=e.count&&f.size>=e.count)break;(i||s)&&(v(n),t--)}}else if(t===w){const t=await ne(),a=e.maxQuotaPercent??80;let n=t.usage??u;const i=t.quota,o=()=>!!(i&&null!=a&&n/i*100>a)||null!=s&&n>s;if(o()){!1!==e.preferLargest?A.sort((e,t)=>t.size-e.size):A.sort((e,t)=>(e.cachedAt||0)-(t.cachedAt||0));for(const e of A){if(!o())break;v(e),n=Math.max(0,n-e.size)}}}const P=[...f];let b=0;await Promise.all(P.map(async e=>{b+=e.size,await r.delete(e.req)}));const x=l.length-P.length,L=Math.max(0,u-b),N=await ne();return console.log(`[NLPWA] Runtime cache cleaned (${t}): ${P.length} evicted, ${(b/1024).toFixed(1)} KB freed, ${x} remaining`),{success:!0,strategy:t,evictedCount:P.length,evictedUrls:P.map(e=>e.url),freedBytes:b,remainingEntries:x,remainingBytes:L,quota:N}}async function oe(e){const t=await crypto.subtle.digest("SHA-256",e);return Array.from(new Uint8Array(t),e=>e.toString(16).padStart(2,"0")).join("")}function re(e,t){return!("string"!=typeof t||t.length<32)&&e.startsWith(t.toLowerCase())}async function ce(e,{activeSnapshot:t=null,forceRefetch:a=!1}={}){const n=K(),i=n.verifyHashes??"strict",s=n.maxVerifyBytes??20971520,o=e.files.filter(e=>J(e?.path)),r=function(e,t){const a=(e??[]).filter(e=>J(e?.path)),n=(t??[]).filter(e=>J(e?.path)),i=new Map(n.map(e=>[e.path,e.hash])),s=new Map(a.map(e=>[e.path,e.hash])),o=[],r=[],c=[];for(const[e,t]of s)i.has(e)?i.get(e)!==t&&r.push(e):o.push(e);for(const e of i.keys())s.has(e)||c.push(e);return{added:o,modified:r,removed:c}}(o,t?.files??null),c=[...r.modified,...r.removed];let l=await I();l&&!l.complete&&l.version===e.version&&l.swVersion===n.version||(l?.cache&&await caches.delete(l.cache),l={cache:`${n.caches.offline}@${e.version}-${Date.now().toString(36)}`,version:e.version,swVersion:n.version,complete:!1,retryCount:0}),await k(l);const u=await caches.open(l.cache),f=t?await R(n.caches.offline):null,h=new Map((t?.files??[]).map(e=>[e.path,e.hash])),d={reused:0,copied:0,fetched:0},p=[],w={},m=async(e,t)=>{const a=t.clone();try{await u.put(e,t)}catch(t){if("QuotaExceededError"===t.name||/quota/i.test(t.message||"")){console.warn(`[NLPWA] QuotaExceededError while staging ${e}. Freeing runtime cache space...`);const t=await se({strategy:"all"}).catch(()=>null);if(t&&(t.freedBytes>0||t.evictedCount>0))return void await u.put(e,a)}throw t}};await async function(e,t,a){let n=0;const i=Array.from({length:Math.min(t,e.length)},async()=>{for(;n<e.length;)await a(e[n++])});await Promise.all(i)}(o,6,async({path:e,hash:t,size:o})=>{const r=z(e,n.base);try{if(await async function(e,t,a,n,i=20971520,s=null,o=t){const r=await e.match(o)||(o!==t?await e.match(t):null);if(!r)return!1;if(!a||!1===n)return!0;const c=s??Number(r.headers?.get?.("content-length")||r.headers?.get?.("x-nlpwa-content-length")||0);return i>0&&c>i||re(await oe(await r.arrayBuffer()),a)}(u,e,t,i,s,o,r))return void d.reused++;if(!a&&f&&t&&h.get(e)===t){const t=await f.match(r)||(r!==e?await f.match(e):null);if(t){const a=r!==e?t.clone():null;return await m(r,t),a&&await m(e,a),void d.copied++}}const n=await async function(e,t,a,n=20971520,i=null){const s="undefined"!=typeof AbortSignal&&"function"==typeof AbortSignal.timeout?AbortSignal.timeout(3e4):void 0,o=await fetch(e,{cache:"no-store",signal:s});if(!o.ok)throw new Error(`HTTP ${o.status}`);if(t&&!1!==a){const s=i??Number(o.headers?.get?.("content-length")||o.headers?.get?.("x-nlpwa-content-length")||0);if(n>0&&s>n)return console.warn(`[NLPWA] ${e}: File size (${(s/1048576).toFixed(1)} MB) exceeds maxVerifyBytes threshold (${(n/1048576).toFixed(1)} MB). Skipping in-memory hash verification to prevent memory spikes on low-end devices.`),o;const r=await oe(await o.clone().arrayBuffer());if(!re(r,t)){const n=`hash mismatch (expected ${t}, got ${r.slice(0,t.length)})`;if("strict"===a)throw new Error(n);console.warn(`[NLPWA] ${e}: ${n} - storing anyway (verifyHashes: 'warn')`)}}return o}(r,t,i,s,o),c=r!==e?n.clone():null;await m(r,n),c&&await m(e,c),d.fetched++}catch(t){p.push(e),w[e]=t.message,console.warn(`[NLPWA] Staging failed: ${r} - ${t.message}`)}});const g=p.length?l.retryCount+1:0;if(p.length>0){const e=l.failedFiles??[],t=e.length>0&&p.length===e.length&&p.every(t=>e.includes(t)),a=Object.values(w).some(e=>"string"==typeof e&&e.includes("hash mismatch")),n=Object.values(w).some(e=>"string"==typeof e&&(e.includes("QuotaExceededError")||/quota/i.test(e)));let i=null;if(g>=5){const e=Math.min(6e4*Math.pow(2,Math.min(g-5,6)),36e5);i=Date.now()+e,console.warn(`[NLPWA] Staging incomplete: ${p.length} file(s) failed after ${g} attempts: ${p.join(", ")}. Active version remains live.`)}return t&&g>=2&&(a?console.error(`[NLPWA] Persistent hash mismatch on ${p.join(", ")} across ${g} attempts. A CDN, proxy, or host minification may be altering file contents in transit. Consider setting verifyHashes: 'warn' or false in your nlpwa config if this transformation is expected.`):console.warn(`[NLPWA] Repeated staging failure on the same file(s): ${p.join(", ")} (${g} attempts).`)),await k({...l,retryCount:g,failedFiles:p,failedDetails:w,nextRetryAt:i,complete:!1}),{status:"incomplete",failed:p,failedDetails:w,retryCount:g,nextRetryAt:i,persistent:Boolean(t&&g>=2),hasHashMismatch:Boolean(a),quotaExceeded:Boolean(n)}}return await async function(e,t){const a={swVersion:K().version,...t};Array.isArray(t?.files)&&(V=new Set(t.files.map(e=>e.path))),await e.put(H(),new Response(JSON.stringify(a),{status:200,headers:{"Content-Type":"application/json"}}))}(u,{version:e.version,files:o}),await k({...l,retryCount:0,failedFiles:[],failedDetails:{},nextRetryAt:null,complete:!0,evict:c,clearRuntime:a}),console.log(`[NLPWA] Staged v${e.version}: ${d.fetched} fetched, ${d.copied} copied, ${d.reused} reused`),{status:"ready",failed:[],...d}}async function le(e,t){const{caches:a,retainPreviousVersionCache:n,base:i}=K(),s=await R(a.offline);let o=await s.match(e,t);if(!o){let a=null;try{a=new URL("string"==typeof e?e:e.url,"https://example.com").pathname}catch{}if("/"===a)o=await s.match("/index.html",t);else if("/index.html"===a)o=await s.match("/",t);else if(i){const e=i.endsWith("/")?i.slice(0,-1):i;a===e||a===`${e}/`?o=await s.match(`${e}/index.html`,t)??await s.match("/index.html",t)??await s.match(e,t)??await s.match(`${e}/`,t):a===`${e}/index.html`&&(o=await s.match(`${e}/`,t)??await s.match(e,t)??await s.match("/index.html",t))}}if(!o&&n){const a=await C();if(a?.previousCache)try{const n=await caches.open(a.previousCache);if(o=await n.match(e,t),!o){let a=null;try{a=new URL("string"==typeof e?e:e.url,"https://example.com").pathname}catch{}if("/"===a)o=await n.match("/index.html",t);else if("/index.html"===a)o=await n.match("/",t);else if(i){const e=i.endsWith("/")?i.slice(0,-1):i;a===e||a===`${e}/`?o=await n.match(`${e}/index.html`,t)??await n.match("/index.html",t)??await n.match(e,t)??await n.match(`${e}/`,t):a===`${e}/index.html`&&(o=await n.match(`${e}/`,t)??await n.match(e,t)??await n.match("/index.html",t))}}}catch{}}return o}async function ue(e,t){const{caches:a}=K();return(await caches.open(a.runtime)).match(e,t)}async function fe(e,t){return await le(e,t)??await ue(e,t)}const he="network",de="offline-cache",pe="runtime-cache",we="stale",me="offline-fallback";function ge(e,t){if(!e)return e;if("opaque"===e.type||"opaqueredirect"===e.type||0===e.status)return e;const a=new Headers(e.headers);a.set("X-Cache-Status",t);const n=new Response(e.body,{status:e.status,statusText:e.statusText,headers:a});if(e.url)try{Object.defineProperty(n,"url",{value:e.url})}catch{}if(e.redirected)try{Object.defineProperty(n,"redirected",{value:e.redirected})}catch{}return n}function ye(e,t,a,n={}){if(!t||206===t.status)return Promise.resolve();if(e.headers&&"function"==typeof e.headers.has&&e.headers.has("range"))return Promise.resolve();if("opaque"===t.type){if(!Boolean(n?.cacheOpaque??K().cacheOpaque??!1))return Promise.resolve()}else if(!t.ok)return Promise.resolve();try{const n=async function(e,t){const{caches:a}=K(),n=await caches.open(a.runtime);let i=t.clone();if("opaque"!==t.type)try{const a=[101,204,205,304].includes(t.status),s=new Headers(t.headers);if(s.has("X-NLPWA-Cached-At")||s.set("X-NLPWA-Cached-At",String(Date.now())),a)return s.set("X-NLPWA-Content-Length","0"),i=new Response(null,{status:t.status,statusText:t.statusText,headers:s}),void await n.put(e,i);if(!s.has("X-NLPWA-Content-Length")){const a=s.get("Content-Length");if(a)s.set("X-NLPWA-Content-Length",a);else try{const a=await t.clone().arrayBuffer();return s.set("X-NLPWA-Content-Length",String(a.byteLength)),i=new Response(a,{status:t.status,statusText:t.statusText,headers:s}),void await n.put(e,i)}catch{}}i=new Response(i.body,{status:t.status,statusText:t.statusText,headers:s})}catch{i=t.clone()}await n.put(e,i)}(e,t.clone()).catch(e=>{console.warn("[NLPWA] Runtime cache write failed:",e.message)});return a&&"function"==typeof a.waitUntil&&a.waitUntil(n),n}catch(e){return console.warn("[NLPWA] Could not clone response for runtime cache:",e.message),Promise.resolve()}}function ve(e){return Boolean(e?.throwOnFailure??K().throwOnFailure??!1)}function Ae(e){return null!=e?.maxAge?function(e){if(null==e)return null;if("number"==typeof e)return e>0?e:null;if("string"==typeof e){const t=e.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?$/);if(!t)return null;const a=parseFloat(t[1]),n=t[2]||"ms";return"w"===n?Math.round(7*a*24*60*60*1e3):"d"===n?Math.round(24*a*60*60*1e3):"h"===n?Math.round(60*a*60*1e3):"m"===n?Math.round(60*a*1e3):"s"===n?Math.round(1e3*a):Math.round(a)}return null}(e.maxAge):null}async function Pe(e,t,a={}){const n=a.ignoreSearch?{ignoreSearch:!0}:void 0,i=await le(e,n);if(i)return ge(i,de);const s=Ae(a),o=await ue(e,n);if(o){const n=!!s&&function(e,t){if(!t||t<=0||!e)return!1;const a=e.headers?.get("X-NLPWA-Cached-At");let n=0;if(a){const e=parseInt(a,10);!Number.isNaN(e)&&e>0&&(n=e)}else{const t=e.headers?.get("Date");if(t){const e=new Date(t).getTime();!Number.isNaN(e)&&e>0&&(n=e)}}return!!n&&Date.now()-n>t}(o,s);if(!n)return ge(o,pe);try{const n=await fetch(e);return ye(e,n,t,a),ge(n,he)}catch{return ge(o,pe)}}try{const n=await fetch(e);return ye(e,n,t,a),ge(n,he)}catch(t){if("navigate"===e.mode){const e=a.navigationFallback??K().navigationFallback??"/index.html",t=await fe(e);if(t)return ge(t,de)}if(ve(a))throw t;return ge(new Response("Offline — no cached version available.",{status:503,headers:{"Content-Type":"text/plain"}}),me)}}async function be(e,t,a={}){const n=a.ignoreSearch?{ignoreSearch:!0}:void 0,i=a.networkTimeoutMs??K().networkTimeoutMs??0,s=async()=>{const t=await le(e,n);if(t)return ge(t,de);const a=await ue(e,n);return a?ge(a,pe):null},o=fetch(e);try{let n;if(i>0){const r=Symbol("timeout");let c;const l=new Promise(e=>{c=setTimeout(()=>e(r),i)});let u;try{u=await Promise.race([o,l])}finally{clearTimeout(c)}if(u===r){const i=await s();if(i){const n=o.then(n=>ye(e,n,t,a)).catch(()=>{});return t&&"function"==typeof t.waitUntil&&t.waitUntil(n),i}n=await o}else n=u}else n=await o;return ye(e,n,t,a),ge(n,he)}catch(t){const n=await s();if(n)return n;if("navigate"===e.mode){const e=a.navigationFallback??K().navigationFallback??"/index.html",t=await fe(e);if(t)return ge(t,de)}if(ve(a))throw t;return ge(new Response("Offline — no cached version available.",{status:503,headers:{"Content-Type":"text/plain"}}),me)}}async function xe(e,t,a={}){try{return ge(await fetch(e),he)}catch(e){if(ve(a))throw e;return ge(new Response("Offline — network request failed.",{status:503,headers:{"Content-Type":"text/plain"}}),me)}}const Le={[y.CACHE_FIRST]:Pe,[y.NETWORK_FIRST]:be,[y.NETWORK_ONLY]:xe,[y.STALE_WHILE_REVALIDATE]:async function(e,t,a={}){const n=a.ignoreSearch?{ignoreSearch:!0}:void 0,i=await ue(e,n)??await le(e,n),s=(async()=>{const n=await fetch(e);return await ye(e,n,t,a),n})();if(i){const e=s.catch(()=>{});return t&&"function"==typeof t.waitUntil&&t.waitUntil(e),ge(i,we)}try{return ge(await s,he)}catch(t){if("navigate"===e.mode){const e=a.navigationFallback??K().navigationFallback??"/index.html",t=await fe(e);if(t)return ge(t,de)}if(ve(a))throw t;return ge(new Response("Offline — no cached version available.",{status:503,headers:{"Content-Type":"text/plain"}}),me)}},[y.CACHE_ONLY]:async function(e,t,a={}){const n=a.ignoreSearch?{ignoreSearch:!0}:void 0,i=await le(e,n);if(i)return ge(i,de);const s=await ue(e,n);if(s)return ge(s,pe);if("navigate"===e.mode){const e=a.navigationFallback??K().navigationFallback??"/index.html",t=await fe(e);if(t)return ge(t,de)}if(ve(a))throw new TypeError("Failed to fetch: not available in offline cache.");return ge(new Response("Not available offline.",{status:503,headers:{"Content-Type":"text/plain"}}),me)}};function Ne(e,t=K()){if(!t)return!1;if(!("undefined"==typeof self||!self.location||e.origin===self.location.origin))return!1;let a=e.pathname;t.base&&a.startsWith(t.base)&&(a=a.slice(t.base.length),a.startsWith("/")||(a="/"+a));if(a===(t.configPath||"/config.json"))return!0;const n=t.precache||[];for(const e of n)if("string"==typeof e){if(e===a||te(e,a))return!0;if("/"===a&&("/index.html"===e||"index.html"===e)||"/index.html"===a&&"/"===e)return!0}return!(!V||!V.has(a))}async function Ee(e,t,a){const n=await e.keys();await Promise.all(n.map(async n=>{const{pathname:i}=new URL(n.url);a.has(i)||function(e){const{routes:t,defaultStrategy:a}=K();let n;try{n=new URL(e)}catch{return!1}if(Ne(n))return!0;const i="undefined"==typeof self||!self.location||n.origin===self.location.origin;for(const e of t){let t=e.origin,a=e.match;if(!t&&(a.startsWith("http://")||a.startsWith("https://")))try{t=new URL(a.replace(/\*/g,"x")).origin}catch{}if(t){if("*"!==t&&t!==n.origin)continue}else if(!i)continue;if(te(a,n.href)||te(a,n.pathname))return v.has(e.strategy)}return!!i&&v.has(a)}(n.url)||(await e.delete(n),console.log(`[NLPWA] Evicted (route no longer cacheable) [${t}]: ${i}`))}))}async function $e(){const e=K(),t=await I();if(!t?.complete)return!1;const a=await caches.open(t.cache);if(!await a.match(H()))return console.warn("[NLPWA] Staged cache is missing its snapshot, discarding."),await B(),await caches.delete(t.cache),!1;const n=await C();await async function(e){await W(N,e),S=Promise.resolve(e)}({cache:t.cache,version:t.version,swVersion:t.swVersion,...e.retainPreviousVersionCache&&n?.cache?{previousCache:n.cache}:{}}),await B(),await Y();const i=K();Boolean(t.clearRuntime||e.clearRuntimeOnUpdate||i.clearRuntimeOnUpdate)?await caches.delete(i.caches.runtime):await async function(e){if(!e.length)return;const{caches:t}=K(),a=await caches.open(t.runtime);await Promise.all(e.map(e=>a.delete(e)))}(t.evict??[]),await async function(){const{caches:e,snapshotCachePath:t,configPath:a}=K(),n=new Set([t,a||"/config.json"].filter(Boolean)),[i,s]=await Promise.all([R(e.offline),caches.open(e.runtime)]);await Promise.all([Ee(i,e.offline,n),Ee(s,e.runtime,n)])}();const s=[t.cache];return e.retainPreviousVersionCache&&n?.cache&&s.push(n.cache),await M({base:e.caches.offline,runtime:e.caches.runtime,keep:s}),n&&"undefined"!=typeof self&&self.clients&&"function"==typeof self.clients.matchAll&&self.clients.matchAll({includeUncontrolled:!0,type:"window"}).then(e=>{e.forEach(e=>e.postMessage({type:"UPDATE_APPLIED",version:t.version}))}).catch(()=>{}),console.log(`[NLPWA] Switched to v${t.version}`),!0}async function We(){if(!O())return!1;try{return await $e()}finally{U()}}async function Se(){if(O())try{let e=null;try{e=await F()}catch(e){console.warn(`[NLPWA] No update manifest at install (${e.message})`)}const t=await _();if(e){const a=Boolean(t?.swVersion&&t.swVersion!==K().version),n=await ce(e,{activeSnapshot:t,forceRefetch:a});if("incomplete"===n.status&&!t)throw new Error(`[NLPWA] Precache incomplete on first install: ${n.failed.join(", ")} failed`);return"ready"!==n.status||t||await $e(),n}if(!t)return await async function(){const e=K(),t=e.configPath||"/config.json",a=z(t,e.base),n=await R(e.caches.offline);try{const e=await fetch(a,{cache:"no-store",headers:{Accept:"application/json"}});if(e.ok){const i=e.clone(),s=a!==t?e.clone():null,o=await e.json();await n.put(a,i),s&&await n.put(t,s),X(o)}else console.warn(`[NLPWA] Could not fetch ${a} (HTTP ${e.status})`),await Y()}catch(e){console.warn(`[NLPWA] Network error fetching ${a}:`,e.message),await Y()}const i=(K().precache||[]).filter(e=>"string"==typeof e&&!e.includes("*")&&!e.includes("?")),s=await Promise.allSettled(i.map(async t=>{const a=z(t,e.base),i=new Request(new URL(a,self.location.href),{cache:"reload"});if(await n.add(i),a!==t){const e=await n.match(i);e&&await n.put(t,e.clone())}})),o=[];if(s.forEach((e,t)=>{"rejected"===e.status&&(console.warn(`[NLPWA] Precache failed: ${i[t]}`,e.reason),o.push(i[t]))}),o.length>0)throw new Error(`[NLPWA] Precache failed on first install: ${o.join(", ")} failed`);return{status:"ready",precached:i.length}}()}finally{U()}}function Ce(e){const{request:t}=e;"GET"===t.method&&t.url.startsWith("http")&&e.respondWith((async()=>{await(Q||(Q=Y()),Q),"navigate"===t.mode&&await We().catch(e=>console.warn("[NLPWA] Commit failed:",e.message));const a=function(e){const{routes:t,defaultStrategy:a}=K();let n;try{n=new URL(e.url)}catch{return(e,t)=>xe(e)}const i="undefined"==typeof self||!self.location||n.origin===self.location.origin,s=K();if((s.dev||s.devBypass)&&(n.pathname.startsWith("/@vite/")||n.pathname.startsWith("/@fs/")||n.pathname.includes("/.vite/")||n.pathname.endsWith(".hot-update.json")||n.searchParams.has("import"))){const e=(e,t)=>xe(e);return e.strategy="network-only",e}if(Ne(n,K())){const e=(e,t)=>Pe(e,t);return e.strategy="cache-first",e}for(const e of t){let t=e.origin,s=e.match;if(!t&&(s.startsWith("http://")||s.startsWith("https://")))try{t=new URL(s.replace(/\*/g,"x")).origin}catch{}if(t){if("*"!==t&&t!==n.origin)continue}else if(!i)continue;if(te(s,n.href)||te(s,n.pathname)){const t=Le[e.strategy]??Le[a]??be,n=(a,n)=>t(a,n,e);return n.strategy=e.strategy,n}}if(!i){const e=(e,t)=>xe(e);return e.strategy="network-only",e}const o=Le[a]??be,r=(e,t)=>o(e,t);return r.strategy=a,r}(t);return a(t,e)})())}async function Te(e){(await self.clients.matchAll({includeUncontrolled:!0,type:"window"})).forEach(t=>t.postMessage(e))}async function Re(e={}){if(!O())return console.log("[NLPWA] Update already in progress, skipping."),{updated:!1};try{return await async function({force:e=!1}={}){const t=K();let n;try{n=(await async function(){const{versionEndpoint:e}=G(),t="undefined"!=typeof AbortSignal&&"function"==typeof AbortSignal.timeout?AbortSignal.timeout(15e3):void 0,a=await fetch(e,{cache:"no-store",headers:{Accept:"application/json"},signal:t});if(!a.ok)throw new Error(`[NLPWA] Version check failed: HTTP ${a.status} ${a.statusText}`);const n=await a.json();if("string"!=typeof n.version||!n.version)throw new Error('[NLPWA] Version check response missing valid "version"');return n}()).version}catch(e){console.warn("[NLPWA] Cannot reach version endpoint, falling back to manifest:",e.message)}const i=await _(),o=await I();if(o?.complete&&o.swVersion===t.version&&(!n||n===o.version))return await Te({type:a,version:o.version,staged:!0}),{updated:!0,version:o.version,staged:!0};if(!e&&o&&!o.complete&&o.nextRetryAt&&Date.now()<o.nextRetryAt)return console.log(`[NLPWA] Staging retry in backoff until ${new Date(o.nextRetryAt).toISOString()}`),{updated:!1,backingOff:!0};const r=!i,c=Boolean(i?.swVersion&&i.swVersion!==t.version),l=e=>!r&&!c&&e===i.version,u=async()=>{o&&(console.log(`[NLPWA] Server rolled back to v${i.version}; clearing staged update v${o.version}`),await B(),o.cache&&await caches.delete(o.cache).catch(()=>{}))};if(n&&l(n))return await u(),console.log(`[NLPWA] App already up to date (v${i.version})`),await Te({type:s,version:i.version}),{updated:!1,rolledBack:Boolean(o)};let h;try{h=await F()}catch(e){return console.warn("[NLPWA] Cannot reach manifest endpoint:",e.message),{updated:!1}}if(l(h.version))return await u(),console.log(`[NLPWA] App already up to date (v${i.version})`),await Te({type:s,version:i.version}),{updated:!1,rolledBack:Boolean(o)};console.log(r?`[NLPWA] Initial installation: staging v${h.version}`:`[NLPWA] Update available: v${i.version} → v${h.version}`);const d=await ce(h,{activeSnapshot:i,forceRefetch:c});if("incomplete"===d.status){const e=d.hasHashMismatch?`Hash mismatch verification failed for ${d.failed.join(", ")}`:d.quotaExceeded?`Storage quota exceeded while staging ${d.failed.join(", ")}`:`Failed to download or verify ${d.failed.join(", ")}`;return await Te({type:f,version:h.version,failed:d.failed,failedDetails:d.failedDetails,error:e,retryCount:d.retryCount,nextRetryAt:d.nextRetryAt,persistent:Boolean(d.persistent),hasHashMismatch:Boolean(d.hasHashMismatch),quotaExceeded:Boolean(d.quotaExceeded)}),{updated:!1,version:h.version,failed:d.failed,error:e,quotaExceeded:Boolean(d.quotaExceeded)}}if(r)return await $e(),{updated:!1,version:h.version,initial:!0};return await Te({type:a,version:h.version,staged:!0}),{updated:!0,version:h.version,staged:!0}}(e)}finally{U()}}!function(e={}){const t=q(e);Y().catch(()=>{}),self.addEventListener("install",e=>{console.log(`[NLPWA] Installing SW v${t.version}`),e.waitUntil((async()=>{try{const e=await Se();e&&"incomplete"===e.status||await self.skipWaiting()}catch(e){throw console.error("[NLPWA] Install error:",e),e}})())}),self.addEventListener("activate",e=>{console.log(`[NLPWA] Activated SW v${t.version}`),e.waitUntil((async()=>{await self.clients.claim(),await async function(){const e=K(),t=await I();await M({base:e.caches.offline,runtime:e.caches.runtime,keep:[await T(e.caches.offline),t?.cache]})}().catch(()=>{}),await Y().catch(()=>{})})())}),self.addEventListener("fetch",Ce),self.addEventListener("message",e=>{const t=e.ports?.[0],a=(a,n,i)=>{const s={type:a,requestId:e.data?.requestId,data:n??null,error:i?i.message||String(i):void 0};t?t.postMessage(s):e.source?.postMessage(s)};switch(e.data?.type){case n:e.waitUntil(Re({force:!0}));break;case o:e.waitUntil((async()=>{const e=await We().catch(()=>!1);a(i,{applied:e})})());break;case r:e.waitUntil((async()=>{try{const e=await ne();a(c,e)}catch(e){a(c,null,e)}})());break;case l:e.waitUntil((async()=>{try{const t=await se(e.data?.options||{});a(u,t)}catch(e){a(u,null,e)}})())}}),self.addEventListener("periodicsync",e=>{"nlpwa-update-check"===e.tag&&e.waitUntil(Re())})}({version:"1",configPath:"/config.json",updateAPI:{version:"/api/update/version.json",info:"/api/update/info.json"}})}();
+/* NLPWA Service Worker — https://github.com/arif891/nlpwa */
+(function () {
+  'use strict';
+
+  /** Default cache storage names */
+  const CACHE_NAMES = {
+    OFFLINE: 'offline',
+    RUNTIME: 'runtime',
+  };
+
+  /** Path inside the offline cache where the snapshot is stored */
+  const SNAPSHOT_CACHE_PATH = '/_nlpwa/snapshot.json';
+
+  /** postMessage type identifiers (SW ↔ client) */
+  const MESSAGE_TYPES = {
+    UPDATE_READY:        'UPDATE_READY',        // SW → client: new version available
+    CHECK_UPDATE:        'CHECK_UPDATE',        // client → SW: trigger manual check
+    UPDATE_APPLIED:      'UPDATE_APPLIED',      // SW → client: broadcast to all windows when update is committed ({ version })
+    NO_UPDATE:           'NO_UPDATE',           // SW → client: already up to date
+    APPLY_UPDATE:        'APPLY_UPDATE',        // client → SW: switch to the staged update now
+    APPLY_UPDATE_RESULT: 'APPLY_UPDATE_RESULT', // SW → client: 1-to-1 reply to APPLY_UPDATE ({ applied })
+    GET_CACHE_INFO:      'GET_CACHE_INFO',      // client → SW: request storage quota & cache metrics
+    CACHE_INFO:          'CACHE_INFO',          // SW → client: reply with quota & cache metrics
+    CLEANUP_RUNTIME:     'CLEANUP_RUNTIME',     // client → SW: request runtime cache cleanup
+    RUNTIME_CLEANED:     'RUNTIME_CLEANED',     // SW → client: reply with cleanup results
+    UPDATE_FAILED:       'UPDATE_FAILED',       // SW → client: update staging or hash verification failed
+  };
+
+  /** Runtime cache cleanup strategies */
+  const CLEANUP_STRATEGIES = {
+    LARGEST: 'largest', // Evict largest files first (or files above size threshold)
+    LRU:     'lru',     // Evict oldest / least-recently-cached first
+    MAX_AGE: 'max-age', // Evict files older than maxAgeMs
+    QUOTA:   'quota',   // Evict when quota usage exceeds threshold
+    PATTERN: 'pattern', // Evict files matching glob pattern
+    ALL:     'all',     // Wipe all runtime cache entries
+  };
+
+  /** Max parallel downloads while staging an update. */
+  const FETCH_CONCURRENCY = 6;
+
+  /** Fetch strategy names */
+  const STRATEGIES = {
+    CACHE_FIRST:            'cache-first',
+    NETWORK_FIRST:          'network-first',
+    NETWORK_ONLY:           'network-only',
+    STALE_WHILE_REVALIDATE: 'stale-while-revalidate',
+    CACHE_ONLY:             'cache-only',
+  };
+
+  /**
+   * Strategies that store responses in a cache.
+   * Used by evict.js: a URL is only kept in cache if its matched route
+   * uses one of these strategies.
+   */
+  const CACHING_CAPABLE_STRATEGIES = new Set([
+    STRATEGIES.CACHE_FIRST,
+    STRATEGIES.NETWORK_FIRST,
+    STRATEGIES.STALE_WHILE_REVALIDATE,
+    STRATEGIES.CACHE_ONLY,
+  ]);
+
+  /**
+   * How many consecutive update checks may retry files that failed to download
+   * before giving up until the next app version bump. Prevents a permanently
+   * missing file (e.g. a typo in `precache`) from being retried forever.
+   */
+  const MAX_RETRY_ATTEMPTS = 5;
+
+  /**
+   * Default configuration values.
+   * All fields are overridable by the user via initConfig(userConfig).
+   */
+  const DEFAULTS = {
+    /**
+     * Service Worker version — set MANUALLY by the developer.
+     *
+     * Bump this when you make structural changes to the SW itself:
+     * routing logic, cache names, or fetch strategy implementations.
+     *
+     * Changing this triggers the browser's byte-level SW update. Upon activation,
+     * NLPWA performs a force-refetch of all precache files into a separate staging cache
+     * (bypassing local copies) and clears the runtime cache on commit, while active tabs
+     * keep serving safely from the active cache until commit.
+     *
+     * Note: The APP version is NOT configured here — it is derived deterministically
+     * from the manifest content hash (or set in config.json) and served via the update API endpoints.
+     *
+     * Example: '1', '2', 'v3'
+     */
+    version: '1',
+
+    /**
+     * Path to the runtime config.json file (stored in and read from offline cache).
+     * Default: '/config.json'
+     */
+    configPath: '/config.json',
+
+    /**
+     * Server endpoints for two-tier update checks:
+     * - version: lightweight check returning { version: 'x.y.z' }
+     * - info: full manifest returning { version: 'x.y.z', files: [...] }
+     */
+    updateAPI: {
+      version: '/api/update/version.json',
+      info: '/api/update/info.json',
+    },
+
+    /**
+     * How downloaded update files are checked against the manifest hash:
+     *   'strict' - mismatch fails that file; the update is not applied until
+     *              every file verifies (retried on the next check)
+     *   'warn'   - mismatch is logged but the file is still stored
+     *   false    - no verification
+     * Use 'warn' only if a proxy/CDN rewrites your files after the build.
+     */
+    verifyHashes: 'strict',
+
+    /**
+     * Maximum file size in bytes for in-memory SHA-256 hash verification during staging.
+     * Files larger than this threshold (e.g. WASM binaries, on-device AI models)
+     * skip in-memory clone & buffer to avoid memory spikes and crashes on low-end devices.
+     * Default: 20 * 1024 * 1024 (20 MB)
+     */
+    maxVerifyBytes: 20 * 1024 * 1024,
+
+    /**
+     * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).
+     * Default: ''
+     */
+    base: '',
+
+    /**
+     * Keep immediate previous version cache after commit for multi-tab grace retention.
+     * Default: true
+     */
+    retainPreviousVersionCache: true,
+
+    /**
+     * Clear the entire runtime cache whenever a new app version is committed.
+     * Default: false
+     */
+    clearRuntimeOnUpdate: false,
+
+    /**
+     * Whether to cache opaque cross-origin responses in the runtime cache.
+     * Default: false (prevents ~7MB Chrome quota padding per entry and prevents caching CDN 404s/500s).
+     */
+    cacheOpaque: false,
+
+    /**
+     * Enable development mode (bypasses Vite internal and HMR requests to network).
+     * Default: false
+     */
+    dev: false,
+
+    /** Explicitly bypass Vite dev server and HMR requests to network. Default: false */
+    devBypass: false,
+
+    /** Cache storage names */
+    caches: {
+      offline: CACHE_NAMES.OFFLINE,
+      runtime: CACHE_NAMES.RUNTIME,
+    },
+
+    /** Path inside the offline cache where the manifest snapshot is stored */
+    snapshotCachePath: SNAPSHOT_CACHE_PATH,
+
+    /**
+     * Files to pre-cache at SW install time (the app shell).
+     * These are fetched immediately when the SW installs.
+     *
+     * Keep this list small and focused strictly on the essential app shell (HTML, CSS, JS, icons).
+     * Note: During update staging, hash verification clones and buffers each downloaded file
+     * into memory to compute its SHA-256 digest before storing the original in CacheStorage.
+     * Large precached files (videos, 3D models, heavy datasets) will double peak memory consumption
+     * while hashing; serve them via runtime cache routes instead.
+     */
+    precache: [],
+
+    /**
+     * Per-URL-pattern fetch strategies.
+     * Matched top-to-bottom; first match wins.
+     * Patterns support glob syntax: * (segment) and ** (any path).
+     *
+     * Example:
+     *   { match: '/api/**',    strategy: 'network-only' }
+     *   { match: '/assets/**', strategy: 'cache-first' }
+     */
+    routes: [],
+
+    /** Strategy to use when no route matches */
+    defaultStrategy: STRATEGIES.NETWORK_FIRST,
+
+    /**
+     * Whether fetch failures should throw/reject instead of returning a synthetic 503 response.
+     * Can also be set per route in routes: [{ match: '/api/**', strategy: 'network-only', throwOnFailure: true }].
+     * Default: false (returns 503 response)
+     */
+    throwOnFailure: false,
+  };
+
+  const VALID_STRATEGIES = new Set(Object.values(STRATEGIES));
+
+  const ALLOWED_ROUTE_KEYS = new Set([
+    'match',
+    'strategy',
+    'origin',
+    'networkTimeoutMs',
+    'navigationFallback',
+    'ignoreSearch',
+    'throwOnFailure',
+    'maxAge',
+    'cacheOpaque',
+  ]);
+
+  const ALLOWED_CONFIG_KEYS = new Set([
+    'version',
+    'appVersion',
+    'configPath',
+    'updateAPI',
+    'verifyHashes',
+    'maxVerifyBytes',
+    'caches',
+    'snapshotCachePath',
+    'precache',
+    'routes',
+    'defaultStrategy',
+    'networkTimeoutMs',
+    'navigationFallback',
+    'base',
+    'retainPreviousVersionCache',
+    'clearRuntimeOnUpdate',
+    'cacheOpaque',
+    'throwOnFailure',
+    'dev',
+    'devBypass',
+  ]);
+
+  /**
+   * Validate a merged config object.
+   * Returns an array of error strings (empty = valid).
+   *
+   * @param {Object} config
+   * @returns {string[]}
+   */
+  function validateConfig(config) {
+    const errors = [];
+
+    if (typeof config.version !== 'string' || !config.version) {
+      errors.push('config.version must be a non-empty string (e.g. "1", "2", "v3")');
+    }
+
+    if (config.configPath && typeof config.configPath !== 'string') {
+      errors.push('config.configPath must be a string (e.g. "/config.json")');
+    }
+
+    // Validate updateAPI (object with { version, info } only)
+    if (!config.updateAPI || typeof config.updateAPI !== 'object' || Array.isArray(config.updateAPI)) {
+      errors.push('config.updateAPI must be an object with { version, info } endpoints');
+    } else {
+      if (typeof config.updateAPI.version !== 'string' || !config.updateAPI.version) {
+        errors.push('config.updateAPI.version must be a non-empty string endpoint (e.g. "/api/update/version.json")');
+      }
+      if (typeof config.updateAPI.info !== 'string' || !config.updateAPI.info) {
+        errors.push('config.updateAPI.info must be a non-empty string endpoint (e.g. "/api/update/info.json")');
+      }
+    }
+
+    for (const key of Object.keys(config)) {
+      if (!ALLOWED_CONFIG_KEYS.has(key)) {
+        errors.push(`config.${key} is not a recognized configuration option.`);
+      }
+    }
+
+    if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
+      errors.push("config.verifyHashes must be 'strict', 'warn' or false");
+    }
+
+    if (config.maxVerifyBytes !== undefined && (typeof config.maxVerifyBytes !== 'number' || config.maxVerifyBytes < 0)) {
+      errors.push('config.maxVerifyBytes must be a non-negative number');
+    }
+
+    if (!config.caches || typeof config.caches.offline !== 'string') {
+      errors.push('config.caches.offline must be a string');
+    }
+
+    if (!config.caches || typeof config.caches.runtime !== 'string') {
+      errors.push('config.caches.runtime must be a string');
+    }
+
+    if (config.clearRuntimeOnUpdate !== undefined && typeof config.clearRuntimeOnUpdate !== 'boolean') {
+      errors.push('config.clearRuntimeOnUpdate must be a boolean');
+    }
+
+    if (!Array.isArray(config.precache)) {
+      errors.push('config.precache must be an array of URL strings');
+    }
+
+    if (!Array.isArray(config.routes)) {
+      errors.push('config.routes must be an array');
+    } else {
+      config.routes.forEach((route, i) => {
+        for (const key of Object.keys(route)) {
+          if (!ALLOWED_ROUTE_KEYS.has(key)) {
+            errors.push(`config.routes[${i}] has unrecognized option "${key}". Only canonical route options are supported.`);
+          }
+        }
+        if (typeof route.match !== 'string') {
+          errors.push(`config.routes[${i}].match must be a string (glob pattern)`);
+        }
+        if (!VALID_STRATEGIES.has(route.strategy)) {
+          errors.push(
+            `config.routes[${i}].strategy "${route.strategy}" is invalid. ` +
+            `Valid: ${[...VALID_STRATEGIES].join(', ')}`
+          );
+        }
+      });
+    }
+
+    if (!VALID_STRATEGIES.has(config.defaultStrategy)) {
+      errors.push(
+        `config.defaultStrategy "${config.defaultStrategy}" is invalid. ` +
+        `Valid: ${[...VALID_STRATEGIES].join(', ')}`
+      );
+    }
+
+    return errors;
+  }
+
+  /**
+   * Tiny "meta" cache + helpers that make updates atomic.
+   *
+   *   nlpwa-meta
+   *     /_nlpwa/active.json  → { cache, version, swVersion }   which offline cache is live
+   *     /_nlpwa/staged.json  → { cache, version, swVersion, complete, retryCount, evict, ... }
+   *
+   * Each app version lives in its own offline cache (`offline@<version>-<id>`).
+   * An update is built in a new cache while the active one keeps serving; the
+   * switch is a single atomic write to active.json.
+   *
+   * This module has no dependency on config so config/index.js can use it.
+   */
+
+  const META_CACHE = 'nlpwa-meta';
+  const ACTIVE_KEY = '/_nlpwa/active.json';
+  const STAGED_KEY = '/_nlpwa/staged.json';
+
+  async function readMeta(key) {
+    const cache = await caches.open(META_CACHE);
+    const response = await cache.match(key);
+    if (!response) return null;
+    try {
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function writeMeta(key, value) {
+    const cache = await caches.open(META_CACHE);
+    await cache.put(key, new Response(JSON.stringify(value), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  }
+
+  async function deleteMeta(key) {
+    const cache = await caches.open(META_CACHE);
+    await cache.delete(key);
+  }
+
+  // ── Active pointer (memoised: the SW can be restarted at any time, so the
+  //    first read always comes from the meta cache) ─────────────────────────
+
+  let _activePromise = null;
+
+  function getActive() {
+    if (!_activePromise) _activePromise = readMeta(ACTIVE_KEY);
+    return _activePromise;
+  }
+
+  async function getActiveName(baseName) {
+    return (await getActive())?.cache ?? baseName;
+  }
+
+  async function openActive(baseName) {
+    return caches.open(await getActiveName(baseName));
+  }
+
+  /** The single atomic commit point of an update. */
+  async function setActive(record) {
+    await writeMeta(ACTIVE_KEY, record);
+    _activePromise = Promise.resolve(record);
+  }
+
+  // ── Staged update record ──────────────────────────────────────────────────
+
+  const getStaged = () => readMeta(STAGED_KEY);
+  const setStaged = (record) => writeMeta(STAGED_KEY, record);
+  const clearStaged = () => deleteMeta(STAGED_KEY);
+
+  // ── Cooperative lock ──────────────────────────────────────────────────────
+  // Staging and committing must not overlap. Navigations must never wait for a
+  // long download, so callers use tryAcquire() and simply skip when busy.
+
+  let _busy = false;
+
+  function tryAcquire() {
+    if (_busy) return false;
+    _busy = true;
+    return true;
+  }
+
+  function release() {
+    _busy = false;
+  }
+
+  // ── Cleanup ───────────────────────────────────────────────────────────────
+
+  /**
+   * Delete every offline cache that is neither in `keep` nor the runtime cache.
+   * Managed names are the unversioned base cache (`base`) and versioned caches (`<base>@…`).
+   *
+   * @param {{ base: string, runtime: string, keep: Array<string|undefined> }} opts
+   */
+  async function cleanupCaches({ base, runtime, keep }) {
+    const keepSet = new Set(keep.filter(Boolean));
+    const names = await caches.keys();
+    await Promise.all(
+      names
+        .filter((name) => name !== runtime && name !== META_CACHE && !keepSet.has(name))
+        .filter((name) => name === base || name.startsWith(`${base}@`))
+        .map((name) => {
+          console.log(`[NLPWA] Removed old cache: ${name}`);
+          return caches.delete(name);
+        })
+    );
+  }
+
+  /**
+   * Fetch lightweight app version from the server (Tier 1 check).
+   *
+   * @returns {Promise<{ version: string }>}
+   */
+  async function fetchServerVersion() {
+    const { versionEndpoint } = getUpdateEndpoints();
+
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(15000)
+      : undefined;
+
+    const response = await fetch(versionEndpoint, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`[NLPWA] Version check failed: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (typeof data.version !== 'string' || !data.version) {
+      throw new Error('[NLPWA] Version check response missing valid "version"');
+    }
+
+    return data;
+  }
+
+  /**
+   * Fetch the latest file tree update info from the server (Tier 2 fetch).
+   * Always bypasses browser cache (cache: 'no-store') to get the true current state.
+   *
+   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }>}
+   */
+  async function fetchServerInfo() {
+    const { infoEndpoint } = getUpdateEndpoints();
+
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(30000)
+      : undefined;
+
+    const response = await fetch(infoEndpoint, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`[NLPWA] Update info fetch failed: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      throw new Error(`[NLPWA] Update info response is not valid JSON (is the endpoint returning HTML?): ${err.message}`);
+    }
+
+    // Validate the expected shape before passing to computeDiff / applyDiff
+    if (typeof data.version !== 'string' || !data.version) {
+      throw new Error('[NLPWA] Update info missing or invalid "version" field (expected a non-empty string)');
+    }
+    if (!Array.isArray(data.files)) {
+      throw new Error('[NLPWA] Update info missing "files" array');
+    }
+
+    return data;
+  }
+
+  /** Path of the snapshot entry inside an offline cache. */
+  function getSnapshotPath() {
+    return getConfig().snapshotCachePath;
+  }
+
+  let _activeSnapshotPaths = null;
+
+  function getActiveSnapshotPaths() {
+    return _activeSnapshotPaths;
+  }
+
+  function setActiveSnapshotPaths(paths) {
+    _activeSnapshotPaths = paths ? (paths instanceof Set ? paths : new Set(paths)) : null;
+  }
+
+  /**
+   * Load the snapshot (hash map of what is currently live) from the ACTIVE
+   * offline cache. Returns null on a fresh install.
+   *
+   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }|null>}
+   */
+  async function loadCachedSnapshot() {
+    const cache = await openActive(getConfig().caches.offline);
+    const response = await cache.match(getSnapshotPath());
+    if (!response) {
+      _activeSnapshotPaths = null;
+      return null;
+    }
+    const data = await response.json();
+    if (Array.isArray(data?.files)) {
+      _activeSnapshotPaths = new Set(data.files.map((f) => f.path));
+    }
+    return data;
+  }
+
+  /**
+   * Write a snapshot into a given offline cache. For a staged update this is the
+   * LAST write: a cache that contains its snapshot is a complete one.
+   *
+   * @param {Cache} cache
+   * @param {Object} snapshotData
+   */
+  async function writeSnapshot(cache, snapshotData) {
+    const snapshot = { swVersion: getConfig().version, ...snapshotData };
+    if (Array.isArray(snapshotData?.files)) {
+      _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
+    }
+    await cache.put(getSnapshotPath(), new Response(JSON.stringify(snapshot), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  }
+
+  /**
+   * Helper to resolve paths against a configured base subpath (e.g. '/my-app/').
+   *
+   * - Leaves URLs with schemes (http://, https://) or protocol-relative (//) untouched.
+   * - Handles trailing slash in base and leading slash in path gracefully.
+   * - Avoids double-prefixing if path is already prefixed with base.
+   *
+   * @param {string} path
+   * @param {string} [base]
+   * @returns {string}
+   */
+  function resolvePathWithBase(path, base) {
+    if (!path || !base || /^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('//')) {
+      return path;
+    }
+    const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+    if (!cleanBase) return path;
+
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    if (cleanPath === cleanBase || cleanPath.startsWith(`${cleanBase}/`)) {
+      return cleanPath;
+    }
+    return `${cleanBase}${cleanPath}`;
+  }
+
+  /** Singleton config instance, set by initConfig() */
+  let _config = null;
+
+  /**
+   * Initialize the NLPWA config by merging user config with defaults.
+   * Should be called once at the top of the SW entry point.
+   *
+   * @param {Partial<typeof DEFAULTS>} userConfig
+   * @returns {typeof DEFAULTS}
+   */
+  function initConfig(userConfig = {}) {
+    const merged = {
+      ...DEFAULTS,
+      ...userConfig,
+      // Deep merge nested objects
+      caches: {
+        ...DEFAULTS.caches,
+        ...(userConfig.caches ?? {}),
+      },
+    };
+
+    const errors = validateConfig(merged);
+    if (errors.length > 0) {
+      console.error('[NLPWA] Config errors:\n' + errors.map(e => `  • ${e}`).join('\n'));
+    }
+
+    _config = Object.freeze(merged);
+    return _config;
+  }
+
+  /**
+   * Get the active config. Throws if initConfig() has not been called.
+   *
+   * @returns {typeof DEFAULTS}
+   */
+  function getConfig() {
+    if (!_config) {
+      throw new Error('[NLPWA] Config not initialized. Call initConfig(userConfig) first.');
+    }
+    return _config;
+  }
+
+  /**
+   * Update the active in-memory configuration with runtime config
+   * (e.g. loaded from /config.json in the offline cache).
+   *
+   * @param {Object} runtimeConfig
+   * @returns {typeof DEFAULTS}
+   */
+  function updateActiveConfig(runtimeConfig = {}) {
+    if (!_config) {
+      initConfig();
+    }
+
+    const merged = {
+      ..._config,
+      ...runtimeConfig,
+      // Version handling: preserve compiled SW engine version, reflect deployed appVersion
+      version: _config.version,
+      appVersion: runtimeConfig.version ?? _config.appVersion ?? runtimeConfig.appVersion,
+
+      // Same-origin trust boundary protection:
+      // Core security and storage namespace settings are locked to the compiled SW engine
+      // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
+      verifyHashes: _config.verifyHashes,
+      maxVerifyBytes: _config.maxVerifyBytes,
+      caches: _config.caches,
+      snapshotCachePath: _config.snapshotCachePath,
+
+      // Runtime routes and precache take priority if provided
+      routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
+      precache: Array.isArray(runtimeConfig.precache) ? runtimeConfig.precache : _config.precache,
+      updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
+    };
+
+    _config = Object.freeze(merged);
+    return _config;
+  }
+
+  let _configReadyPromise = null;
+
+  /**
+   * Ensure runtime config has been loaded from the offline cache before handling requests.
+   * Resolves with the active runtime config.
+   *
+   * @returns {Promise<Object|null>}
+   */
+  function ensureConfigReady() {
+    if (!_configReadyPromise) {
+      _configReadyPromise = loadConfigFromCache();
+    }
+    return _configReadyPromise;
+  }
+
+  /**
+   * Load the runtime config file from the offline cache.
+   * Config is always read from the ACTIVE offline cache at runtime, so it
+   * switches together with the rest of the app shell when an update is committed.
+   *
+   * @returns {Promise<Object|null>}
+   */
+  async function loadConfigFromCache() {
+    const promise = (async () => {
+      const config = _config || initConfig();
+      const baseName = config.caches?.offline || 'offline';
+      const configPath = resolvePathWithBase(config.configPath || '/config.json', config.base);
+
+      try {
+        const cache = await openActive(baseName);
+        const response = await cache.match(configPath);
+        if (!response) return null;
+
+        const runtimeJson = await response.json();
+        updateActiveConfig(runtimeJson);
+        console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+
+        try {
+          const snapRes = await cache.match('/_nlpwa/snapshot.json');
+          if (snapRes) {
+            const snapData = await snapRes.json();
+            if (Array.isArray(snapData?.files)) {
+              setActiveSnapshotPaths(snapData.files.map((f) => f.path));
+            }
+          }
+        } catch {
+          // snapshot may not exist yet
+        }
+
+        return runtimeJson;
+      } catch (err) {
+        console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
+        return null;
+      }
+    })();
+
+    _configReadyPromise = promise;
+    return promise;
+  }
+
+  /**
+   * Helper to resolve the two-tier update API endpoints:
+   * - versionEndpoint: lightweight check
+   * - infoEndpoint: full manifest
+   *
+   * Config format: { version, info }
+   *
+   * @returns {{ versionEndpoint: string, infoEndpoint: string }}
+   */
+  function getUpdateEndpoints() {
+    const config = getConfig();
+    let versionEndpoint = '/api/update/version.json';
+    let infoEndpoint = '/api/update/info.json';
+
+    if (config.updateAPI && typeof config.updateAPI === 'object' && !Array.isArray(config.updateAPI)) {
+      if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
+      if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
+    }
+
+    return {
+      versionEndpoint: resolvePathWithBase(versionEndpoint, config.base),
+      infoEndpoint: resolvePathWithBase(infoEndpoint, config.base),
+    };
+  }
+
+  /**
+   * Compute the delta between a new server manifest and the currently cached one.
+   *
+   * The delta drives the update: only files that actually changed are fetched.
+   * Because the server always returns the full file list, this automatically
+   * handles any size of version jump (v1 → v100) in one pass.
+   *
+   * @param {Array<{ path: string, hash: string }>} newFiles   from server manifest
+   * @param {Array<{ path: string, hash: string }>|null} oldFiles  from cached manifest
+   *                                                               (null = fresh install)
+   * @returns {{ added: string[], modified: string[], removed: string[] }}
+   */
+  function isSafePath(path) {
+    if (typeof path !== 'string' || !path) return false;
+    // Must start with a single forward slash and not be followed by / or \
+    if (!/^\/(?![\/\\])/.test(path)) return false;
+    // Reject absolute URLs with protocols (e.g. http:, https:, data:, javascript:)
+    if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return false;
+    // Reject backslashes anywhere in path (prevent Windows/URL parser normalization quirks)
+    if (path.includes('\\')) return false;
+    // Reject path traversal with '..' segments
+    if (/(?:^|\/)\.\.(?:\/|$)/.test(path)) return false;
+    return true;
+  }
+
+  function computeDiff(newFiles, oldFiles) {
+    const safeNewFiles = (newFiles ?? []).filter(f => isSafePath(f?.path));
+    const safeOldFiles = (oldFiles ?? []).filter(f => isSafePath(f?.path));
+
+    // Build lookup maps for O(1) access
+    const oldMap = new Map(safeOldFiles.map(f => [f.path, f.hash]));
+    const newMap = new Map(safeNewFiles.map(f => [f.path, f.hash]));
+
+    const added    = [];
+    const modified = [];
+    const removed  = [];
+
+    // Files that are new or changed
+    for (const [path, hash] of newMap) {
+      if (!oldMap.has(path)) {
+        added.push(path);
+      } else if (oldMap.get(path) !== hash) {
+        modified.push(path);
+      }
+      // hash unchanged → no action needed
+    }
+
+    // Files that exist in old manifest but are gone in new manifest
+    for (const path of oldMap.keys()) {
+      if (!newMap.has(path)) {
+        removed.push(path);
+      }
+    }
+
+    return { added, modified, removed };
+  }
+
+  /** Compiled regex cache — avoids recompiling the same glob on every fetch event */
+  const _regexCache = new Map();
+
+  /**
+   * Convert a glob pattern to a RegExp.
+   *
+   * Supported syntax:
+   *   **   matches anything, including path separators  e.g. /assets/**
+   *   *    matches anything except /                    e.g. /pages/*
+   *   ?    matches a single character except /
+   *
+   * Results are memoized per pattern string.
+   *
+   * @param {string} pattern
+   * @returns {RegExp}
+   */
+  function globToRegex(pattern) {
+    if (_regexCache.has(pattern)) return _regexCache.get(pattern);
+
+    const regexStr = pattern
+      // Escape all regex special chars except our glob chars (* ?)
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      // Handle /**/ to allow matching 0 or more directory levels (e.g. /**/foo.js matches /foo.js and /a/b/foo.js)
+      .replace(/\/\*\*\//g, '\x00GLOBSTARSLASH\x00')
+      // Replace standalone **
+      .replace(/\*\*/g, '\x00GLOBSTAR\x00')
+      // * → match anything except /
+      .replace(/\*/g, '[^/]*')
+      // ? → match single char except /
+      .replace(/\?/g, '[^/]')
+      // Restore placeholders AFTER single * has been replaced
+      .replace(/\x00GLOBSTARSLASH\x00/g, '/(?:.*/)?')
+      .replace(/\x00GLOBSTAR\x00/g, '.*');
+
+    const regex = new RegExp('^' + regexStr + '$');
+    _regexCache.set(pattern, regex);
+    return regex;
+  }
+
+  /**
+   * Test if a full URL's pathname matches a glob pattern.
+   *
+   * @param {string} pattern  glob pattern, e.g. '/api/**'
+   * @param {string} url      full URL string, e.g. 'https://example.com/api/user'
+   * @returns {boolean}
+   */
+  function matchGlob(pattern, url) {
+    try {
+      if (pattern.startsWith('http://') || pattern.startsWith('https://') || pattern.startsWith('//')) {
+        const full = typeof url === 'string' ? url : url.href;
+        return globToRegex(pattern).test(full);
+      }
+      const { pathname } = new URL(url, 'http://localhost');
+      return globToRegex(pattern).test(pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Extract size (bytes) and cached timestamp (ms) from a cached Response.
+   *
+   * @param {Response} res
+   * @returns {Promise<{ size: number, cachedAt: number }>}
+   */
+  async function getResponseMetadata(res) {
+    let size = 0;
+    const sizeHeader = res.headers?.get('X-NLPWA-Content-Length') || res.headers?.get('Content-Length');
+    if (sizeHeader) {
+      const parsed = parseInt(sizeHeader, 10);
+      if (!Number.isNaN(parsed) && parsed >= 0) size = parsed;
+    } else {
+      try {
+        const buf = await res.clone().arrayBuffer();
+        size = buf.byteLength;
+      } catch {
+        size = 0;
+      }
+    }
+
+    let cachedAt = 0;
+    const cachedAtHeader = res.headers?.get('X-NLPWA-Cached-At');
+    if (cachedAtHeader) {
+      const parsed = parseInt(cachedAtHeader, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) cachedAt = parsed;
+    } else {
+      const dateHeader = res.headers?.get('Date');
+      if (dateHeader) {
+        const parsed = new Date(dateHeader).getTime();
+        if (!Number.isNaN(parsed) && parsed > 0) cachedAt = parsed;
+      }
+    }
+
+    return { size, cachedAt };
+  }
+
+  /**
+   * Query current storage quota and runtime cache usage metrics.
+   *
+   * @returns {Promise<{
+   *   quota: number|null,
+   *   usage: number|null,
+   *   percentUsed: number|null,
+   *   remaining: number|null,
+   *   runtimeEntries: number,
+   *   runtimeBytes: number,
+   *   largestEntries: Array<{ url: string, size: number, cachedAt: number }>
+   * }>}
+   */
+  async function getStorageQuotaInfo() {
+    let quota = null;
+    let usage = null;
+    let percentUsed = null;
+    let remaining = null;
+
+    const storage =
+      (typeof self !== 'undefined' && self.navigator?.storage) ||
+      (typeof navigator !== 'undefined' && navigator?.storage);
+
+    if (storage && typeof storage.estimate === 'function') {
+      try {
+        const estimate = await storage.estimate();
+        quota = estimate.quota ?? null;
+        usage = estimate.usage ?? null;
+        if (quota && usage != null) {
+          percentUsed = Number(((usage / quota) * 100).toFixed(2));
+          remaining = Math.max(0, quota - usage);
+        }
+      } catch {
+        // Storage estimate not supported or denied
+      }
+    }
+
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    const requests = await cache.keys();
+
+    let runtimeBytes = 0;
+    const entries = [];
+
+    for (const req of requests) {
+      const res = await cache.match(req);
+      if (res) {
+        const meta = await getResponseMetadata(res);
+        runtimeBytes += meta.size;
+        entries.push({
+          url: typeof req === 'string' ? req : req.url,
+          size: meta.size,
+          cachedAt: meta.cachedAt,
+        });
+      }
+    }
+
+    // Top 5 largest entries
+    const largestEntries = [...entries]
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 5);
+
+    return {
+      quota,
+      usage,
+      percentUsed,
+      remaining,
+      runtimeEntries: requests.length,
+      runtimeBytes,
+      largestEntries,
+    };
+  }
+
+  /**
+   * Parse a size option accepting bytes, KB, MB, GB, or string (e.g. '50MB', '500KB').
+   *
+   * @param {number|string|undefined} bytesVal
+   * @param {number|undefined} mbVal
+   * @param {number|undefined} kbVal
+   * @returns {number|null}
+   */
+  function resolveByteSize(bytesVal, mbVal, kbVal) {
+    if (bytesVal != null) {
+      if (typeof bytesVal === 'string') {
+        const match = bytesVal.trim().match(/^([\d.]+)\s*(gb|mb|kb|b)?$/i);
+        if (match) {
+          const num = parseFloat(match[1]);
+          const unit = (match[2] || 'b').toLowerCase();
+          if (unit === 'gb') return Math.round(num * 1024 * 1024 * 1024);
+          if (unit === 'mb') return Math.round(num * 1024 * 1024);
+          if (unit === 'kb') return Math.round(num * 1024);
+          return Math.round(num);
+        }
+      }
+      const parsed = Number(bytesVal);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+    if (mbVal != null) {
+      const parsed = Number(mbVal);
+      return Number.isNaN(parsed) ? null : Math.round(parsed * 1024 * 1024);
+    }
+    if (kbVal != null) {
+      const parsed = Number(kbVal);
+      return Number.isNaN(parsed) ? null : Math.round(parsed * 1024);
+    }
+    return null;
+  }
+
+  /**
+   * Execute cleanup on the runtime cache using one or more strategies.
+   *
+   * Supported options:
+   * - strategy: 'largest' | 'lru' | 'max-age' | 'quota' | 'pattern' | 'all' (default: 'lru')
+   * - maxItemMB / maxItemKB / maxItemBytes / maxItem: evict any individual file larger than this limit
+   * - minItemMB / minItemKB / minItemBytes / minItem: evict any individual file >= this limit
+   * - maxTotalMB / maxTotalKB / maxTotalBytes / maxTotal: evict items until total runtime cache is <= limit
+   * - maxEntries: evict items until total remaining count is <= limit
+   * - maxAgeMs: evict items older than this age in ms
+   * - match | pattern: glob pattern to match URLs to evict (for 'pattern' strategy)
+   * - maxQuotaPercent: for 'quota' strategy, evict until usage percentage is <= this value (default: 80)
+   * - maxQuotaMB / maxQuotaKB / maxQuotaBytes: for 'quota' strategy, evict until usage is <= limit
+   * - preferLargest: for 'quota' strategy, evict largest entries first (default: true)
+   * - count: limit number of items to evict
+   *
+   * @param {Object} [options]
+   * @returns {Promise<{
+   *   success: boolean,
+   *   strategy: string,
+   *   evictedCount: number,
+   *   evictedUrls: string[],
+   *   freedBytes: number,
+   *   remainingEntries: number,
+   *   remainingBytes: number,
+   *   quota: Object
+   * }>}
+   */
+  async function cleanRuntimeCache(options = {}) {
+    const strategy = options.strategy || CLEANUP_STRATEGIES.LRU;
+
+    const maxTotalBytes = resolveByteSize(options.maxTotalBytes ?? options.maxTotal, options.maxTotalMB, options.maxTotalKB);
+    const maxItemBytes = resolveByteSize(options.maxItemBytes ?? options.maxItem, options.maxItemMB, options.maxItemKB);
+    const minItemBytes = resolveByteSize(options.minItemBytes ?? options.minItem, options.minItemMB, options.minItemKB);
+    const maxQuotaBytes = resolveByteSize(options.maxQuotaBytes ?? options.maxQuota, options.maxQuotaMB, options.maxQuotaKB);
+
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    const requests = await cache.keys();
+
+    const allItems = [];
+    let totalBytes = 0;
+
+    for (const req of requests) {
+      const res = await cache.match(req);
+      if (res) {
+        const meta = await getResponseMetadata(res);
+        totalBytes += meta.size;
+        allItems.push({
+          req,
+          url: typeof req === 'string' ? req : req.url,
+          size: meta.size,
+          cachedAt: meta.cachedAt,
+        });
+      }
+    }
+
+    const toEvictSet = new Set();
+    let remainingBytes = totalBytes;
+
+    const markForEviction = (item) => {
+      if (!toEvictSet.has(item)) {
+        toEvictSet.add(item);
+        remainingBytes = Math.max(0, remainingBytes - item.size);
+      }
+    };
+
+    // 1. Filter: individual item size thresholds
+    if (maxItemBytes != null) {
+      for (const item of allItems) {
+        if (item.size > maxItemBytes) {
+          markForEviction(item);
+        }
+      }
+    }
+    if (minItemBytes != null) {
+      for (const item of allItems) {
+        if (item.size >= minItemBytes) {
+          markForEviction(item);
+        }
+      }
+    }
+
+    // 2. Filter: individual max age / TTL
+    if (options.maxAgeMs != null && strategy !== CLEANUP_STRATEGIES.MAX_AGE) {
+      const cutoff = Date.now() - options.maxAgeMs;
+      for (const item of allItems) {
+        if (item.cachedAt > 0 && item.cachedAt < cutoff) {
+          markForEviction(item);
+        }
+      }
+    }
+
+    // 3. Strategy evaluation on remaining items
+    const candidates = allItems.filter(item => !toEvictSet.has(item));
+
+    if (strategy === CLEANUP_STRATEGIES.ALL) {
+      for (const item of candidates) {
+        markForEviction(item);
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.PATTERN) {
+      const pattern = options.match || options.pattern;
+      if (pattern) {
+        for (const item of candidates) {
+          if (matchGlob(pattern, item.url)) {
+            markForEviction(item);
+          }
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.MAX_AGE) {
+      const maxAgeMs = options.maxAgeMs ?? (7 * 24 * 60 * 60 * 1000); // 7 days default
+      const cutoff = Date.now() - maxAgeMs;
+      for (const item of candidates) {
+        if (item.cachedAt > 0 && item.cachedAt < cutoff) {
+          markForEviction(item);
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.LARGEST) {
+      // Sort descending by size (largest files first)
+      candidates.sort((a, b) => b.size - a.size);
+
+      let currentRemainingCount = allItems.length - toEvictSet.size;
+
+      for (const item of candidates) {
+        const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
+        const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
+        const hitLimit = options.count != null && toEvictSet.size >= options.count;
+
+        if (hitLimit) break;
+        if (needsSizeEviction || needsCountEviction) {
+          markForEviction(item);
+          currentRemainingCount--;
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.LRU) {
+      // Sort ascending by cachedAt (oldest first)
+      candidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+
+      let currentRemainingCount = allItems.length - toEvictSet.size;
+
+      for (const item of candidates) {
+        const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
+        const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
+        const hitLimit = options.count != null && toEvictSet.size >= options.count;
+
+        if (hitLimit) break;
+        if (needsCountEviction || needsSizeEviction) {
+          markForEviction(item);
+          currentRemainingCount--;
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.QUOTA) {
+      const quotaInfo = await getStorageQuotaInfo();
+      const maxQuotaPercent = options.maxQuotaPercent ?? 80;
+
+      let currentUsage = quotaInfo.usage ?? totalBytes;
+      const quota = quotaInfo.quota;
+
+      const isOverQuota = () => {
+        if (quota && maxQuotaPercent != null) {
+          if ((currentUsage / quota) * 100 > maxQuotaPercent) return true;
+        }
+        if (maxQuotaBytes != null && currentUsage > maxQuotaBytes) return true;
+        return false;
+      };
+
+      if (isOverQuota()) {
+        // By default prefer evicting largest files to recover quota fastest
+        if (options.preferLargest !== false) {
+          candidates.sort((a, b) => b.size - a.size);
+        } else {
+          candidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+        }
+
+        for (const item of candidates) {
+          if (!isOverQuota()) break;
+          markForEviction(item);
+          currentUsage = Math.max(0, currentUsage - item.size);
+        }
+      }
+    }
+
+    // 4. Perform deletions
+    const evicted = [...toEvictSet];
+    let freedBytes = 0;
+
+    await Promise.all(
+      evicted.map(async (item) => {
+        freedBytes += item.size;
+        await cache.delete(item.req);
+      })
+    );
+
+    const finalRemainingEntries = allItems.length - evicted.length;
+    const finalRemainingBytes = Math.max(0, totalBytes - freedBytes);
+    const updatedQuota = await getStorageQuotaInfo();
+
+    console.log(
+      `[NLPWA] Runtime cache cleaned (${strategy}): ${evicted.length} evicted, ` +
+      `${(freedBytes / 1024).toFixed(1)} KB freed, ${finalRemainingEntries} remaining`
+    );
+
+    return {
+      success: true,
+      strategy,
+      evictedCount: evicted.length,
+      evictedUrls: evicted.map(item => item.url),
+      freedBytes,
+      remainingEntries: finalRemainingEntries,
+      remainingBytes: finalRemainingBytes,
+      quota: updatedQuota,
+    };
+  }
+
+  /**
+   * SHA-256 of a buffer as a lowercase hex string.
+   * Works in Service Workers, browsers and Node 18+ (Web Crypto).
+   *
+   * @param {ArrayBuffer|Uint8Array} buffer
+   * @returns {Promise<string>}
+   */
+  async function sha256Hex(buffer) {
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Compare a full SHA-256 hex digest with a manifest hash.
+   *
+   * The CLI emits the first 32 hex characters, so the manifest hash is treated
+   * as a prefix of the full digest. Anything shorter than 32 characters is rejected
+   * so a truncated or empty hash can never "match" by accident.
+   *
+   * @param {string} actualHex  full digest from sha256Hex()
+   * @param {string} expected   hash from the manifest (prefix of the digest, min 32 chars)
+   * @returns {boolean}
+   */
+  function hashMatches(actualHex, expected) {
+    if (typeof expected !== 'string' || expected.length < 32) return false;
+    return actualHex.startsWith(expected.toLowerCase());
+  }
+
+  /** Run `fn` over `items` with at most `limit` in flight. */
+  async function mapLimit(items, limit, fn) {
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) await fn(items[next++]);
+    });
+    await Promise.all(workers);
+  }
+
+  /** Is `path` already in the staging cache with the expected content? */
+  async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, fetchUrl = path) {
+    const hit = (await cache.match(fetchUrl)) || (fetchUrl !== path ? await cache.match(path) : null);
+    if (!hit) return false;
+    if (!expected || verify === false) return true;
+    const size = fileSize ?? Number(hit.headers?.get?.('content-length') || hit.headers?.get?.('x-nlpwa-content-length') || 0);
+    if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+      return true;
+    }
+    return hashMatches(await sha256Hex(await hit.arrayBuffer()), expected);
+  }
+
+  /** Fetch a file fresh from the network and check it against its manifest hash. */
+  async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null) {
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(30000)
+      : undefined;
+    const response = await fetch(path, { cache: 'no-store', signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    if (expected && verify !== false) {
+      const size = fileSize ?? Number(response.headers?.get?.('content-length') || response.headers?.get?.('x-nlpwa-content-length') || 0);
+      if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+        console.warn(
+          `[NLPWA] ${path}: File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold ` +
+          `(${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB). Skipping in-memory hash verification to prevent memory spikes on low-end devices.`
+        );
+        return response;
+      }
+      const actual = await sha256Hex(await response.clone().arrayBuffer());
+      if (!hashMatches(actual, expected)) {
+        const detail = `hash mismatch (expected ${expected}, got ${actual.slice(0, expected.length)})`;
+        if (verify === 'strict') throw new Error(detail);
+        console.warn(`[NLPWA] ${path}: ${detail} - storing anyway (verifyHashes: 'warn')`);
+      }
+    }
+    return response;
+  }
+
+  /**
+   * Build the new app version in a SEPARATE cache while the active one keeps
+   * serving. Nothing here is visible to the running app until commitStaged().
+   *
+   * For every file in the manifest:
+   *   1. already in the staging cache and verified  → reuse   (resume after failure)
+   *   2. unchanged since the active version         → copy locally, no network
+   *   3. otherwise                                  → fetch (no-store) and verify hash
+   *
+   * The snapshot is written last: a staging cache that contains its snapshot is
+   * complete. If any file fails to download or verify, the update is never
+   * finalized or committed (strict atomicity). Verified files are preserved in the
+   * staging cache so subsequent checks can resume, entering exponential backoff
+   * after MAX_RETRY_ATTEMPTS while the running app stays 100% untouched.
+   *
+   * @param {{ version: string, files: Array<{ path: string, hash: string }> }} manifest
+   * @param {{ activeSnapshot?: Object|null, forceRefetch?: boolean }} [opts]
+   *        forceRefetch: ignore the active copies and download everything (SW engine change)
+   * @returns {Promise<
+   *   { status: 'ready', failed: string[], reused: number, copied: number, fetched: number } |
+   *   { status: 'incomplete', failed: string[], retryCount: number }
+   * >}
+   */
+  async function stageUpdate(manifest, { activeSnapshot = null, forceRefetch = false } = {}) {
+    const config = getConfig();
+    const verify = config.verifyHashes ?? 'strict';
+    const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
+    const files = manifest.files.filter((f) => isSafePath(f?.path));
+
+    const diff = computeDiff(files, activeSnapshot?.files ?? null);
+    const evict = [...diff.modified, ...diff.removed];
+
+    // ── Resume a matching partial staging cache, or start a new one ──────────
+    let staged = await getStaged();
+    const resumable = staged && !staged.complete
+      && staged.version === manifest.version && staged.swVersion === config.version;
+    if (!resumable) {
+      if (staged?.cache) await caches.delete(staged.cache);
+      staged = {
+        cache: `${config.caches.offline}@${manifest.version}-${Date.now().toString(36)}`,
+        version: manifest.version,
+        swVersion: config.version,
+        complete: false,
+        retryCount: 0,
+      };
+    }
+    // Record the staging cache BEFORE creating it so a crash can never orphan it
+    await setStaged(staged);
+
+    const next = await caches.open(staged.cache);
+    const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
+    const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
+
+    const stats = { reused: 0, copied: 0, fetched: 0 };
+    const failed = [];
+    const failedDetails = {};
+
+    const putWithQuotaRecovery = async (path, res) => {
+      const retryCopy = res.clone();
+      try {
+        await next.put(path, res);
+      } catch (err) {
+        const isQuota = err.name === 'QuotaExceededError' || /quota/i.test(err.message || '');
+        if (isQuota) {
+          console.warn(`[NLPWA] QuotaExceededError while staging ${path}. Freeing runtime cache space...`);
+          const cleaned = await cleanRuntimeCache({ strategy: 'all' }).catch(() => null);
+          if (cleaned && (cleaned.freedBytes > 0 || cleaned.evictedCount > 0)) {
+            await next.put(path, retryCopy);
+            return;
+          }
+        }
+        throw err;
+      }
+    };
+
+    await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
+      const fetchUrl = resolvePathWithBase(path, config.base);
+      try {
+        if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size, fetchUrl)) {
+          stats.reused++;
+          return;
+        }
+        if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
+          const hit = (await activeCache.match(fetchUrl)) || (fetchUrl !== path ? await activeCache.match(path) : null);
+          if (hit) {
+            const copyForPath = fetchUrl !== path ? hit.clone() : null;
+            await putWithQuotaRecovery(fetchUrl, hit);
+            if (copyForPath) {
+              await putWithQuotaRecovery(path, copyForPath);
+            }
+            stats.copied++;
+            return;
+          }
+        }
+        const fetchedRes = await fetchVerified(fetchUrl, hash, verify, maxVerifyBytes, size);
+        const copyForPath = fetchUrl !== path ? fetchedRes.clone() : null;
+        await putWithQuotaRecovery(fetchUrl, fetchedRes);
+        if (copyForPath) {
+          await putWithQuotaRecovery(path, copyForPath);
+        }
+        stats.fetched++;
+      } catch (err) {
+        failed.push(path);
+        failedDetails[path] = err.message;
+        console.warn(`[NLPWA] Staging failed: ${fetchUrl} - ${err.message}`);
+      }
+    });
+
+    const retryCount = failed.length ? staged.retryCount + 1 : 0;
+
+    if (failed.length > 0) {
+      // True all-or-nothing atomicity: never finalize or commit a partial or broken update.
+      // Keep verified files in the staging cache so subsequent checks can resume.
+      // Active cache remains 100% pure and untouched.
+      const prevFailed = staged.failedFiles ?? [];
+      const isSameFiles = prevFailed.length > 0
+        && failed.length === prevFailed.length
+        && failed.every((f) => prevFailed.includes(f));
+
+      const hasHashMismatch = Object.values(failedDetails).some(
+        (msg) => typeof msg === 'string' && msg.includes('hash mismatch')
+      );
+      const hasQuotaExceeded = Object.values(failedDetails).some(
+        (msg) => typeof msg === 'string' && (msg.includes('QuotaExceededError') || /quota/i.test(msg))
+      );
+
+      let nextRetryAt = null;
+      if (retryCount >= MAX_RETRY_ATTEMPTS) {
+        const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), 3600000);
+        nextRetryAt = Date.now() + backoffMs;
+        console.warn(
+          `[NLPWA] Staging incomplete: ${failed.length} file(s) failed after ${retryCount} attempts: ` +
+          `${failed.join(', ')}. Active version remains live.`
+        );
+      }
+
+      if (isSameFiles && retryCount >= 2) {
+        if (hasHashMismatch) {
+          console.error(
+            `[NLPWA] Persistent hash mismatch on ${failed.join(', ')} across ${retryCount} attempts. ` +
+            `A CDN, proxy, or host minification may be altering file contents in transit. ` +
+            `Consider setting verifyHashes: 'warn' or false in your nlpwa config if this transformation is expected.`
+          );
+        } else {
+          console.warn(
+            `[NLPWA] Repeated staging failure on the same file(s): ${failed.join(', ')} (${retryCount} attempts).`
+          );
+        }
+      }
+
+      await setStaged({
+        ...staged,
+        retryCount,
+        failedFiles: failed,
+        failedDetails,
+        nextRetryAt,
+        complete: false,
+      });
+
+      return {
+        status: 'incomplete',
+        failed,
+        failedDetails,
+        retryCount,
+        nextRetryAt,
+        persistent: Boolean(isSameFiles && retryCount >= 2),
+        hasHashMismatch: Boolean(hasHashMismatch),
+        quotaExceeded: Boolean(hasQuotaExceeded),
+      };
+    }
+
+    // ── Finalise: snapshot last, then mark the staged record complete ────────
+    await writeSnapshot(next, {
+      version: manifest.version,
+      files,
+    });
+
+    await setStaged({
+      ...staged,
+      retryCount: 0,
+      failedFiles: [],
+      failedDetails: {},
+      nextRetryAt: null,
+      complete: true,
+      evict,
+      clearRuntime: forceRefetch,
+    });
+
+    console.log(
+      `[NLPWA] Staged v${manifest.version}: ${stats.fetched} fetched, ${stats.copied} copied, ` +
+      `${stats.reused} reused`
+    );
+
+    return { status: 'ready', failed: [], ...stats };
+  }
+
+  // ── Offline cache helpers ────────────────────────────────────────────────────
+
+  /**
+   * Read a response from the offline (app shell) cache.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromOffline(request, matchOptions) {
+    const { caches: cacheNames, retainPreviousVersionCache, base } = getConfig();
+    const cache = await openActive(cacheNames.offline);
+    let hit = await cache.match(request, matchOptions);
+
+    if (!hit) {
+      let pathname = null;
+      try {
+        pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+      } catch {}
+      if (pathname === '/') {
+        hit = await cache.match('/index.html', matchOptions);
+      } else if (pathname === '/index.html') {
+        hit = await cache.match('/', matchOptions);
+      } else if (base) {
+        const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+        if (pathname === cleanBase || pathname === `${cleanBase}/`) {
+          hit = (await cache.match(`${cleanBase}/index.html`, matchOptions))
+            ?? (await cache.match('/index.html', matchOptions))
+            ?? (await cache.match(cleanBase, matchOptions))
+            ?? (await cache.match(`${cleanBase}/`, matchOptions));
+        } else if (pathname === `${cleanBase}/index.html`) {
+          hit = (await cache.match(`${cleanBase}/`, matchOptions))
+            ?? (await cache.match(cleanBase, matchOptions))
+            ?? (await cache.match('/index.html', matchOptions));
+        }
+      }
+    }
+
+    if (!hit && retainPreviousVersionCache) {
+      const active = await getActive();
+      if (active?.previousCache) {
+        try {
+          const prev = await caches.open(active.previousCache);
+          hit = await prev.match(request, matchOptions);
+          if (!hit) {
+            let pathname = null;
+            try {
+              pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+            } catch {}
+            if (pathname === '/') {
+              hit = await prev.match('/index.html', matchOptions);
+            } else if (pathname === '/index.html') {
+              hit = await prev.match('/', matchOptions);
+            } else if (base) {
+              const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+              if (pathname === cleanBase || pathname === `${cleanBase}/`) {
+                hit = (await prev.match(`${cleanBase}/index.html`, matchOptions))
+                  ?? (await prev.match('/index.html', matchOptions))
+                  ?? (await prev.match(cleanBase, matchOptions))
+                  ?? (await prev.match(`${cleanBase}/`, matchOptions));
+              } else if (pathname === `${cleanBase}/index.html`) {
+                hit = (await prev.match(`${cleanBase}/`, matchOptions))
+                  ?? (await prev.match(cleanBase, matchOptions))
+                  ?? (await prev.match('/index.html', matchOptions));
+              }
+            }
+          }
+        } catch {
+          // previous cache may have been removed
+        }
+      }
+    }
+    return hit;
+  }
+
+  // ── Runtime cache helpers ────────────────────────────────────────────────────
+
+  /**
+   * Read a response from the runtime (lazy) cache.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromRuntime(request, matchOptions) {
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    return cache.match(request, matchOptions);
+  }
+
+  /**
+   * Write a response into the runtime cache.
+   * Used by fetch strategies (network-first, stale-while-revalidate, cache-first).
+   *
+   * @param {Request|string} request
+   * @param {Response} response
+   */
+  async function putInRuntime(request, response) {
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+
+    let responseToStore = response.clone();
+    if (response.type !== 'opaque') {
+      try {
+        const isNullBody = [101, 204, 205, 304].includes(response.status);
+        const headers = new Headers(response.headers);
+        if (!headers.has('X-NLPWA-Cached-At')) {
+          headers.set('X-NLPWA-Cached-At', String(Date.now()));
+        }
+        if (isNullBody) {
+          headers.set('X-NLPWA-Content-Length', '0');
+          responseToStore = new Response(null, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          });
+          await cache.put(request, responseToStore);
+          return;
+        }
+        if (!headers.has('X-NLPWA-Content-Length')) {
+          const cl = headers.get('Content-Length');
+          if (cl) {
+            headers.set('X-NLPWA-Content-Length', cl);
+          } else {
+            try {
+              const buf = await response.clone().arrayBuffer();
+              headers.set('X-NLPWA-Content-Length', String(buf.byteLength));
+              responseToStore = new Response(buf, {
+                status: response.status,
+                statusText: response.statusText,
+                headers,
+              });
+              await cache.put(request, responseToStore);
+              return;
+            } catch {
+              // fallback
+            }
+          }
+        }
+        responseToStore = new Response(responseToStore.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      } catch {
+        responseToStore = response.clone();
+      }
+    }
+
+    await cache.put(request, responseToStore);
+  }
+
+  /**
+   * Delete specific URLs from the runtime cache.
+   * Used during update to evict stale/changed files so they are re-fetched fresh.
+   *
+   * @param {string[]} paths  URL pathnames to evict, e.g. ['/app.js', '/pages/about.html']
+   */
+  async function evictFromRuntime(paths) {
+    if (!paths.length) return;
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    await Promise.all(paths.map(path => cache.delete(path)));
+  }
+
+  /**
+   * Convenience: look up a request from offline first, then runtime.
+   * Returns the first match found, or undefined if neither has it.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromCache(request, matchOptions) {
+    return (await getFromOffline(request, matchOptions)) ?? (await getFromRuntime(request, matchOptions));
+  }
+
+  /**
+   * Cache status values added to responses via the X-Cache-Status header.
+   *
+   * Clients can read this header from any intercepted response to determine
+   * where the response actually came from:
+   *
+   *   fetch('/app.js').then(r => console.log(r.headers.get('X-Cache-Status')));
+   *   // → 'offline-cache' | 'runtime-cache' | 'network' | 'stale' | 'offline-fallback'
+   */
+  const CACHE_STATUS = {
+    /** Response was fetched fresh from the network */
+    NETWORK:          'network',
+
+    /** Response came from the offline (precache / app shell) store */
+    OFFLINE_CACHE:    'offline-cache',
+
+    /** Response came from the runtime (lazy) cache */
+    RUNTIME_CACHE:    'runtime-cache',
+
+    /** Stale-while-revalidate: served from cache while network update runs in background */
+    STALE:            'stale',
+
+    /** Synthetic 503: no network and no cached version available */
+    OFFLINE_FALLBACK: 'offline-fallback',
+
+    /** Request bypassed the Service Worker cache */
+    BYPASS:           'bypass',
+  };
+
+  /** Name of the response header injected by the SW */
+  const CACHE_STATUS_HEADER = 'X-Cache-Status';
+
+  /**
+   * Wrap a Response with an X-Cache-Status header indicating its origin.
+   *
+   * Notes:
+   *   - Response headers are immutable, so a new Response is constructed.
+   *   - Opaque responses (cross-origin, no CORS) cannot have their body read,
+   *     so they are returned as-is with no header added.
+   *   - The original response is consumed — do not use it after calling this.
+   *
+   * @param {Response} response
+   * @param {string}   status    one of CACHE_STATUS values
+   * @returns {Response}
+   */
+  function tagResponse(response, status) {
+    if (!response) return response;
+
+    // Opaque responses (opaque / opaqueredirect / status 0) cannot have their body
+    // read or reconstructed without throwing RangeError. Return them unchanged.
+    if (response.type === 'opaque' || response.type === 'opaqueredirect' || response.status === 0) {
+      return response;
+    }
+
+    const headers = new Headers(response.headers);
+    headers.set(CACHE_STATUS_HEADER, status);
+
+    const tagged = new Response(response.body, {
+      status:     response.status,
+      statusText: response.statusText,
+      headers,
+    });
+
+    if (response.url) {
+      try {
+        Object.defineProperty(tagged, 'url', { value: response.url });
+      } catch {
+        // ignore in environments that do not permit defining url
+      }
+    }
+
+    if (response.redirected) {
+      try {
+        Object.defineProperty(tagged, 'redirected', { value: response.redirected });
+      } catch {
+        // ignore
+      }
+    }
+
+    return tagged;
+  }
+
+  /**
+   * Safely put a response clone into the runtime cache without blocking the main response.
+   * - Skips 206 Partial Content (Range requests) to prevent Cache Storage API TypeError.
+   * - Skips non-2xx responses.
+   * - Catches QuotaExceededError or write failures without breaking the caller.
+   * - Extends SW lifetime via event.waitUntil() if event is available.
+   *
+   * @param {Request} request
+   * @param {Response} response
+   * @param {FetchEvent} [event]
+   */
+  function safePutInRuntime(request, response, event, options = {}) {
+    if (!response || response.status === 206) return Promise.resolve();
+    if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return Promise.resolve();
+
+    // Opaque responses:
+    // In Chromium, caching an opaque response (type === 'opaque', status === 0) incurs ~7 MB
+    // quota padding to prevent side-channel size attacks, and 404/500 errors cannot be detected.
+    // We skip caching opaque responses by default unless explicitly opted in via cacheOpaque: true.
+    if (response.type === 'opaque') {
+      const allowOpaque = Boolean(
+        options?.cacheOpaque ??
+        getConfig().cacheOpaque ??
+        false
+      );
+      if (!allowOpaque) {
+        return Promise.resolve();
+      }
+    } else if (!response.ok) {
+      return Promise.resolve();
+    }
+
+    try {
+      const clone = response.clone();
+      const writePromise = putInRuntime(request, clone).catch((err) => {
+        console.warn('[NLPWA] Runtime cache write failed:', err.message);
+      });
+
+      if (event && typeof event.waitUntil === 'function') {
+        event.waitUntil(writePromise);
+      }
+      return writePromise;
+    } catch (err) {
+      console.warn('[NLPWA] Could not clone response for runtime cache:', err.message);
+      return Promise.resolve();
+    }
+  }
+
+  /**
+   * Determine whether a strategy failure should rethrow/reject instead of returning a 503 response.
+   */
+  function getShouldThrow(options) {
+    return Boolean(
+      options?.throwOnFailure ??
+      getConfig().throwOnFailure ??
+      false
+    );
+  }
+
+  /**
+   * Parse a human-friendly duration string into milliseconds.
+   * Supports: '7d', '24h', '30m', '60s', '500ms', or plain numbers (ms).
+   *
+   * @param {string|number} [val]
+   * @returns {number|null}
+   */
+  function parseDurationMs(val) {
+    if (val == null) return null;
+    if (typeof val === 'number') {
+      return val > 0 ? val : null;
+    }
+    if (typeof val === 'string') {
+      const trimmed = val.trim().toLowerCase();
+      const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?$/);
+      if (!match) return null;
+      const num = parseFloat(match[1]);
+      const unit = match[2] || 'ms';
+      if (unit === 'w') return Math.round(num * 7 * 24 * 60 * 60 * 1000);
+      if (unit === 'd') return Math.round(num * 24 * 60 * 60 * 1000);
+      if (unit === 'h') return Math.round(num * 60 * 60 * 1000);
+      if (unit === 'm') return Math.round(num * 60 * 1000);
+      if (unit === 's') return Math.round(num * 1000);
+      return Math.round(num);
+    }
+    return null;
+  }
+
+  /**
+   * Resolve max age in milliseconds from route options or global config.
+   */
+  function resolveMaxAgeMs(options) {
+    if (options?.maxAge != null) return parseDurationMs(options.maxAge);
+    return null;
+  }
+
+  /**
+   * Check if a cached Response has expired based on its cached timestamp and maxAgeMs.
+   */
+  function isResponseExpired(response, maxAgeMs) {
+    if (!maxAgeMs || maxAgeMs <= 0 || !response) return false;
+    const cachedAtHeader = response.headers?.get('X-NLPWA-Cached-At');
+    let cachedAt = 0;
+    if (cachedAtHeader) {
+      const parsed = parseInt(cachedAtHeader, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) cachedAt = parsed;
+    } else {
+      const dateHeader = response.headers?.get('Date');
+      if (dateHeader) {
+        const parsed = new Date(dateHeader).getTime();
+        if (!Number.isNaN(parsed) && parsed > 0) cachedAt = parsed;
+      }
+    }
+    if (!cachedAt) return false;
+    return (Date.now() - cachedAt) > maxAgeMs;
+  }
+
+  // ── cache-first ──────────────────────────────────────────────────────────
+
+  /**
+   * Serve from offline cache first, then runtime cache.
+   * On cache miss, fetch from network and store in runtime cache asynchronously.
+   *
+   * Best for: static assets, fonts, images — files that rarely change.
+   *
+   * Response header: X-Cache-Status: offline-cache | runtime-cache | network
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function cacheFirst(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+
+    const offlineCached = await getFromOffline(request, matchOptions);
+    if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+
+    const maxAgeMs = resolveMaxAgeMs(options);
+    const runtimeCached = await getFromRuntime(request, matchOptions);
+    if (runtimeCached) {
+      const expired = maxAgeMs ? isResponseExpired(runtimeCached, maxAgeMs) : false;
+      if (!expired) {
+        return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+      }
+
+      // Cached copy has expired: attempt to refresh from network
+      try {
+        const response = await fetch(request);
+        safePutInRuntime(request, response, event, options);
+        return tagResponse(response, CACHE_STATUS.NETWORK);
+      } catch {
+        // Network failed while refreshing expired asset: serve stale cached copy
+        return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+      }
+    }
+
+    try {
+      const response = await fetch(request);
+      safePutInRuntime(request, response, event, options);
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch (err) {
+      // Navigation fallback for SPAs or offline pages
+      if (request.mode === 'navigate') {
+        const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+        const fallbackRes = await getFromCache(fallbackUrl);
+        if (fallbackRes) {
+          return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+        }
+      }
+
+      if (getShouldThrow(options)) {
+        throw err;
+      }
+
+      // Return a typed offline error response instead of throwing
+      return tagResponse(
+        new Response('Offline — no cached version available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
+  }
+
+  // ── network-first ──────────────────────────────────────────────────────────
+
+  /**
+   * Try network first. On failure or timeout, fall back to cache (offline → runtime).
+   * Successful network responses are stored in runtime cache asynchronously.
+   * If offline and no cache matches a navigation request, falls back to navigationFallback (e.g. /index.html).
+   *
+   * Best for: HTML pages, user data — content that should be fresh when online.
+   *
+   * Response header: X-Cache-Status: network | offline-cache | runtime-cache | offline-fallback
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function networkFirst(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+    const timeoutMs = options.networkTimeoutMs ?? getConfig().networkTimeoutMs ?? 0;
+
+    /** Look in offline then runtime cache; returns a tagged Response or null. */
+    const lookupCache = async () => {
+      const offlineCached = await getFromOffline(request, matchOptions);
+      if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+
+      const runtimeCached = await getFromRuntime(request, matchOptions);
+      if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+
+      return null;
+    };
+
+    const networkPromise = fetch(request);
+
+    try {
+      let response;
+
+      if (timeoutMs > 0) {
+        const TIMED_OUT = Symbol('timeout');
+        let timerId;
+        const timeout = new Promise((resolve) => {
+          timerId = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+        });
+
+        let result;
+        try {
+          result = await Promise.race([networkPromise, timeout]);
+        } finally {
+          clearTimeout(timerId);
+        }
+
+        if (result === TIMED_OUT) {
+          // Only give up on the network if we actually have something to serve.
+          // With nothing cached, a slow response is better than a synthetic 503,
+          // so keep waiting for the original request.
+          const cached = await lookupCache();
+          if (cached) {
+            // Let the slow request finish in the background so the cache is
+            // refreshed for next time.
+            const refresh = networkPromise
+              .then((res) => safePutInRuntime(request, res, event, options))
+              .catch(() => {});
+            if (event && typeof event.waitUntil === 'function') event.waitUntil(refresh);
+            return cached;
+          }
+          response = await networkPromise;
+        } else {
+          response = result;
+        }
+      } else {
+        response = await networkPromise;
+      }
+
+      safePutInRuntime(request, response, event, options);
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch (err) {
+      const cached = await lookupCache();
+      if (cached) return cached;
+
+      // Navigation fallback for SPAs or offline pages
+      if (request.mode === 'navigate') {
+        const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+        const fallbackRes = await getFromCache(fallbackUrl);
+        if (fallbackRes) {
+          return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+        }
+      }
+
+      if (getShouldThrow(options)) {
+        throw err;
+      }
+
+      // Return a typed offline error response instead of throwing
+      return tagResponse(
+        new Response('Offline — no cached version available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
+  }
+
+  // ── network-only ──────────────────────────────────────────────────────────
+
+  /**
+   * Always fetch from network. Never read from or write to any cache.
+   *
+   * Best for: API mutations (POST, PUT, DELETE), authenticated endpoints.
+   *
+   * Response header: X-Cache-Status: network
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function networkOnly(request, event, options = {}) {
+    try {
+      return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
+    } catch (err) {
+      if (getShouldThrow(options)) {
+        throw err;
+      }
+      return tagResponse(
+        new Response('Offline — network request failed.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
+  }
+
+  // ── stale-while-revalidate ───────────────────────────────────────────────────
+
+  /**
+   * Serve from cache immediately (stale), then update the cache in the background.
+   * If there is no cached response, fall through to a network fetch (blocks).
+   *
+   * Best for: feeds, listings, content where slightly stale is acceptable.
+   *
+   * Response header: X-Cache-Status: stale | network
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]  needed to extend SW lifetime for background revalidation
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function staleWhileRevalidate(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+    const cached = (await getFromRuntime(request, matchOptions)) ?? (await getFromOffline(request, matchOptions));
+
+    // Single network request, shared by the background refresh and the
+    // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
+    const revalidate = (async () => {
+      const response = await fetch(request);
+      await safePutInRuntime(request, response, event, options);
+      return response;
+    })();
+
+    if (cached) {
+      // Serve stale immediately; keep the SW alive for the background refresh.
+      const settled = revalidate.catch(() => {/* offline during revalidation is fine */});
+      if (event && typeof event.waitUntil === 'function') event.waitUntil(settled);
+      return tagResponse(cached, CACHE_STATUS.STALE);
+    }
+
+    // No cache — wait for network, fall back to offline handling if network fails
+    try {
+      const response = await revalidate;
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch (err) {
+      // Navigation fallback for SPAs or offline pages
+      if (request.mode === 'navigate') {
+        const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+        const fallbackRes = await getFromCache(fallbackUrl);
+        if (fallbackRes) {
+          return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+        }
+      }
+
+      if (getShouldThrow(options)) {
+        throw err;
+      }
+
+      // Return a typed offline error response instead of throwing
+      return tagResponse(
+        new Response('Offline — no cached version available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' },
+        }),
+        CACHE_STATUS.OFFLINE_FALLBACK,
+      );
+    }
+  }
+
+  // ── cache-only ──────────────────────────────────────────────────────────
+
+  /**
+   * Serve exclusively from cache. Never hit the network.
+   * Returns a 503 if the resource is not cached (or throws if throwOnFailure is true).
+   *
+   * Best for: offline-only fallback resources (placeholder pages, offline.html).
+   *
+   * Response header: X-Cache-Status: offline-cache | runtime-cache | offline-fallback
+   *
+   * @param {Request} request
+   * @param {FetchEvent} [event]
+   * @param {Object} [options]
+   * @returns {Promise<Response>}
+   */
+  async function cacheOnly(request, event, options = {}) {
+    const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+
+    const offlineCached = await getFromOffline(request, matchOptions);
+    if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+
+    const runtimeCached = await getFromRuntime(request, matchOptions);
+    if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+
+    if (request.mode === 'navigate') {
+      const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+      const fallbackRes = await getFromCache(fallbackUrl);
+      if (fallbackRes) {
+        return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
+      }
+    }
+
+    if (getShouldThrow(options)) {
+      throw new TypeError('Failed to fetch: not available in offline cache.');
+    }
+
+    return tagResponse(
+      new Response('Not available offline.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+      CACHE_STATUS.OFFLINE_FALLBACK,
+    );
+  }
+
+  /** Map strategy name → strategy function */
+  const STRATEGY_FN = {
+    [STRATEGIES.CACHE_FIRST]:            cacheFirst,
+    [STRATEGIES.NETWORK_FIRST]:          networkFirst,
+    [STRATEGIES.NETWORK_ONLY]:           networkOnly,
+    [STRATEGIES.STALE_WHILE_REVALIDATE]: staleWhileRevalidate,
+    [STRATEGIES.CACHE_ONLY]:             cacheOnly,
+  };
+
+  /**
+   * Check whether a request URL corresponds to a precached app shell or manifest file.
+   *
+   * @param {URL} requestUrl
+   * @param {Object} [config]
+   * @returns {boolean}
+   */
+  function isManifestFile(requestUrl, config = getConfig()) {
+    if (!config) return false;
+
+    const isSameOrigin = typeof self !== 'undefined' && self.location
+      ? requestUrl.origin === self.location.origin
+      : true;
+
+    if (!isSameOrigin) return false;
+
+    let pathname = requestUrl.pathname;
+    if (config.base && pathname.startsWith(config.base)) {
+      pathname = pathname.slice(config.base.length);
+      if (!pathname.startsWith('/')) pathname = '/' + pathname;
+    }
+
+    // 1. Runtime config file is always an app shell asset
+    const configPath = config.configPath || '/config.json';
+    if (pathname === configPath) return true;
+
+    // 2. Precache files and glob patterns
+    const precache = config.precache || [];
+    for (const item of precache) {
+      if (typeof item !== 'string') continue;
+      if (item === pathname || matchGlob(item, pathname)) {
+        return true;
+      }
+      // Handle root / index.html alias
+      if (
+        (pathname === '/' && (item === '/index.html' || item === 'index.html')) ||
+        (pathname === '/index.html' && item === '/')
+      ) {
+        return true;
+      }
+    }
+
+    // 3. Active snapshot files (if hydrated in memory)
+    const snapshotFiles = getActiveSnapshotPaths();
+    if (snapshotFiles && snapshotFiles.has(pathname)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Resolve the strategy function for a given Request by matching it against
+   * config.routes (top-to-bottom, first match wins).
+   * Falls back to config.defaultStrategy if no route matches.
+   *
+   * Built-in non-overridable rule: Manifest and precached app shell files are
+   * ALWAYS served cache-first from the active offline cache to protect update
+   * atomicity and prevent online requests from bypassing the staged cache.
+   *
+   * @param {Request} request
+   * @returns {Function}  one of the five strategy functions
+   */
+  function resolveStrategy(request) {
+    const { routes, defaultStrategy } = getConfig();
+
+    let requestUrl;
+    try {
+      requestUrl = new URL(request.url);
+    } catch {
+      return (req, event) => networkOnly(req);
+    }
+
+    const isSameOrigin = typeof self !== 'undefined' && self.location
+      ? requestUrl.origin === self.location.origin
+      : true;
+
+    // Dev-only bypass: when dev: true or devBypass: true, route Vite internal requests
+    // and HMR updates directly to network instead of caching or intercepting them.
+    const config = getConfig();
+    if (config.dev || config.devBypass) {
+      if (
+        requestUrl.pathname.startsWith('/@vite/') ||
+        requestUrl.pathname.startsWith('/@fs/') ||
+        requestUrl.pathname.includes('/.vite/') ||
+        requestUrl.pathname.endsWith('.hot-update.json') ||
+        requestUrl.searchParams.has('import')
+      ) {
+        const handler = (req, event) => networkOnly(req);
+        handler.strategy = 'network-only';
+        return handler;
+      }
+    }
+
+    // Built-in non-overridable rule: Precached / manifest files are ALWAYS served
+    // from the active offline cache (cache-first). This guarantees that online
+    // requests never bypass the staged cache or produce mixed old/new files.
+    if (isManifestFile(requestUrl, getConfig())) {
+      const handler = (req, event) => cacheFirst(req, event);
+      handler.strategy = 'cache-first';
+      return handler;
+    }
+
+    for (const route of routes) {
+      let routeOrigin = route.origin;
+      let matchPattern = route.match;
+
+      // Support full URL patterns directly in match: "https://cdn.jsdelivr.net/npm/**"
+      if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+        try {
+          routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+        } catch {
+          // fallback
+        }
+      }
+
+      // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
+      // match against that. Otherwise default to same-origin only.
+      if (routeOrigin) {
+        if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
+          continue;
+        }
+      } else if (!isSameOrigin) {
+        // Unspecified origin matches ONLY same-origin requests
+        continue;
+      }
+
+      if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
+        const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
+        const handler = (req, event) => fn(req, event, route);
+        handler.strategy = route.strategy;
+        return handler;
+      }
+    }
+
+    // Cross-origin requests without an explicit origin route pass through without caching
+    if (!isSameOrigin) {
+      const handler = (req, event) => networkOnly(req);
+      handler.strategy = 'network-only';
+      return handler;
+    }
+
+    const defaultFn = STRATEGY_FN[defaultStrategy] ?? networkFirst;
+    const handler = (req, event) => defaultFn(req, event);
+    handler.strategy = defaultStrategy;
+    return handler;
+  }
+
+  /**
+   * Determine if a URL should remain in any cache.
+   *
+   * A URL is "cacheable" if it is a precached/manifest app shell file,
+   * or if the first matching route in config.routes uses a caching-capable strategy.
+   *
+   * @param {string} url  full URL string
+   * @returns {boolean}
+   */
+  function isCacheableUrl(url) {
+    const { routes, defaultStrategy } = getConfig();
+
+    let requestUrl;
+    try {
+      requestUrl = new URL(url);
+    } catch {
+      return false;
+    }
+
+    // Precached / manifest app shell files are always cacheable
+    if (isManifestFile(requestUrl)) {
+      return true;
+    }
+
+    const isSameOrigin = typeof self !== 'undefined' && self.location
+      ? requestUrl.origin === self.location.origin
+      : true;
+
+    for (const route of routes) {
+      let routeOrigin = route.origin;
+      let matchPattern = route.match;
+
+      if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+        try {
+          routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+        } catch {
+          // fallback
+        }
+      }
+
+      if (routeOrigin) {
+        if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
+          continue;
+        }
+      } else if (!isSameOrigin) {
+        // Unspecified origin matches ONLY same-origin requests
+        continue;
+      }
+
+      if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
+        return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
+      }
+    }
+
+    // Cross-origin requests without an explicit origin route pass through without caching
+    if (!isSameOrigin) {
+      return false;
+    }
+
+    // No route matched — fall back to defaultStrategy
+    return CACHING_CAPABLE_STRATEGIES.has(defaultStrategy);
+  }
+
+  /**
+   * Evict all entries from an opened Cache whose URLs are no longer cacheable
+   * according to the current route config.
+   *
+   * @param {Cache}  cache
+   * @param {string} cacheName  for logging
+   * @param {Set<string>} protectedPaths  internal entries that must never be evicted
+   *                                      (snapshot and runtime config.json)
+   */
+  async function evictNonCacheable(cache, cacheName, protectedPaths) {
+    const keys = await cache.keys();
+
+    await Promise.all(
+      keys.map(async (request) => {
+        const { pathname } = new URL(request.url);
+
+        // Never evict internal entries: the snapshot and the runtime config
+        if (protectedPaths.has(pathname)) return;
+
+        if (!isCacheableUrl(request.url)) {
+          await cache.delete(request);
+          console.log(`[NLPWA] Evicted (route no longer cacheable) [${cacheName}]: ${pathname}`);
+        }
+      })
+    );
+  }
+
+  /**
+   * Run route-aware eviction on both offline and runtime caches.
+   *
+   * Called after every successful update to clean up entries whose routes
+   * have been removed or changed to network-only in the latest config.
+   */
+  async function evictByRoute() {
+    const { caches: cacheNames, snapshotCachePath, configPath } = getConfig();
+    const protectedPaths = new Set(
+      [snapshotCachePath, configPath || '/config.json'].filter(Boolean)
+    );
+
+    const [offlineCache, runtimeCache] = await Promise.all([
+      openActive(cacheNames.offline),
+      caches.open(cacheNames.runtime),
+    ]);
+
+    await Promise.all([
+      evictNonCacheable(offlineCache, cacheNames.offline, protectedPaths),
+      evictNonCacheable(runtimeCache, cacheNames.runtime, protectedPaths),
+    ]);
+  }
+
+  /**
+   * Make the staged update the live one. The switch itself is ONE write
+   * (setActive), so a crash leaves either the old or the new version, never a mix.
+   *
+   * Caller must hold the lock (see commitIfReady) unless it is the update check.
+   *
+   * @returns {Promise<boolean>} true if a staged update was committed
+   */
+  async function commitStaged() {
+    const config = getConfig();
+    const staged = await getStaged();
+    if (!staged?.complete) return false;
+
+    // A complete cache always contains its snapshot. If not, discard it.
+    const cache = await caches.open(staged.cache);
+    if (!(await cache.match(getSnapshotPath()))) {
+      console.warn('[NLPWA] Staged cache is missing its snapshot, discarding.');
+      await clearStaged();
+      await caches.delete(staged.cache);
+      return false;
+    }
+
+    const previousActive = await getActive();
+    await setActive({
+      cache: staged.cache,
+      version: staged.version,
+      swVersion: staged.swVersion,
+      ...(config.retainPreviousVersionCache && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
+    });
+    await clearStaged();
+
+    // Everything below is cleanup after the switch; the new version is already live.
+    await loadConfigFromCache();
+    const currentConfig = getConfig();
+    const shouldClearRuntime = Boolean(
+      staged.clearRuntime ||
+      config.clearRuntimeOnUpdate ||
+      currentConfig.clearRuntimeOnUpdate
+    );
+
+    if (shouldClearRuntime) {
+      await caches.delete(currentConfig.caches.runtime);
+    } else {
+      await evictFromRuntime(staged.evict ?? []);
+    }
+    await evictByRoute();
+
+    const keep = [staged.cache];
+    if (config.retainPreviousVersionCache && previousActive?.cache) {
+      keep.push(previousActive.cache);
+    }
+    await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep });
+
+    if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+      self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+        clients.forEach((c) => c.postMessage({ type: 'UPDATE_APPLIED', version: staged.version }));
+      }).catch(() => {});
+    }
+
+    console.log(`[NLPWA] Switched to v${staged.version}`);
+    return true;
+  }
+
+  /**
+   * Commit only if no update is currently being staged. Never waits: a page
+   * navigation must not be held up by a download, it just tries again next time.
+   */
+  async function commitIfReady() {
+    if (!tryAcquire()) return false;
+    try {
+      return await commitStaged();
+    } finally {
+      release();
+    }
+  }
+
+  /** Delete offline caches left behind by interrupted or superseded updates. */
+  async function sweepOrphanCaches() {
+    const config = getConfig();
+    const [staged, active] = await Promise.all([getStaged(), getActive()]);
+    await cleanupCaches({
+      base: config.caches.offline,
+      runtime: config.caches.runtime,
+      keep: [await getActiveName(config.caches.offline), staged?.cache, active?.previousCache],
+    });
+  }
+
+  /**
+   * Install-time caching, called from the SW `install` event.
+   *
+   * Normal path: take the server manifest and run the same stage → verify →
+   * commit pipeline as an update. On a first install nothing is running yet, so
+   * the staged cache is switched in immediately. When upgrading from an older
+   * SW the app is already running, so the staged cache waits for the next
+   * navigation like any other update.
+   *
+   * Because the snapshot is written during install, the first update check sees
+   * an up-to-date app instead of re-downloading everything.
+   *
+   * Fallback (no manifest, e.g. `nlpwa update` was never run): precache from
+   * config.precache without hashes. The first update check then builds the
+   * hashed snapshot.
+   */
+  async function precacheFiles() {
+    let manifest = null;
+    try {
+      manifest = await fetchServerInfo();
+    } catch (err) {
+      console.warn(`[NLPWA] No update manifest at install (${err.message})`);
+    }
+
+    const activeSnapshot = await loadCachedSnapshot();
+
+    if (manifest) {
+      if (!tryAcquire()) return;
+      try {
+        const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
+        const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
+        if (result.status === 'incomplete' && !activeSnapshot) {
+          throw new Error(`[NLPWA] Precache incomplete on first install: ${result.failed.join(', ')} failed`);
+        }
+        if (result.status === 'ready' && !activeSnapshot) {
+          await commitStaged();
+        }
+        return result;
+      } finally {
+        release();
+      }
+    }
+
+    if (!activeSnapshot) {
+      if (!tryAcquire()) return;
+      try {
+        return await precacheWithoutManifest();
+      } finally {
+        release();
+      }
+    }
+  }
+
+  async function precacheWithoutManifest() {
+    const config = getConfig();
+    const rawConfigPath = config.configPath || '/config.json';
+    const configPath = resolvePathWithBase(rawConfigPath, config.base);
+    
+    const offlineCache = await openActive(config.caches.offline);
+
+    try {
+      const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (configRes.ok) {
+        const cloned1 = configRes.clone();
+        const cloned2 = configPath !== rawConfigPath ? configRes.clone() : null;
+        const data = await configRes.json();
+        await offlineCache.put(configPath, cloned1);
+        if (cloned2) {
+          await offlineCache.put(rawConfigPath, cloned2);
+        }
+        updateActiveConfig(data);
+      } else {
+        console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
+        await loadConfigFromCache();
+      }
+    } catch (err) {
+      console.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
+      await loadConfigFromCache();
+    }
+
+    const precache = (getConfig().precache || []).filter((u) => typeof u === 'string' && !u.includes('*') && !u.includes('?'));
+    // cache: 'reload' skips the HTTP cache so stale bytes are never stored
+    const results = await Promise.allSettled(
+      precache.map(async (url) => {
+        const resolved = resolvePathWithBase(url, config.base);
+        const req = new Request(new URL(resolved, self.location.href), { cache: 'reload' });
+        await offlineCache.add(req);
+        if (resolved !== url) {
+          const match = await offlineCache.match(req);
+          if (match) await offlineCache.put(url, match.clone());
+        }
+      })
+    );
+    const failed = [];
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+        failed.push(precache[i]);
+      }
+    });
+
+    if (failed.length > 0) {
+      throw new Error(`[NLPWA] Precache failed on first install: ${failed.join(', ')} failed`);
+    }
+
+    return { status: 'ready', precached: precache.length };
+  }
+
+  /**
+   * Handle all `fetch` events from the Service Worker.
+   *
+   * Filters:
+   *   - Non-GET requests pass through (POST/PUT/DELETE handled natively)
+   *   - Non-HTTP(S) URLs pass through (chrome-extension://, etc.)
+   *
+   * Ensures runtime config is hydrated from offline cache before matching routes,
+   * and switches to a staged update on navigation requests.
+   *
+   * @param {FetchEvent} event
+   */
+  function handleFetch(event) {
+    const { request } = event;
+
+    // Only intercept GET requests
+    if (request.method !== 'GET') return;
+
+    // Only intercept http(s) requests
+    if (!request.url.startsWith('http')) return;
+
+    event.respondWith(
+      (async () => {
+        await ensureConfigReady();
+        // A staged update goes live only when a new page load starts, so one
+        // page is never served half from the old version and half from the new.
+        if (request.mode === 'navigate') {
+          await commitIfReady().catch((err) => console.warn('[NLPWA] Commit failed:', err.message));
+        }
+        const strategyFn = resolveStrategy(request);
+        return strategyFn(request, event);
+      })()
+    );
+  }
+
+  /**
+   * Notify all connected clients with a postMessage.
+   *
+   * @param {Object} message
+   */
+  async function broadcast(message) {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+    clients.forEach(client => client.postMessage(message));
+  }
+
+  /**
+   * Run a complete two-tier update check cycle:
+   *
+   *   1. Tier 1: lightweight version check (/api/update/version)
+   *   2. Stop early if the live version already matches
+   *   3. Tier 2: fetch the full file manifest (/api/update/info)
+   *   4. Stage: build the new version in a separate cache (copy unchanged files,
+   *      fetch + hash-verify the rest). The running app is not touched.
+   *   5. Tell clients UPDATE_READY. The switch happens on the next navigation
+   *      (or APPLY_UPDATE), so one page load is never served from two versions.
+   *
+   * On a first install there is nothing to protect, so the staged cache is
+   * switched in right away and no banner is shown.
+   *
+   * Safe to call concurrently: a shared lock lets only one run proceed.
+   *
+   * @returns {Promise<{ updated: boolean, version?: string }>}
+   */
+  async function checkForUpdate(options = {}) {
+    return await runUpdateCheck(options);
+  }
+
+  async function runUpdateCheck({ force = false } = {}) {
+    const config = getConfig();
+
+    // ── Tier 1: lightweight version check ────────────────────────────────────
+    let serverVersion;
+    try {
+      serverVersion = (await fetchServerVersion()).version;
+    } catch (err) {
+      console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
+    }
+
+    const active = await loadCachedSnapshot();
+    const staged = await getStaged();
+
+    // A complete update is already staged and waiting for the next navigation.
+    if (staged?.complete && staged.swVersion === config.version
+        && (!serverVersion || serverVersion === staged.version)) {
+      await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, staged: true });
+      return { updated: true, version: staged.version, staged: true };
+    }
+
+    // If a previous retry failed and backoff has not expired yet, skip this periodic check unless forced
+    if (!force && staged && !staged.complete && staged.nextRetryAt && Date.now() < staged.nextRetryAt) {
+      console.log(`[NLPWA] Staging retry in backoff until ${new Date(staged.nextRetryAt).toISOString()}`);
+      return { updated: false, backingOff: true };
+    }
+
+    const isFresh = !active;
+    const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
+    const isCurrent = (version) => !isFresh && !swVersionChanged && version === active.version;
+
+    const discardStaged = async () => {
+      if (staged) {
+        if (tryAcquire()) {
+          try {
+            console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
+            await clearStaged();
+            if (staged.cache) {
+              await caches.delete(staged.cache).catch(() => {});
+            }
+          } finally {
+            release();
+          }
+        }
+      }
+    };
+
+    if (serverVersion && isCurrent(serverVersion)) {
+      await discardStaged();
+      console.log(`[NLPWA] App already up to date (v${active.version})`);
+      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
+      return { updated: false, rolledBack: Boolean(staged) };
+    }
+
+    // ── Tier 2: full manifest ────────────────────────────────────────────────
+    let serverManifest;
+    try {
+      serverManifest = await fetchServerInfo();
+    } catch (err) {
+      console.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
+      return { updated: false };
+    }
+
+    if (isCurrent(serverManifest.version)) {
+      await discardStaged();
+      console.log(`[NLPWA] App already up to date (v${active.version})`);
+      await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
+      return { updated: false, rolledBack: Boolean(staged) };
+    }
+
+    console.log(isFresh
+      ? `[NLPWA] Initial installation: staging v${serverManifest.version}`
+      : `[NLPWA] Update available: v${active.version} → v${serverManifest.version}`);
+
+    // ── Stage (active version keeps serving) ─────────────────────────────────
+    // Narrow lock: acquire only around staging cache writes and commit
+    if (!tryAcquire()) {
+      console.log('[NLPWA] Staging already in progress, skipping.');
+      return { updated: false };
+    }
+    try {
+      const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
+
+      if (result.status === 'incomplete') {
+        const errorMsg = result.hasHashMismatch
+          ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
+          : result.quotaExceeded
+            ? `Storage quota exceeded while staging ${result.failed.join(', ')}`
+            : `Failed to download or verify ${result.failed.join(', ')}`;
+
+        await broadcast({
+          type: MESSAGE_TYPES.UPDATE_FAILED,
+          version: serverManifest.version,
+          failed: result.failed,
+          failedDetails: result.failedDetails,
+          error: errorMsg,
+          retryCount: result.retryCount,
+          nextRetryAt: result.nextRetryAt,
+          persistent: Boolean(result.persistent),
+          hasHashMismatch: Boolean(result.hasHashMismatch),
+          quotaExceeded: Boolean(result.quotaExceeded),
+        });
+
+        return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
+      }
+
+      if (isFresh) {
+        await commitStaged();
+        return { updated: false, version: serverManifest.version, initial: true };
+      }
+
+      await broadcast({
+        type: MESSAGE_TYPES.UPDATE_READY,
+        version: serverManifest.version,
+        staged: true,
+      });
+      return { updated: true, version: serverManifest.version, staged: true };
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Initialize the NLPWA Service Worker.
+   *
+   * @param {Object} userConfig
+   */
+  function initSW(userConfig = {}) {
+    const config = initConfig(userConfig);
+
+    // Eagerly try to hydrate routes and config from offline cache on SW startup
+    loadConfigFromCache().catch(() => {});
+
+    // ── install ────────────────────────────────────────────────────────────────
+    self.addEventListener('install', (event) => {
+      console.log(`[NLPWA] Installing SW v${config.version}`);
+      event.waitUntil(
+        (async () => {
+          try {
+            const result = await precacheFiles();
+            // Only skip waiting if staging/installation completed successfully
+            if (!result || result.status !== 'incomplete') {
+              await self.skipWaiting();
+            }
+          } catch (err) {
+            console.error('[NLPWA] Install error:', err);
+            throw err;
+          }
+        })()
+      );
+    });
+
+    // ── activate ───────────────────────────────────────────────────────────────
+    self.addEventListener('activate', (event) => {
+      console.log(`[NLPWA] Activated SW v${config.version}`);
+      // Only await fast, local operations in waitUntil so fetch events are never blocked
+      event.waitUntil(
+        (async () => {
+          await self.clients.claim();
+          await sweepOrphanCaches().catch(() => {});
+          await loadConfigFromCache().catch(() => {});
+        })()
+      );
+    });
+
+    // ── fetch ──────────────────────────────────────────────────────────────────
+    self.addEventListener('fetch', handleFetch);
+
+    // ── message ────────────────────────────────────────────────────────────────
+    // Clients can trigger a manual update check via:
+    //   navigator.serviceWorker.controller.postMessage({ type: 'CHECK_UPDATE' })
+    self.addEventListener('message', (event) => {
+      const port = event.ports?.[0];
+      const reply = (replyType, data, error) => {
+        const payload = {
+          type: replyType,
+          requestId: event.data?.requestId,
+          data: data ?? null,
+          error: error ? (error.message || String(error)) : undefined,
+        };
+        if (port) {
+          port.postMessage(payload);
+        } else {
+          event.source?.postMessage(payload);
+        }
+      };
+
+      switch (event.data?.type) {
+        case MESSAGE_TYPES.CHECK_UPDATE:
+          event.waitUntil(checkForUpdate({ force: true }));
+          break;
+
+        case MESSAGE_TYPES.APPLY_UPDATE:
+          // Client asked to switch to the staged update now, then it will reload.
+          event.waitUntil((async () => {
+            const applied = await commitIfReady().catch(() => false);
+            reply(MESSAGE_TYPES.APPLY_UPDATE_RESULT, { applied });
+          })());
+          break;
+
+        case MESSAGE_TYPES.GET_CACHE_INFO:
+          // Client requests storage quota & cache metrics info
+          event.waitUntil((async () => {
+            try {
+              const info = await getStorageQuotaInfo();
+              reply(MESSAGE_TYPES.CACHE_INFO, info);
+            } catch (err) {
+              reply(MESSAGE_TYPES.CACHE_INFO, null, err);
+            }
+          })());
+          break;
+
+        case MESSAGE_TYPES.CLEANUP_RUNTIME:
+          // Client requests runtime cache cleanup
+          event.waitUntil((async () => {
+            try {
+              const result = await cleanRuntimeCache(event.data?.options || {});
+              reply(MESSAGE_TYPES.RUNTIME_CLEANED, result);
+            } catch (err) {
+              reply(MESSAGE_TYPES.RUNTIME_CLEANED, null, err);
+            }
+          })());
+          break;
+      }
+    });
+
+    // ── periodic background sync ───────────────────────────────────────────────
+    self.addEventListener('periodicsync', (event) => {
+      if (event.tag === 'nlpwa-update-check') {
+        event.waitUntil(checkForUpdate());
+      }
+    });
+  }
+
+  /**
+   * Standalone Service Worker entry (built to out/sw.js, the file `nlpwa init` copies).
+   *
+   * It starts the engine with the defaults below. Everything app-specific
+   * (routes, precache list, update endpoints) lives in /config.json, which is
+   * stored in the offline cache and applied as soon as it is available.
+   *
+   * `updateAPI` is set here because the very first install runs before
+   * /config.json has been cached, so the engine needs to know where the update
+   * manifest is. These match the starter config.js. If you serve the update API
+   * elsewhere, build your own entry:
+   *
+   *   import { initSW } from 'nlpwa/sw';
+   *   initSW({ version: '1', updateAPI: { version: '/v', info: '/i' } });
+   */
+
+  initSW({
+    version: '1',
+    configPath: '/config.json',
+    updateAPI: {
+      version: '/api/update/version.json',
+      info: '/api/update/info.json',
+    },
+  });
+
+})();

@@ -13,7 +13,7 @@ import { findConfigFile, syncSourceConfigVersion } from '../bin/build-utils.js';
 import { putInRuntime, getFromRuntime, getFromOffline } from '../src/sw/cache/runtime.js';
 import { resolveStrategy } from '../src/sw/fetch/router.js';
 import { stageUpdate } from '../src/sw/update/stage.js';
-import { commitStaged } from '../src/sw/update/commit.js';
+import { commitStaged, sweepOrphanCaches } from '../src/sw/update/commit.js';
 import { getActive, openActive } from '../src/sw/cache/store.js';
 import { fetchServerInfo, getSnapshotPath } from '../src/sw/update/manifest.js';
 
@@ -371,6 +371,32 @@ test('commitStaged: retainPreviousVersionCache keeps prior active cache and serv
   const newChunkHit = await getFromOffline(req('/chunk-v2.js'));
   assert.ok(newChunkHit, 'new chunk served from active cache');
   assert.equal(await newChunkHit.text(), 'chunk v2');
+});
+
+test('sweepOrphanCaches: retains active.previousCache on SW activation', async () => {
+  const routes = [{ match: '**', strategy: 'cache-first' }];
+  const v1 = { '/config.json': JSON.stringify({ version: '1.0.0', retainPreviousVersionCache: true, routes }), '/app.js': 'v1', '/chunk-v1.js': 'chunk v1' };
+  const server = makeServer('1.0.0', v1);
+  const caches = setupEnv(server.fetch, { retainPreviousVersionCache: true, routes });
+
+  const r1 = await stageUpdate(await fetchServerInfo());
+  assert.equal(r1.status, 'ready');
+  assert.equal(await commitStaged(), true);
+  const activeV1 = (await getActive()).cache;
+
+  // New version replaces chunk-v1 with chunk-v2
+  server.set('1.0.1', { '/config.json': JSON.stringify({ version: '1.0.1', retainPreviousVersionCache: true, routes }), '/app.js': 'v2', '/chunk-v2.js': 'chunk v2' });
+  const r2 = await stageUpdate(await fetchServerInfo());
+  assert.equal(r2.status, 'ready');
+  assert.equal(await commitStaged(), true);
+  const activeV2 = (await getActive()).cache;
+
+  // Simulate SW activation sweeping orphan caches
+  await sweepOrphanCaches();
+
+  const currentKeys = await caches.keys();
+  assert.ok(currentKeys.includes(activeV1), 'prior version cache retained after sweepOrphanCaches');
+  assert.ok(currentKeys.includes(activeV2), 'active version cache retained after sweepOrphanCaches');
 });
 
 test('cross-origin routing: matches and caches full URL patterns like onnxruntime-web CDN', () => {

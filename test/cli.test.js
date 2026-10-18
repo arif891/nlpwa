@@ -39,6 +39,10 @@ test('cli update: emits manifest-hash derived version and preserves source confi
   assert.match(version.version, /^1\.0\.0-[0-9a-f]{12}$/);
   assert.equal(version.version, info.version);
   assert.deepEqual(info.files.map((f) => f.path).sort(), ['/config.json', '/index.html']);
+  for (const file of info.files) {
+    assert.equal(typeof file.size, 'number', `file ${file.path} has size property`);
+    assert.ok(file.size > 0, `file ${file.path} has positive size`);
+  }
 
   // Source config.json must NOT be mutated
   const sourceConfig = JSON.parse(readFileSync(join(root, 'config.json'), 'utf8'));

@@ -63,7 +63,11 @@ test('install: precache fallback when there is no update manifest (and no stale 
   const result = await checkForUpdate();
   assert.equal(result.initial, true);
   assert.equal((await loadCachedSnapshot()).version, '1.0.0');
+
+  const currentKeys = await caches.keys();
+  assert.ok(!currentKeys.includes('offline'), 'plain offline cache was cleanly migrated and removed');
 });
+
 
 test('update: new version is staged and announced, but the app keeps serving the old one', async () => {
   const server = makeServer('1.0.0', v1);

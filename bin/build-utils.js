@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -308,6 +308,7 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
             filesMap.set(fileUrlPath, {
               path: fileUrlPath,
               hash: hashFile(diskFile),
+              size: statSync(diskFile).size,
             });
           }
         }
@@ -327,7 +328,11 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
 
       const diskPath = resolve(targetDir, relPath);
       if (existsSync(diskPath)) {
-        filesMap.set(urlPath, { path: urlPath, hash: hashFile(diskPath) });
+        filesMap.set(urlPath, {
+          path: urlPath,
+          hash: hashFile(diskPath),
+          size: statSync(diskPath).size,
+        });
       } else {
         missing.push({ path: urlPath, diskPath });
       }

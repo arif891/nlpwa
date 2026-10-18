@@ -26,7 +26,7 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 
 Native mobile apps (iOS & Android) feel reliable because they follow a strict, atomic update lifecycle:
 1. **Background Staging:** Updates download quietly over the air (OTA) in the background without interrupting the active screen or dropping unsaved user work.
-2. **Atomic Version Swapping:** When the user restarts or navigates, the app switches versions as a single atomic unit. You are never left in a broken "Frankenstein" state where new HTML requests old JavaScript chunks that have vanished from the server (the notorious PWA chunk mismatch 404).
+2. **Atomic Version Swapping:** When the user restarts or navigates, the app switches versions as a single atomic unit. This protects content-hashed assets from broken "Frankenstein" states where newly requested dynamic chunks have vanished from the server (the notorious PWA chunk mismatch 404). *(Note: Unhashed assets like `/app.js` in an already-open tab are served from the active cache upon update until reload; retention covers one prior generation on active miss. Per-client version pinning via `clientId` is planned for full runtime client isolation)*.
 3. **Delta Syncing:** Only files that actually changed are transferred over the wire.
 4. **Integrity Verification:** Every downloaded file is verified with SHA-256 hashes against the manifest before it is allowed to go live. (Because manifest hashes are served from the same origin, this protects against network transport corruption, captive portal intercepts returning 200 HTML for missing assets, and partial deployments—not against a compromised web server).
 
@@ -249,7 +249,7 @@ NLPWA uses these caches:
 | `runtime` | Assets cached lazily on first request; evicted when stale |
 | `nlpwa-meta` | Two tiny pointers: which `offline@…` cache is active, and whether a complete update is staged |
 
-An update is built in a brand-new `offline@…` cache while the active one keeps serving. A cache that contains its snapshot is complete, and going live is a single write to the active pointer, so the app is always on either the old or the new version, never a mix. `config.json` lives inside the versioned cache, so routes switch together with the files they describe. An app installed by an older NLPWA (plain `offline` cache) is migrated on its first update.
+An update is built in a brand-new `offline@…` cache while the active one keeps serving. A cache that contains its snapshot is complete, and going live is a single write to the active pointer, so the app is always on either the old or the new version, never a mix. `config.json` lives inside the versioned cache, so routes switch together with the files they describe. An app installed without a manifest or by an older NLPWA (plain `offline` cache) is migrated and cleaned up on its first update.
 
 ---
 
@@ -289,9 +289,10 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 | `onUpdateReady` | `Function` | — | Called with `{ version }` when update is staged |
 | `onNoUpdate` | `Function` | — | Called with `{ version }` when app is confirmed up to date |
 | `onUpdateApplied` | `Function` | — | Called with `{ version }` when update is committed across any tab |
-| `onUpdatePrompt` | `Function` | — | Called when auto-reload is deferred because user is editing inputs |
-| `autoReload` | `boolean` | `false` | Automatically apply update and reload when staged (deferred to prompt if editing inputs) |
-| `reloadOnUpdateApplied` | `boolean` | `false` | Automatically reload this tab if another tab commits an update (deferred to prompt if editing) |
+| `onUpdatePrompt` | `Function` | — | Called when auto-reload is deferred because user is editing inputs or shouldDeferReload returns true |
+| `shouldDeferReload` | `Function` | — | Custom predicate `({ version, reason }) => boolean` to defer reload (e.g. unsaved state, uploads in progress) |
+| `autoReload` | `boolean` | `false` | Automatically apply update and reload when staged (deferred to prompt if editing inputs or shouldDeferReload) |
+| `reloadOnUpdateApplied` | `boolean` | `false` | Automatically reload this tab if another tab commits an update (deferred to prompt if editing or shouldDeferReload) |
 | `checkOnFocus` | `boolean` | `true` | Check for update when tab gains focus |
 | `checkOnRegister` | `boolean` | `true` | Check for update on initial registration via non-blocking message |
 | `periodicSync` | `boolean` | `true` | Periodic Background Sync for installed PWAs if supported |
@@ -300,7 +301,7 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 
 ### Client: `NLPWAClient.applyUpdate(options)`
 
-Asks the SW to switch to the staged update via `APPLY_UPDATE` message, waits for `UPDATE_APPLIED` confirmation (default timeout: 3000ms), and then reloads the page.
+Asks the SW to switch to the staged update via dedicated `MessageChannel` port request (`APPLY_UPDATE` → `APPLY_UPDATE_RESULT`), waits for confirmation (default timeout: 3000ms), and then reloads the page (aborts reload if the SW replies `applied: false`).
 
 Options:
 - `timeoutMs` (`number`, default: `3000`): Max wait for SW confirmation before forcing reload.

@@ -9,16 +9,17 @@ export const SNAPSHOT_CACHE_PATH = '/_nlpwa/snapshot.json';
 
 /** postMessage type identifiers (SW ↔ client) */
 export const MESSAGE_TYPES = {
-  UPDATE_READY:    'UPDATE_READY',    // SW → client: new version available
-  CHECK_UPDATE:    'CHECK_UPDATE',    // client → SW: trigger manual check
-  UPDATE_APPLIED:  'UPDATE_APPLIED',  // SW → client: reply to APPLY_UPDATE ({ applied })
-  NO_UPDATE:       'NO_UPDATE',       // SW → client: already up to date
-  APPLY_UPDATE:    'APPLY_UPDATE',    // client → SW: switch to the staged update now
-  GET_CACHE_INFO:  'GET_CACHE_INFO',  // client → SW: request storage quota & cache metrics
-  CACHE_INFO:      'CACHE_INFO',      // SW → client: reply with quota & cache metrics
-  CLEANUP_RUNTIME: 'CLEANUP_RUNTIME', // client → SW: request runtime cache cleanup
-  RUNTIME_CLEANED: 'RUNTIME_CLEANED', // SW → client: reply with cleanup results
-  UPDATE_FAILED:   'UPDATE_FAILED',   // SW → client: update staging or hash verification failed
+  UPDATE_READY:        'UPDATE_READY',        // SW → client: new version available
+  CHECK_UPDATE:        'CHECK_UPDATE',        // client → SW: trigger manual check
+  UPDATE_APPLIED:      'UPDATE_APPLIED',      // SW → client: broadcast to all windows when update is committed ({ version })
+  NO_UPDATE:           'NO_UPDATE',           // SW → client: already up to date
+  APPLY_UPDATE:        'APPLY_UPDATE',        // client → SW: switch to the staged update now
+  APPLY_UPDATE_RESULT: 'APPLY_UPDATE_RESULT', // SW → client: 1-to-1 reply to APPLY_UPDATE ({ applied })
+  GET_CACHE_INFO:      'GET_CACHE_INFO',      // client → SW: request storage quota & cache metrics
+  CACHE_INFO:          'CACHE_INFO',          // SW → client: reply with quota & cache metrics
+  CLEANUP_RUNTIME:     'CLEANUP_RUNTIME',     // client → SW: request runtime cache cleanup
+  RUNTIME_CLEANED:     'RUNTIME_CLEANED',     // SW → client: reply with cleanup results
+  UPDATE_FAILED:       'UPDATE_FAILED',       // SW → client: update staging or hash verification failed
 };
 
 /** Runtime cache cleanup strategies */

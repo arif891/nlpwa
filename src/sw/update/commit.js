@@ -86,10 +86,11 @@ export async function commitIfReady() {
 /** Delete offline caches left behind by interrupted or superseded updates. */
 export async function sweepOrphanCaches() {
   const config = getConfig();
-  const staged = await getStaged();
+  const [staged, active] = await Promise.all([getStaged(), getActive()]);
   await cleanupCaches({
     base: config.caches.offline,
     runtime: config.caches.runtime,
-    keep: [await getActiveName(config.caches.offline), staged?.cache],
+    keep: [await getActiveName(config.caches.offline), staged?.cache, active?.previousCache],
   });
 }
+

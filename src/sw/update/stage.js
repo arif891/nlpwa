@@ -96,6 +96,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
 
   const stats = { reused: 0, copied: 0, fetched: 0 };
   const failed = [];
+  const failedDetails = {};
 
   await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash }) => {
     try {
@@ -115,6 +116,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       stats.fetched++;
     } catch (err) {
       failed.push(path);
+      failedDetails[path] = err.message;
       console.warn(`[NLPWA] Staging failed: ${path} - ${err.message}`);
     }
   });
@@ -125,6 +127,15 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     // True all-or-nothing atomicity: never finalize or commit a partial or broken update.
     // Keep verified files in the staging cache so subsequent checks can resume.
     // Active cache remains 100% pure and untouched.
+    const prevFailed = staged.failedFiles ?? [];
+    const isSameFiles = prevFailed.length > 0
+      && failed.length === prevFailed.length
+      && failed.every((f) => prevFailed.includes(f));
+
+    const hasHashMismatch = Object.values(failedDetails).some(
+      (msg) => typeof msg === 'string' && msg.includes('hash mismatch')
+    );
+
     let nextRetryAt = null;
     if (retryCount >= MAX_RETRY_ATTEMPTS) {
       const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), 3600000);
@@ -135,15 +146,38 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       );
     }
 
+    if (isSameFiles && retryCount >= 2) {
+      if (hasHashMismatch) {
+        console.error(
+          `[NLPWA] Persistent hash mismatch on ${failed.join(', ')} across ${retryCount} attempts. ` +
+          `A CDN, proxy, or host minification may be altering file contents in transit. ` +
+          `Consider setting verifyHashes: 'warn' or false in your nlpwa config if this transformation is expected.`
+        );
+      } else {
+        console.warn(
+          `[NLPWA] Repeated staging failure on the same file(s): ${failed.join(', ')} (${retryCount} attempts).`
+        );
+      }
+    }
+
     await setStaged({
       ...staged,
       retryCount,
       failedFiles: failed,
+      failedDetails,
       nextRetryAt,
       complete: false,
     });
 
-    return { status: 'incomplete', failed, retryCount };
+    return {
+      status: 'incomplete',
+      failed,
+      failedDetails,
+      retryCount,
+      nextRetryAt,
+      persistent: Boolean(isSameFiles && retryCount >= 2),
+      hasHashMismatch: Boolean(hasHashMismatch),
+    };
   }
 
   // ── Finalise: snapshot last, then mark the staged record complete ────────
@@ -155,6 +189,9 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   await setStaged({
     ...staged,
     retryCount: 0,
+    failedFiles: [],
+    failedDetails: {},
+    nextRetryAt: null,
     complete: true,
     partial: false,
     evict,

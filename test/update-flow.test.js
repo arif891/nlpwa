@@ -139,7 +139,9 @@ test('update: a failed download keeps the old version live and resumes on the ne
   server.broken.add('/app.js');
   const failed = await checkForUpdate();
   assert.equal(failed.updated, false);
-  assert.deepEqual(messages, [], 'no banner for an update that is not ready');
+  assert.equal(messages.find((m) => m.type === 'UPDATE_READY'), undefined, 'no banner for an update that is not ready');
+  assert.equal(messages.at(-1)?.type, 'UPDATE_FAILED');
+  assert.deepEqual(messages.at(-1)?.failed, ['/app.js']);
   assert.equal(await commitIfReady(), false);
   assert.equal((await getActive()).version, '1.0.0');
 
@@ -266,5 +268,50 @@ test('update: clearRuntimeOnUpdate clears runtime cache upon commit', async () =
   const runtimeAfter = await caches.open('runtime');
   const matched = await runtimeAfter.match('https://example.com/assets/logo.png');
   assert.equal(matched, undefined, 'runtime cache asset was wiped on commit');
+});
+
+test('update: strict verification failure broadcasts UPDATE_FAILED with hash mismatch details', async () => {
+  const server = makeServer('1.0.0', v1);
+  const messages = fakeSelf();
+  setupEnv(server.fetch);
+  await precacheFiles();
+  messages.length = 0;
+
+  // Next version has a hash mismatch on /app.js
+  const { hash8 } = await import('./helpers/fake-server.js');
+  server.set('1.0.1', { ...v1, '/app.js': 'app v2' });
+  server.lie.set('/app.js', hash8('tampered or minified body'));
+
+  const result = await checkForUpdate();
+  assert.equal(result.updated, false);
+  const failedMsg = messages.find((m) => m.type === 'UPDATE_FAILED');
+  assert.ok(failedMsg, 'UPDATE_FAILED broadcasted');
+  assert.equal(failedMsg.hasHashMismatch, true);
+  assert.deepEqual(failedMsg.failed, ['/app.js']);
+  assert.ok(failedMsg.error.includes('Hash mismatch'));
+  assert.ok(failedMsg.failedDetails['/app.js'].includes('hash mismatch'));
+});
+
+test('update: consecutive retries failing on same file detects persistent failure', async () => {
+  const server = makeServer('1.0.0', v1);
+  const messages = fakeSelf();
+  setupEnv(server.fetch);
+  await precacheFiles();
+
+  const { hash8 } = await import('./helpers/fake-server.js');
+  server.set('1.0.1', { ...v1, '/app.js': 'app v2' });
+  server.lie.set('/app.js', hash8('tampered body'));
+
+  // Attempt 1
+  messages.length = 0;
+  await checkForUpdate();
+  assert.equal(messages.at(-1)?.persistent, false);
+
+  // Attempt 2 (force check)
+  messages.length = 0;
+  await checkForUpdate({ force: true });
+  assert.equal(messages.at(-1)?.persistent, true);
+  assert.equal(messages.at(-1)?.hasHashMismatch, true);
+  assert.equal(messages.at(-1)?.retryCount, 2);
 });
 

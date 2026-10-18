@@ -15,6 +15,7 @@ var NLPWAClient = (function (exports) {
     CACHE_INFO:      'CACHE_INFO',      // SW → client: reply with quota & cache metrics
     CLEANUP_RUNTIME: 'CLEANUP_RUNTIME', // client → SW: request runtime cache cleanup
     RUNTIME_CLEANED: 'RUNTIME_CLEANED', // SW → client: reply with cleanup results
+    UPDATE_FAILED:   'UPDATE_FAILED',   // SW → client: update staging or hash verification failed
   };
 
   /**
@@ -109,6 +110,61 @@ var NLPWAClient = (function (exports) {
 
       if (typeof callback === 'function') {
         callback({ version: data.version });
+      }
+    });
+  }
+
+  /**
+   * Register a handler to be called when the SW signals an update failed to stage or verify.
+   *
+   * Also fires a `nlpwa:update-failed` CustomEvent on `document` so any part
+   * of the app can listen without importing this module directly:
+   *
+   *   document.addEventListener('nlpwa:update-failed', (e) => {
+   *     console.warn('Update failed:', e.detail.error, e.detail.failed);
+   *   });
+   *
+   * @param {(data: {
+   *   version?: string,
+   *   failed?: string[],
+   *   failedDetails?: Record<string, string>,
+   *   error?: string,
+   *   retryCount?: number,
+   *   nextRetryAt?: number|null,
+   *   persistent?: boolean,
+   *   hasHashMismatch?: boolean
+   * }) => void} [callback]
+   * @returns {Function}  unsubscribe — call when the listening component unmounts
+   */
+  function onUpdateFailed(callback) {
+    return onSWMessage(MESSAGE_TYPES.UPDATE_FAILED, (data) => {
+      document.dispatchEvent(
+        new CustomEvent('nlpwa:update-failed', {
+          bubbles: true,
+          detail: {
+            version: data.version,
+            failed: data.failed ?? [],
+            failedDetails: data.failedDetails ?? {},
+            error: data.error,
+            retryCount: data.retryCount,
+            nextRetryAt: data.nextRetryAt,
+            persistent: Boolean(data.persistent),
+            hasHashMismatch: Boolean(data.hasHashMismatch),
+          },
+        })
+      );
+
+      if (typeof callback === 'function') {
+        callback({
+          version: data.version,
+          failed: data.failed ?? [],
+          failedDetails: data.failedDetails ?? {},
+          error: data.error,
+          retryCount: data.retryCount,
+          nextRetryAt: data.nextRetryAt,
+          persistent: Boolean(data.persistent),
+          hasHashMismatch: Boolean(data.hasHashMismatch),
+        });
       }
     });
   }
@@ -299,6 +355,7 @@ var NLPWAClient = (function (exports) {
    * @param {Object} options
    * @param {Function} [options.onUpdateReady]         called when SW signals update ready
    * @param {Function} [options.onNoUpdate]            called when SW signals already up to date
+   * @param {Function} [options.onUpdateFailed]        called when SW signals update failed or hash mismatch
    * @param {Function} [options.onUpdateApplied]       called when update is committed across any tab
    * @param {boolean}  [options.autoReload]            automatically reload on update (default: false)
    * @param {boolean}  [options.reloadOnUpdateApplied] automatically reload when another tab applies update
@@ -388,6 +445,12 @@ var NLPWAClient = (function (exports) {
       unsubscribeNoUpdate = onNoUpdate(options.onNoUpdate);
     }
 
+    // ── Update-failed handler ──────────────────────────────────────────────────
+    let unsubscribeUpdateFailed = null;
+    if (typeof options.onUpdateFailed === 'function') {
+      unsubscribeUpdateFailed = onUpdateFailed(options.onUpdateFailed);
+    }
+
     // ── Focus-triggered update check ──────────────────────────────────────────
     const focusCheck = options.checkOnFocus !== false;
     let onVisibilityChange = null;
@@ -437,6 +500,7 @@ var NLPWAClient = (function (exports) {
       unsubscribeUpdate();
       if (unsubscribeApplied) unsubscribeApplied();
       if (unsubscribeNoUpdate) unsubscribeNoUpdate();
+      if (unsubscribeUpdateFailed) unsubscribeUpdateFailed();
       if (intervalTimer) clearInterval(intervalTimer);
       if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
     };
@@ -469,6 +533,7 @@ var NLPWAClient = (function (exports) {
   exports.getCacheInfo = getCacheInfo;
   exports.onNoUpdate = onNoUpdate;
   exports.onUpdateApplied = onUpdateApplied;
+  exports.onUpdateFailed = onUpdateFailed;
   exports.onUpdateReady = onUpdateReady;
   exports.register = register;
   exports.requestUpdateCheck = requestUpdateCheck;

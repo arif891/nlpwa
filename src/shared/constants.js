@@ -19,6 +19,7 @@ export const MESSAGE_TYPES = {
   CACHE_INFO:      'CACHE_INFO',      // SW → client: reply with quota & cache metrics
   CLEANUP_RUNTIME: 'CLEANUP_RUNTIME', // client → SW: request runtime cache cleanup
   RUNTIME_CLEANED: 'RUNTIME_CLEANED', // SW → client: reply with cleanup results
+  UPDATE_FAILED:   'UPDATE_FAILED',   // SW → client: update staging or hash verification failed
 };
 
 /** Runtime cache cleanup strategies */

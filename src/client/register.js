@@ -1,4 +1,4 @@
-import { onUpdateReady, onNoUpdate, applyUpdate } from './update-ui.js';
+import { onUpdateReady, onNoUpdate, onUpdateFailed, applyUpdate } from './update-ui.js';
 import { requestUpdateCheck, onSWMessage } from './messaging.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
 
@@ -23,6 +23,7 @@ import { MESSAGE_TYPES } from '../shared/constants.js';
  * @param {Object} options
  * @param {Function} [options.onUpdateReady]         called when SW signals update ready
  * @param {Function} [options.onNoUpdate]            called when SW signals already up to date
+ * @param {Function} [options.onUpdateFailed]        called when SW signals update failed or hash mismatch
  * @param {Function} [options.onUpdateApplied]       called when update is committed across any tab
  * @param {boolean}  [options.autoReload]            automatically reload on update (default: false)
  * @param {boolean}  [options.reloadOnUpdateApplied] automatically reload when another tab applies update
@@ -112,6 +113,12 @@ export async function register(swUrl = '/sw.js', options = {}) {
     unsubscribeNoUpdate = onNoUpdate(options.onNoUpdate);
   }
 
+  // ── Update-failed handler ──────────────────────────────────────────────────
+  let unsubscribeUpdateFailed = null;
+  if (typeof options.onUpdateFailed === 'function') {
+    unsubscribeUpdateFailed = onUpdateFailed(options.onUpdateFailed);
+  }
+
   // ── Focus-triggered update check ──────────────────────────────────────────
   const focusCheck = options.checkOnFocus !== false;
   let onVisibilityChange = null;
@@ -161,6 +168,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
     unsubscribeUpdate();
     if (unsubscribeApplied) unsubscribeApplied();
     if (unsubscribeNoUpdate) unsubscribeNoUpdate();
+    if (unsubscribeUpdateFailed) unsubscribeUpdateFailed();
     if (intervalTimer) clearInterval(intervalTimer);
     if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
   };
@@ -188,6 +196,6 @@ export function onUpdateApplied(callback) {
   });
 }
 
-export { onUpdateReady, onNoUpdate, applyUpdate } from './update-ui.js';
+export { onUpdateReady, onNoUpdate, onUpdateFailed, applyUpdate } from './update-ui.js';
 export { requestUpdateCheck, sendToSW } from './messaging.js';
 export { getCacheInfo, cleanupRuntimeCache } from './cache-manager.js';

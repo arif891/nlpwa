@@ -61,9 +61,9 @@ export const DEFAULTS = {
 
   /**
    * Keep immediate previous version cache after commit for multi-tab grace retention.
-   * Default: false
+   * Default: true
    */
-  retainPreviousVersionCache: false,
+  retainPreviousVersionCache: true,
 
   /**
    * Clear the entire runtime cache whenever a new app version is committed.

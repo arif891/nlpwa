@@ -60,6 +60,61 @@ export function onNoUpdate(callback) {
 }
 
 /**
+ * Register a handler to be called when the SW signals an update failed to stage or verify.
+ *
+ * Also fires a `nlpwa:update-failed` CustomEvent on `document` so any part
+ * of the app can listen without importing this module directly:
+ *
+ *   document.addEventListener('nlpwa:update-failed', (e) => {
+ *     console.warn('Update failed:', e.detail.error, e.detail.failed);
+ *   });
+ *
+ * @param {(data: {
+ *   version?: string,
+ *   failed?: string[],
+ *   failedDetails?: Record<string, string>,
+ *   error?: string,
+ *   retryCount?: number,
+ *   nextRetryAt?: number|null,
+ *   persistent?: boolean,
+ *   hasHashMismatch?: boolean
+ * }) => void} [callback]
+ * @returns {Function}  unsubscribe — call when the listening component unmounts
+ */
+export function onUpdateFailed(callback) {
+  return onSWMessage(MESSAGE_TYPES.UPDATE_FAILED, (data) => {
+    document.dispatchEvent(
+      new CustomEvent('nlpwa:update-failed', {
+        bubbles: true,
+        detail: {
+          version: data.version,
+          failed: data.failed ?? [],
+          failedDetails: data.failedDetails ?? {},
+          error: data.error,
+          retryCount: data.retryCount,
+          nextRetryAt: data.nextRetryAt,
+          persistent: Boolean(data.persistent),
+          hasHashMismatch: Boolean(data.hasHashMismatch),
+        },
+      })
+    );
+
+    if (typeof callback === 'function') {
+      callback({
+        version: data.version,
+        failed: data.failed ?? [],
+        failedDetails: data.failedDetails ?? {},
+        error: data.error,
+        retryCount: data.retryCount,
+        nextRetryAt: data.nextRetryAt,
+        persistent: Boolean(data.persistent),
+        hasHashMismatch: Boolean(data.hasHashMismatch),
+      });
+    }
+  });
+}
+
+/**
  * Switch to the staged update, then reload the page.
  *
  * The SW builds updates in the background and only makes them live on a page

@@ -106,7 +106,23 @@ async function runUpdateCheck({ force = false } = {}) {
   const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
 
   if (result.status === 'incomplete') {
-    return { updated: false, version: serverManifest.version, failed: result.failed };
+    const errorMsg = result.hasHashMismatch
+      ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
+      : `Failed to download or verify ${result.failed.join(', ')}`;
+
+    await broadcast({
+      type: MESSAGE_TYPES.UPDATE_FAILED,
+      version: serverManifest.version,
+      failed: result.failed,
+      failedDetails: result.failedDetails,
+      error: errorMsg,
+      retryCount: result.retryCount,
+      nextRetryAt: result.nextRetryAt,
+      persistent: Boolean(result.persistent),
+      hasHashMismatch: Boolean(result.hasHashMismatch),
+    });
+
+    return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg };
   }
 
   if (isFresh) {

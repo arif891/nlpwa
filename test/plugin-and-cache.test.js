@@ -315,4 +315,71 @@ test('cross-origin routing: matches and caches full URL patterns like onnxruntim
   assert.equal(isCacheableUrl(otherCdnUrl), false);
 });
 
+test('client update-ui: onUpdateFailed catches UPDATE_FAILED event and triggers callback', async () => {
+  const { onUpdateFailed } = await import('../src/client/update-ui.js');
+  const listeners = [];
+  const fakeSW = {
+    addEventListener: (type, fn) => listeners.push(fn),
+    removeEventListener: (type, fn) => {
+      const idx = listeners.indexOf(fn);
+      if (idx !== -1) listeners.splice(idx, 1);
+    },
+  };
+
+  const origSWDesc = Object.getOwnPropertyDescriptor(globalThis.navigator, 'serviceWorker');
+  Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+    value: fakeSW,
+    configurable: true,
+    writable: true,
+  });
+
+  const origDoc = globalThis.document;
+  const origCustomEvent = globalThis.CustomEvent;
+
+  const docEvents = [];
+  globalThis.document = {
+    dispatchEvent: (ev) => docEvents.push(ev),
+  };
+  globalThis.CustomEvent = class CustomEvent {
+    constructor(type, init) {
+      this.type = type;
+      this.detail = init?.detail;
+    }
+  };
+
+  let received = null;
+  const unsub = onUpdateFailed((data) => {
+    received = data;
+  });
+
+  listeners.forEach((fn) =>
+    fn({
+      data: {
+        type: 'UPDATE_FAILED',
+        version: '2.0.0',
+        failed: ['/main.js'],
+        error: 'Hash mismatch on /main.js',
+        hasHashMismatch: true,
+      },
+    })
+  );
+
+  assert.ok(received);
+  assert.equal(received.version, '2.0.0');
+  assert.equal(received.hasHashMismatch, true);
+  assert.equal(docEvents[0]?.type, 'nlpwa:update-failed');
+  assert.equal(docEvents[0]?.detail.error, 'Hash mismatch on /main.js');
+
+  unsub();
+  assert.equal(listeners.length, 0);
+
+  if (origSWDesc) {
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', origSWDesc);
+  } else {
+    delete globalThis.navigator.serviceWorker;
+  }
+  globalThis.document = origDoc;
+  globalThis.CustomEvent = origCustomEvent;
+});
+
 

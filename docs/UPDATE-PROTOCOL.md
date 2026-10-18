@@ -189,6 +189,8 @@ Open separate cache: offline@1.4.2-<unique-id>
    - Verified files are kept in the staging cache so subsequent checks resume.
    - After 5 consecutive failed attempts, update checks enter exponential backoff
      while the running app remains 100% clean and untouched.
+   - **Persistent failure detection**: If retries repeatedly fail on the exact same file(s), NLPWA flags `persistent: true`. If caused by hash mismatches (e.g. CDN script injection or HTML minification), a prominent error is logged recommending `verifyHashes: 'warn'`.
+   - **Failure Broadcast**: A `postMessage({ type: 'UPDATE_FAILED', version, failed, error, persistent, hasHashMismatch, retryCount, nextRetryAt })` is broadcast to connected tabs so clients can inspect or react.
 6. Seal staging:
    - Once 100% of manifest files are verified, write snapshot to offline@1.4.2-<unique-id>/_nlpwa/snapshot.json
    - Write pointer in nlpwa-meta: /_nlpwa/staged.json { complete: true, ... }
@@ -197,10 +199,15 @@ Open separate cache: offline@1.4.2-<unique-id>
 ### Step 5 — Notify clients
 
 ```
+// On staging success:
 clients.matchAll({ type: 'window' })
   → postMessage({ type: 'UPDATE_READY', version: '1.4.2', partial: false })
+
+// On staging failure or hash mismatch:
+clients.matchAll({ type: 'window' })
+  → postMessage({ type: 'UPDATE_FAILED', version: '1.4.2', failed: [...], hasHashMismatch: true, ... })
 ```
-The client triggers a `nlpwa:update-ready` CustomEvent on `document` and invokes the `onUpdateReady` callback.
+The client triggers `nlpwa:update-ready` or `nlpwa:update-failed` CustomEvents on `document` and invokes the corresponding `onUpdateReady` or `onUpdateFailed` callbacks.
 
 ### Step 6 — Atomic Commit (`commitStaged`)
 
@@ -264,6 +271,7 @@ Failures during staging never corrupt the running application:
 |---|---|---|
 | `CHECK_UPDATE` | `{ type }` | Client requests an immediate update check |
 | `APPLY_UPDATE` | `{ type }` | Client asks SW to commit staged update immediately |
+| `UPDATE_FAILED` | `{ type, version, failed, error, persistent, hasHashMismatch }` | Staging or hash verification failed |
 
 ### Client usage
 
@@ -273,8 +281,13 @@ import { register, applyUpdate } from '/client.js';
 register('/sw.js', {
   onUpdateReady: ({ version, partial }) => {
     console.log('Update ready:', version, 'Partial:', partial);
-    // Show update notification UI
     showUpdateBanner();
+  },
+  onUpdateFailed: ({ version, failed, error, persistent, hasHashMismatch }) => {
+    console.warn('Update failed:', error, failed);
+    if (persistent && hasHashMismatch) {
+      console.warn('Persistent hash mismatch detected - check if CDN or host alters assets');
+    }
   },
 });
 

@@ -136,7 +136,7 @@ cache collisions.
 
 How each downloaded update file is checked against the hash in the update manifest.
 
-- `'strict'` - a mismatch (or an HTML error page served with status 200) fails that file. The update is not applied until every file verifies, and it is retried on the next check. The running version is untouched.
+- `'strict'` - a mismatch (or an HTML error page served with status 200) fails that file. The update is not applied until every file verifies, and it is retried on the next check. If consecutive retries repeatedly fail on the same file due to hash mismatches, a persistent failure warning is logged and broadcast to clients via `UPDATE_FAILED`. The running version is untouched.
 - `'warn'` - mismatches are logged but the file is stored. Use this only if a proxy or CDN rewrites your files after the build, which makes the build-time hash impossible to match.
 - `false` - no verification.
 

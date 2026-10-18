@@ -11,6 +11,17 @@ export interface UpdateAppliedData {
   version?: string;
 }
 
+export interface UpdateFailedData {
+  version?: string;
+  failed?: string[];
+  failedDetails?: Record<string, string>;
+  error?: string;
+  retryCount?: number;
+  nextRetryAt?: number | null;
+  persistent?: boolean;
+  hasHashMismatch?: boolean;
+}
+
 export interface CacheInfoData {
   quota: number | null;
   usage: number | null;
@@ -65,6 +76,8 @@ export interface RegisterOptions {
   onUpdateReady?: (data: UpdateReadyData) => void;
   /** Called when the SW signals that the app is already up to date */
   onNoUpdate?: (data: NoUpdateData) => void;
+  /** Called when an update fails to stage or verify */
+  onUpdateFailed?: (data: UpdateFailedData) => void;
   /** Called when an update is committed/applied (in this tab or another tab) */
   onUpdateApplied?: (data: UpdateAppliedData) => void;
   /** Automatically apply update and reload on update (default: false) */
@@ -109,6 +122,14 @@ export function onUpdateReady(callback?: (data: UpdateReadyData) => void): () =>
 export function onNoUpdate(callback?: (data: NoUpdateData) => void): () => void;
 
 /**
+ * Register a handler to be called when the SW signals that an update failed to stage or verify.
+ *
+ * @param callback Callback receiving error and failure details
+ * @returns Unsubscribe function
+ */
+export function onUpdateFailed(callback?: (data: UpdateFailedData) => void): () => void;
+
+/**
  * Register a handler to be called when an update is committed/applied (in this tab or another tab).
  *
  * @param callback Callback receiving applied version
@@ -150,6 +171,7 @@ export interface NLPWAClientAPI {
   register: typeof register;
   onUpdateReady: typeof onUpdateReady;
   onNoUpdate: typeof onNoUpdate;
+  onUpdateFailed: typeof onUpdateFailed;
   onUpdateApplied: typeof onUpdateApplied;
   applyUpdate: typeof applyUpdate;
   requestUpdateCheck: typeof requestUpdateCheck;

@@ -1,5 +1,5 @@
 import { MESSAGE_TYPES } from '../shared/constants.js';
-import { onSWMessage, sendToSW } from './messaging.js';
+import { onSWMessage, sendToSW, requestFromSW } from './messaging.js';
 
 /**
  * Register a handler to be called when the SW signals an update is ready.
@@ -118,32 +118,40 @@ export function onUpdateFailed(callback) {
  * Switch to the staged update, then reload the page.
  *
  * The SW builds updates in the background and only makes them live on a page
- * load. This asks it to switch right now (it replies UPDATE_APPLIED), then
- * reloads. If the SW doesn't answer within `timeoutMs` the page reloads
- * anyway, because a reload is itself a navigation that triggers the switch.
+ * load. This asks it to switch right now via a dedicated MessageChannel port
+ * (it replies with APPLY_UPDATE_RESULT { applied }), then reloads.
  *
  * Call this from your update prompt's "Refresh" button.
  *
  * @param {{ timeoutMs?: number, reload?: boolean }} [options]
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>}
  */
 export async function applyUpdate({ timeoutMs = 3000, reload = true } = {}) {
+  let applied = null;
   try {
-    let off = () => {};
-    const reply = new Promise((resolve) => {
-      const timer = setTimeout(resolve, timeoutMs);
-      off = onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, () => { clearTimeout(timer); resolve(); });
-    });
-    await sendToSW({ type: MESSAGE_TYPES.APPLY_UPDATE });
-    await reply;
-    off();
-  } catch {
-    // no service worker available - fall through to the reload
+    const res = await requestFromSW(
+      MESSAGE_TYPES.APPLY_UPDATE,
+      {},
+      MESSAGE_TYPES.APPLY_UPDATE_RESULT,
+      timeoutMs
+    );
+    if (res && typeof res.applied === 'boolean') {
+      applied = res.applied;
+    }
+  } catch (err) {
+    // If no SW available or timeout occurs, log warning and fall through if reload desired
+    console.warn('[NLPWA] applyUpdate: SW reply timed out or not available:', err.message);
   }
-  document.dispatchEvent(
-    new CustomEvent('nlpwa:update-applied', { bubbles: true })
-  );
+
+  // If the SW explicitly replied that no update could be applied (e.g. not ready), abort reload
+  if (applied === false) {
+    console.warn('[NLPWA] applyUpdate: no staged update ready to commit, reload aborted.');
+    return false;
+  }
+
   if (reload) {
     window.location.reload();
   }
+  return true;
 }
+

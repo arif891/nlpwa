@@ -55,7 +55,8 @@
     "nlpwa": "./bin/nlpwa.js"
   },
   "scripts": {
-    "build": "rollup -c && npm run sync:example",
+    "build": "rollup -c --environment PROD && npm run sync:example",
+    "build:dev": "rollup -c && npm run sync:example",
     "build:prod": "rollup -c --environment PROD && npm run sync:example",
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",

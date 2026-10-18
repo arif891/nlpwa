@@ -14,7 +14,7 @@
  *   nlpwa update [options]
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, statSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -265,12 +265,18 @@ async function cmdUpdate(args) {
   writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
   console.log(`  ${c.green}+${c.reset} ${c.cyan}/${cleanConfigPath}${c.reset} (generated from config.js)`);
 
-  // Update hash for config.json now that it is written
+  // Update hash and size for config.json now that it is written
   const configEntry = files.find(f => f.path === (runtimeConfig.configPath || '/config.json'));
+  const configSize = statSync(configJsonPath).size;
   if (configEntry) {
     configEntry.hash = hashFile(configJsonPath);
+    configEntry.size = configSize;
   } else {
-    files.unshift({ path: runtimeConfig.configPath || '/config.json', hash: hashFile(configJsonPath) });
+    files.unshift({
+      path: runtimeConfig.configPath || '/config.json',
+      hash: hashFile(configJsonPath),
+      size: configSize,
+    });
   }
 
   for (const { path: urlPath, hash } of files) {

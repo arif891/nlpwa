@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import {
   findConfigFile,
@@ -121,12 +121,18 @@ export function nlpwaPlugin(options = {}) {
       const jsonIndent = options.pretty ? 2 : 0;
       writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
 
-      // Update hash for config.json now that it is written
+      // Update hash and size for config.json now that it is written
       const configEntry = files.find(f => f.path === runtimeConfig.configPath);
+      const configSize = statSync(configJsonPath).size;
       if (configEntry) {
         configEntry.hash = hashFile(configJsonPath);
+        configEntry.size = configSize;
       } else {
-        files.unshift({ path: runtimeConfig.configPath, hash: hashFile(configJsonPath) });
+        files.unshift({
+          path: runtimeConfig.configPath,
+          hash: hashFile(configJsonPath),
+          size: configSize,
+        });
       }
 
       // 4. Emit update API outputs

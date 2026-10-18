@@ -49,7 +49,8 @@ export function isUserEditing() {
  * @param {Function} [options.onNoUpdate]            called when SW signals already up to date
  * @param {Function} [options.onUpdateFailed]        called when SW signals update failed or hash mismatch
  * @param {Function} [options.onUpdateApplied]       called when update is committed across any tab
- * @param {Function} [options.onUpdatePrompt]        called when auto-reload is deferred due to active user editing
+ * @param {Function} [options.onUpdatePrompt]        called when auto-reload is deferred due to active user editing or shouldDeferReload
+ * @param {Function} [options.shouldDeferReload]     predicate ({ version, reason }) => boolean to defer reload (e.g. unsaved state, pending uploads)
  * @param {boolean}  [options.autoReload]            automatically reload on update (default: false)
  * @param {boolean}  [options.reloadOnUpdateApplied] automatically reload when another tab applies update
  * @param {boolean}  [options.checkOnFocus]          check for update when tab regains focus (default: true)
@@ -83,17 +84,22 @@ export async function register(swUrl = '/sw.js', options = {}) {
       options.onUpdateReady(data);
     }
     if (options.autoReload) {
-      if (!isUserEditing()) {
+      const shouldDefer = typeof options.shouldDeferReload === 'function'
+        ? Boolean(options.shouldDeferReload({ version: data?.version, reason: 'ready' }))
+        : isUserEditing();
+
+      if (!shouldDefer) {
         applyUpdate();
       } else {
-        console.warn('[NLPWA] Auto-reload deferred: user is actively editing form inputs. Offering update prompt instead to protect unsaved edits.');
+        const reason = typeof options.shouldDeferReload === 'function' && !isUserEditing() ? 'deferred' : 'editing';
+        console.warn(`[NLPWA] Auto-reload deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
-          options.onUpdatePrompt(data);
+          options.onUpdatePrompt({ ...data, reason });
         }
         document.dispatchEvent(
           new CustomEvent('nlpwa:update-prompt', {
             bubbles: true,
-            detail: { version: data.version, reason: 'editing' },
+            detail: { version: data?.version, reason },
           })
         );
       }
@@ -102,6 +108,8 @@ export async function register(swUrl = '/sw.js', options = {}) {
 
   // ── Update-applied handler (cross-tab coordination) ────────────────────────
   let unsubscribeApplied = onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, (data) => {
+    if (data?.applied === false) return;
+
     document.dispatchEvent(
       new CustomEvent('nlpwa:update-applied', {
         bubbles: true,
@@ -112,19 +120,24 @@ export async function register(swUrl = '/sw.js', options = {}) {
       options.onUpdateApplied(data);
     }
     if (options.reloadOnUpdateApplied || options.autoReload) {
-      if (!isUserEditing()) {
+      const shouldDefer = typeof options.shouldDeferReload === 'function'
+        ? Boolean(options.shouldDeferReload({ version: data?.version, reason: 'applied' }))
+        : isUserEditing();
+
+      if (!shouldDefer) {
         window.location.reload();
       } else {
-        console.warn('[NLPWA] Reload on update-applied deferred: user is actively editing form inputs. Offering update prompt instead to protect unsaved edits.');
+        const reason = typeof options.shouldDeferReload === 'function' && !isUserEditing() ? 'deferred' : 'editing';
+        console.warn(`[NLPWA] Reload on update-applied deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
-          options.onUpdatePrompt({ version: data?.version, updateApplied: true });
+          options.onUpdatePrompt({ version: data?.version, updateApplied: true, reason });
         } else if (typeof options.onUpdateReady === 'function') {
-          options.onUpdateReady({ version: data?.version, updateApplied: true });
+          options.onUpdateReady({ version: data?.version, updateApplied: true, reason });
         }
         document.dispatchEvent(
           new CustomEvent('nlpwa:update-prompt', {
             bubbles: true,
-            detail: { version: data?.version, updateApplied: true, reason: 'editing' },
+            detail: { version: data?.version, updateApplied: true, reason },
           })
         );
       }

@@ -101,7 +101,7 @@ export function release() {
 
 /**
  * Delete every offline cache that is neither in `keep` nor the runtime cache.
- * Managed names are versioned offline caches (`<base>@…`).
+ * Managed names are the unversioned base cache (`base`) and versioned caches (`<base>@…`).
  *
  * @param {{ base: string, runtime: string, keep: Array<string|undefined> }} opts
  */
@@ -111,7 +111,7 @@ export async function cleanupCaches({ base, runtime, keep }) {
   await Promise.all(
     names
       .filter((name) => name !== runtime && name !== META_CACHE && !keepSet.has(name))
-      .filter((name) => name.startsWith(`${base}@`))
+      .filter((name) => name === base || name.startsWith(`${base}@`))
       .map((name) => {
         console.log(`[NLPWA] Removed old cache: ${name}`);
         return caches.delete(name);

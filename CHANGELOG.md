@@ -34,8 +34,22 @@ All notable changes to `nlpwa` will be documented in this file.
 - **Tighter Prefix Matching**: In `src/shared/hash.js`, `hashMatches()` now requires a minimum of 32 hexadecimal characters (128-bit match), matching the CLI digest output and eliminating short 8-character prefix acceptance.
 
 #### Cache Cleanup
-- **Removed Legacy Unversioned Cache Migration**: Removed legacy `name === base` unversioned offline cache deletion logic from `store.js`. Staged and active caches strictly follow the versioned pointer architecture (`offline@<version>-<id>`).
+- **Retain Previous Cache on SW Activation**: Fixed `sweepOrphanCaches()` to include `(await getActive())?.previousCache` in its keep list, ensuring `retainPreviousVersionCache` is not dropped on SW engine activation while older tabs remain open.
+- **Unversioned Offline Cache Cleanup on Update**: Maintained unversioned base cache cleanup (`name === base`) in `cleanupCaches()`. When an app installed via the no-manifest fallback (`precacheWithoutManifest`) or an older version receives its first update, the unversioned `offline` cache is cleanly removed upon committing the versioned cache, preventing leaked duplicate caches.
 - **Retained & Documented `precacheWithoutManifest`**: Maintained `precacheWithoutManifest` as the supported fallback installation path for projects that have not yet executed `nlpwa update`.
+
+#### Messaging & Update Coordination
+- **Disambiguated `UPDATE_APPLIED`**: Added `APPLY_UPDATE_RESULT` for 1-to-1 replies via dedicated `MessageChannel` ports in `applyUpdate()`. This prevents polluting the global window message bus with undefined versions, avoids duplicate `nlpwa:update-applied` event dispatches on the initiating tab, and ensures tabs never reload when `applied: false`.
+- **Custom Deferral Predicate (`shouldDeferReload`)**: Added `shouldDeferReload({ version, reason })` option to `NLPWAClient.register()`, allowing applications to defer reloads based on custom in-memory dirty state or background uploads in progress in addition to active element focus.
+
+#### Lock Granularity & Manifest Hashing
+- **Narrowed Concurrency Lock**: Narrowed `checkForUpdate`'s lock to only wrap actual staging writes and commits. Tier 1 and Tier 2 network roundtrips no longer hold the lock, ensuring that navigations and `commitIfReady()` are never blocked while checks are in flight.
+- **Manifest File Sizes**: The CLI and build plugin now explicitly emit file `size` in `info.json` manifests, ensuring threshold checks for `maxVerifyBytes` do not rely on missing or stripped `Content-Length` headers. Documented that files over `maxVerifyBytes` (20 MB default) bypass in-memory SHA-256 hashing even under `verifyHashes: 'strict'` to prevent low-end device OOM crashes.
 
 #### Package Exports
 - **Trimmed Duplicate Exports**: Removed duplicate `"./config"` export in `package.json` in favor of `"./config.json"`.
+
+#### Tooling, CI & Documentation
+- **Build Drift Resolution**: Updated `npm run build` to build production minified bundles matching tracked `example/` assets, avoiding 3.5k lines of unminified diff on build. Added `npm run build:dev` for unminified debugging.
+- **GitHub Actions CI Workflow**: Added `.github/workflows/ci.yml` running across Node 18, 20, and 22 with unit tests, production build drift checks (`check:drift`), and Playwright E2E tests.
+- **API & Event Documentation**: Documented `onUpdateFailed` in options table, added `nlpwa:update-failed` and `nlpwa:update-prompt` event examples to `README.md`, removed stale `fifo` mention from `docs/ARCHITECTURE.md`, and added an objective "When Workbox is the Better Choice" section.

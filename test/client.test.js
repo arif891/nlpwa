@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isUserEditing, register } from '../src/client/register.js';
+import { isUserEditing, register, applyUpdate } from '../src/client/register.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
 
 test('isUserEditing: correctly identifies when user has focused input/editing fields', () => {
@@ -144,6 +144,179 @@ test('register: autoReload is suppressed when user is editing, offering prompt i
     }
   }
 });
+
+test('register: shouldDeferReload predicate defers autoReload and offers prompt for in-memory unsaved state', async () => {
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+
+  try {
+    const swListeners = new Map();
+    const docEvents = [];
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          async register() {
+            return { scope: '/' };
+          },
+          addEventListener(event, fn) {
+            if (!swListeners.has(event)) swListeners.set(event, []);
+            swListeners.get(event).push(fn);
+          },
+          removeEventListener(event, fn) {
+            const list = swListeners.get(event) || [];
+            swListeners.set(event, list.filter(l => l !== fn));
+          },
+          controller: null,
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    // User is NOT focusing any form element (e.g. focused on plain BODY/DIV)
+    Object.defineProperty(globalThis, 'document', {
+      value: {
+        activeElement: { tagName: 'DIV' },
+        dispatchEvent(evt) {
+          docEvents.push(evt);
+          return true;
+        },
+        addEventListener() {},
+        removeEventListener() {},
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    let promptCalled = false;
+    let promptData = null;
+    let uploadInProgress = true;
+
+    const handle = await register('/sw.js', {
+      autoReload: true,
+      pollIntervalMs: 0,
+      shouldDeferReload: ({ version, reason }) => {
+        return uploadInProgress;
+      },
+      onUpdatePrompt: (data) => {
+        promptCalled = true;
+        promptData = data;
+      },
+    });
+
+    // Simulate SW broadcasting UPDATE_READY
+    const messageListeners = swListeners.get('message') || [];
+    for (const listener of messageListeners) {
+      listener({
+        data: {
+          type: MESSAGE_TYPES.UPDATE_READY,
+          version: '2.0.0',
+        },
+      });
+    }
+
+    assert.equal(promptCalled, true, 'Prompt called because shouldDeferReload returned true');
+    assert.equal(promptData.version, '2.0.0');
+    assert.equal(promptData.reason, 'deferred');
+
+    const promptEvt = docEvents.find(e => e.type === 'nlpwa:update-prompt');
+    assert.ok(promptEvt, 'Dispatched nlpwa:update-prompt event');
+    assert.equal(promptEvt.detail.reason, 'deferred');
+
+    handle?.unsubscribe();
+  } finally {
+    if (origDocDesc) {
+      Object.defineProperty(globalThis, 'document', origDocDesc);
+    } else {
+      delete globalThis.document;
+    }
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});
+
+test('applyUpdate: aborts reload when SW replies applied: false', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origWinDesc = Object.getOwnPropertyDescriptor(globalThis, 'window');
+
+  try {
+    let reloadCalled = false;
+    globalThis.window = {
+      location: {
+        reload() {
+          reloadCalled = true;
+        },
+      },
+    };
+
+    // Mock MessageChannel
+    class MockPort {
+      constructor() {
+        this.onmessage = null;
+      }
+      postMessage(msg) {
+        if (this._partner?.onmessage) {
+          this._partner.onmessage({ data: msg });
+        }
+      }
+      close() {}
+    }
+    class MockChannel {
+      constructor() {
+        this.port1 = new MockPort();
+        this.port2 = new MockPort();
+        this.port1._partner = this.port2;
+        this.port2._partner = this.port1;
+      }
+    }
+    globalThis.MessageChannel = MockChannel;
+
+    const mockSW = {
+      postMessage(msg, ports) {
+        // Reply with applied: false
+        if (ports?.[0]) {
+          ports[0].postMessage({
+            type: MESSAGE_TYPES.APPLY_UPDATE_RESULT,
+            requestId: msg.requestId,
+            data: { applied: false },
+          });
+        }
+      },
+    };
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockSW,
+          ready: Promise.resolve({ active: mockSW }),
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const result = await applyUpdate({ reload: true });
+    assert.equal(result, false, 'applyUpdate returns false when applied is false');
+    assert.equal(reloadCalled, false, 'window.location.reload must not be called when applied is false');
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+    if (origWinDesc) {
+      Object.defineProperty(globalThis, 'window', origWinDesc);
+    } else {
+      delete globalThis.window;
+    }
+    delete globalThis.MessageChannel;
+  }
+});
+
 
 test('register: checkOnRegister sends CHECK_UPDATE to SW without blocking', async () => {
   const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');

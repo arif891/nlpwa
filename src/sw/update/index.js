@@ -34,15 +34,7 @@ async function broadcast(message) {
  * @returns {Promise<{ updated: boolean, version?: string }>}
  */
 export async function checkForUpdate(options = {}) {
-  if (!tryAcquire()) {
-    console.log('[NLPWA] Update already in progress, skipping.');
-    return { updated: false };
-  }
-  try {
-    return await runUpdateCheck(options);
-  } finally {
-    release();
-  }
+  return await runUpdateCheck(options);
 }
 
 async function runUpdateCheck({ force = false } = {}) {
@@ -78,10 +70,16 @@ async function runUpdateCheck({ force = false } = {}) {
 
   const discardStaged = async () => {
     if (staged) {
-      console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
-      await clearStaged();
-      if (staged.cache) {
-        await caches.delete(staged.cache).catch(() => {});
+      if (tryAcquire()) {
+        try {
+          console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
+          await clearStaged();
+          if (staged.cache) {
+            await caches.delete(staged.cache).catch(() => {});
+          }
+        } finally {
+          release();
+        }
       }
     }
   };
@@ -114,40 +112,49 @@ async function runUpdateCheck({ force = false } = {}) {
     : `[NLPWA] Update available: v${active.version} → v${serverManifest.version}`);
 
   // ── Stage (active version keeps serving) ─────────────────────────────────
-  const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
+  // Narrow lock: acquire only around staging cache writes and commit
+  if (!tryAcquire()) {
+    console.log('[NLPWA] Staging already in progress, skipping.');
+    return { updated: false };
+  }
+  try {
+    const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
 
-  if (result.status === 'incomplete') {
-    const errorMsg = result.hasHashMismatch
-      ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
-      : result.quotaExceeded
-        ? `Storage quota exceeded while staging ${result.failed.join(', ')}`
-        : `Failed to download or verify ${result.failed.join(', ')}`;
+    if (result.status === 'incomplete') {
+      const errorMsg = result.hasHashMismatch
+        ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
+        : result.quotaExceeded
+          ? `Storage quota exceeded while staging ${result.failed.join(', ')}`
+          : `Failed to download or verify ${result.failed.join(', ')}`;
+
+      await broadcast({
+        type: MESSAGE_TYPES.UPDATE_FAILED,
+        version: serverManifest.version,
+        failed: result.failed,
+        failedDetails: result.failedDetails,
+        error: errorMsg,
+        retryCount: result.retryCount,
+        nextRetryAt: result.nextRetryAt,
+        persistent: Boolean(result.persistent),
+        hasHashMismatch: Boolean(result.hasHashMismatch),
+        quotaExceeded: Boolean(result.quotaExceeded),
+      });
+
+      return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
+    }
+
+    if (isFresh) {
+      await commitStaged();
+      return { updated: false, version: serverManifest.version, initial: true };
+    }
 
     await broadcast({
-      type: MESSAGE_TYPES.UPDATE_FAILED,
+      type: MESSAGE_TYPES.UPDATE_READY,
       version: serverManifest.version,
-      failed: result.failed,
-      failedDetails: result.failedDetails,
-      error: errorMsg,
-      retryCount: result.retryCount,
-      nextRetryAt: result.nextRetryAt,
-      persistent: Boolean(result.persistent),
-      hasHashMismatch: Boolean(result.hasHashMismatch),
-      quotaExceeded: Boolean(result.quotaExceeded),
+      staged: true,
     });
-
-    return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
+    return { updated: true, version: serverManifest.version, staged: true };
+  } finally {
+    release();
   }
-
-  if (isFresh) {
-    await commitStaged();
-    return { updated: false, version: serverManifest.version, initial: true };
-  }
-
-  await broadcast({
-    type: MESSAGE_TYPES.UPDATE_READY,
-    version: serverManifest.version,
-    staged: true,
-  });
-  return { updated: true, version: serverManifest.version, staged: true };
 }

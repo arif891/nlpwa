@@ -22,18 +22,18 @@ import { resolvePathWithBase } from '../../shared/url.js';
  * hashed snapshot.
  */
 export async function precacheFiles() {
-  if (!tryAcquire()) return;
+  let manifest = null;
   try {
-    let manifest = null;
+    manifest = await fetchServerInfo();
+  } catch (err) {
+    console.warn(`[NLPWA] No update manifest at install (${err.message})`);
+  }
+
+  const activeSnapshot = await loadCachedSnapshot();
+
+  if (manifest) {
+    if (!tryAcquire()) return;
     try {
-      manifest = await fetchServerInfo();
-    } catch (err) {
-      console.warn(`[NLPWA] No update manifest at install (${err.message})`);
-    }
-
-    const activeSnapshot = await loadCachedSnapshot();
-
-    if (manifest) {
       const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
       const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
       if (result.status === 'incomplete' && !activeSnapshot) {
@@ -43,13 +43,18 @@ export async function precacheFiles() {
         await commitStaged();
       }
       return result;
+    } finally {
+      release();
     }
+  }
 
-    if (!activeSnapshot) {
+  if (!activeSnapshot) {
+    if (!tryAcquire()) return;
+    try {
       return await precacheWithoutManifest();
+    } finally {
+      release();
     }
-  } finally {
-    release();
   }
 }
 

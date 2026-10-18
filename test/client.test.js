@@ -228,3 +228,92 @@ test('register: checkOnRegister: false suppresses initial check', async () => {
     }
   }
 });
+
+test('register: registers periodicSync when supported and options.periodicSync is default/true', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  try {
+    const mockController = { postMessage() {} };
+    let periodicSyncRegistered = null;
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockController,
+          ready: Promise.resolve({ active: mockController }),
+          async register() {
+            return {
+              scope: '/',
+              periodicSync: {
+                async register(tag, opts) {
+                  periodicSyncRegistered = { tag, opts };
+                },
+              },
+            };
+          },
+          addEventListener() {},
+          removeEventListener() {},
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const handle = await register('/sw.js', { pollIntervalMs: 86400000, checkOnRegister: false });
+    assert.ok(periodicSyncRegistered, 'periodicSync should be registered');
+    assert.equal(periodicSyncRegistered.tag, 'nlpwa-update-check');
+    assert.equal(periodicSyncRegistered.opts.minInterval, 86400000);
+    handle?.unsubscribe();
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});
+
+test('register: periodicSync: false suppresses periodicSync registration', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  try {
+    const mockController = { postMessage() {} };
+    let periodicSyncRegistered = null;
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockController,
+          ready: Promise.resolve({ active: mockController }),
+          async register() {
+            return {
+              scope: '/',
+              periodicSync: {
+                async register(tag, opts) {
+                  periodicSyncRegistered = { tag, opts };
+                },
+              },
+            };
+          },
+          addEventListener() {},
+          removeEventListener() {},
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const handle = await register('/sw.js', {
+      periodicSync: false,
+      pollIntervalMs: 86400000,
+      checkOnRegister: false,
+    });
+    assert.equal(periodicSyncRegistered, null, 'periodicSync should not be registered');
+    handle?.unsubscribe();
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});
+

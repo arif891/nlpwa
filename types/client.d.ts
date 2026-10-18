@@ -93,6 +93,8 @@ export interface RegisterOptions {
   focusThrottleMs?: number;
   /** Client-side poll interval in ms (default: 1 hour) */
   pollIntervalMs?: number;
+  /** Enable Periodic Background Sync if supported (default: true) */
+  periodicSync?: boolean;
 }
 
 export interface RegistrationHandle {

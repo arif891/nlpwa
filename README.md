@@ -256,7 +256,7 @@ An update is built in a brand-new `offline@…` cache while the active one keeps
 ## Two-Tier Update Flow
 
 ```
-1. SW active → triggers check (on activate + every interval + tab focus)
+1. Client triggers check (on register + every interval + tab focus + periodic sync)
 2. Tier 1: GET /api/update/version.json → { version }
 3. Compare against the live version → already up to date? STOP immediately.
 4. Tier 2: GET /api/update/info.json → { version, files: [{path, hash}] }
@@ -293,6 +293,8 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 | `autoReload` | `boolean` | `false` | Automatically apply update and reload when staged (deferred to prompt if editing inputs) |
 | `reloadOnUpdateApplied` | `boolean` | `false` | Automatically reload this tab if another tab commits an update (deferred to prompt if editing) |
 | `checkOnFocus` | `boolean` | `true` | Check for update when tab gains focus |
+| `checkOnRegister` | `boolean` | `true` | Check for update on initial registration via non-blocking message |
+| `periodicSync` | `boolean` | `true` | Periodic Background Sync for installed PWAs if supported |
 | `focusThrottleMs` | `number` | `3600000` | Min ms between focus-triggered checks (1 hr) |
 | `pollIntervalMs` | `number` | `3600000` | Client interval (ms) to check updates while tab is active (1 hr) |
 
@@ -314,12 +316,12 @@ Standard PWAs struggle with two common lifecycle challenges:
 
 NLPWA solves both cleanly:
 
-### 1. Protect Open Tabs with `retainPreviousVersionCache`
-Enable in `config.js`:
+### 1. Protect Open Tabs with `retainPreviousVersionCache` (Enabled by default)
+NLPWA preserves the immediate prior offline cache (`v(N-1)`) by default (`retainPreviousVersionCache: true`):
 ```js
 // config.js
 export default {
-  retainPreviousVersionCache: true, // keeps immediate prior version's cache in storage
+  retainPreviousVersionCache: true, // default: true; set to false to immediately prune on commit
 };
 ```
 When enabled, the SW preserves the immediate prior offline cache (`v(N-1)`).

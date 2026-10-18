@@ -94,7 +94,7 @@ updateAPI: {
 
 ---
 
-### Polling for Updates · Client SDK (`pollIntervalMs`)
+### Polling for Updates · Client SDK (`pollIntervalMs`, `periodicSync`)
 
 Because modern browsers terminate idle Service Workers after ~30 seconds of inactivity, in-worker `setInterval` polling cannot run reliably when the SW is idle. Reliable periodic polling is configured via the **client SDK** running in open browser tabs:
 
@@ -104,9 +104,11 @@ import { NLPWAClient } from 'nlpwa/client';
 NLPWAClient.register('/sw.js', {
   pollIntervalMs: 60 * 60 * 1000, // Poll every hour while the app is open
   checkOnFocus: true,             // Check whenever user switches back to the tab
-  periodicSync: true,             // Periodic Background Sync for installed PWAs
+  periodicSync: true,             // Periodic Background Sync for installed PWAs (default: true)
 });
 ```
+
+- `periodicSync` (`boolean`, default: `true`): When true (or omitted), automatically registers Periodic Background Sync with the browser using `minInterval: pollIntervalMs` if supported for installed PWAs. Pass `periodicSync: false` to opt out.
 
 ---
 

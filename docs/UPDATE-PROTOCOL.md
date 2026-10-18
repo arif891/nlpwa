@@ -42,10 +42,10 @@ Fetched **only** if Tier 1 reports a different version (or the SW engine version
 {
   "version": "1.0.1",
   "files": [
-    { "path": "/config.json",       "hash": "15142550" },
-    { "path": "/index.html",        "hash": "d7e8f9a0" },
-    { "path": "/app.js",            "hash": "a1b2c3d4" },
-    { "path": "/styles/main.css",   "hash": "e5f6a7b8" }
+    { "path": "/config.json",       "hash": "15142550a1b2c3d4e5f6789012345678" },
+    { "path": "/index.html",        "hash": "d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2" },
+    { "path": "/app.js",            "hash": "a1b2c3d4e5f6789012345678abcdef01" },
+    { "path": "/styles/main.css",   "hash": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" }
   ]
 }
 ```
@@ -57,7 +57,7 @@ Fetched **only** if Tier 1 reports a different version (or the SW engine version
 | `version` | `string` | ✅ | Semantic version with content digest (derived deterministically from manifest hash, e.g. `1.0.0-a1b2c3d4e5f6`) |
 | `files` | `array` | ✅ | List of tracked offline files and their hashes |
 | `files[].path` | `string` | ✅ | URL pathname starting with `/` |
-| `files[].hash` | `string` | ✅ | Stable content hash (SHA-256 hex string or its first 8+ hex chars; the built-in tools emit 32) |
+| `files[].hash` | `string` | ✅ | Stable content hash (32-character prefix or full 64-character SHA-256 hex string; minimum 32 characters required) |
 
 ---
 
@@ -273,6 +273,7 @@ Failures during staging never corrupt the running application:
 | `UPDATE_READY` | `{ type, version }` | Staged update is complete; client should prompt user |
 | `UPDATE_APPLIED` | `{ type, applied }` | Staged update has been switched to active; client may reload |
 | `NO_UPDATE` | `{ type, version }` | Version check ran; client is already up to date |
+| `UPDATE_FAILED` | `{ type, version, failed, error, persistent, hasHashMismatch }` | Staging or hash verification failed |
 
 ### Client → SW
 
@@ -280,7 +281,6 @@ Failures during staging never corrupt the running application:
 |---|---|---|
 | `CHECK_UPDATE` | `{ type }` | Client requests an immediate update check |
 | `APPLY_UPDATE` | `{ type }` | Client asks SW to commit staged update immediately |
-| `UPDATE_FAILED` | `{ type, version, failed, error, persistent, hasHashMismatch }` | Staging or hash verification failed |
 
 ### Client usage
 
@@ -314,7 +314,6 @@ Updates are checked through complementary triggers:
 
 | Trigger | Who | Frequency |
 |---|---|---|
-| Activation (Background) | SW | Unblocked background check when SW activates (never blocks page fetch) |
 | Client Registration | Client | Automatically on registration via non-blocking `CHECK_UPDATE` message |
 | Active Tab Interval | Client | Every `options.pollIntervalMs` (default: 1 hr) while tab is open |
 | Tab focus / visibility | Client | Throttled by `options.focusThrottleMs` (default: 1 hr) |

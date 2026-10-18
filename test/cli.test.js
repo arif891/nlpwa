@@ -174,3 +174,11 @@ test('cli update: expands glob patterns in precache across directories', () => {
   ]);
 });
 
+test('cli help: init documents copying config.json (not config.js)', () => {
+  const res = spawnSync(process.execPath, [CLI, '--help'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and config\.json/);
+  assert.doesNotMatch(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and config\.js\b/);
+});
+
+

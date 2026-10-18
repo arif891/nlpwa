@@ -7,7 +7,7 @@ import { MESSAGE_TYPES } from '../shared/constants.js';
  * @returns {Promise<void>}
  */
 export async function sendToSW(message) {
-  if (!('serviceWorker' in navigator)) return;
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
   const registration = await navigator.serviceWorker.ready;
   const sw = navigator.serviceWorker.controller || registration?.active;
   sw?.postMessage(message);
@@ -21,6 +21,9 @@ export async function sendToSW(message) {
  * @returns {Function}        call to unsubscribe
  */
 export function onSWMessage(type, handler) {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return () => {};
+  }
   const listener = (event) => {
     if (event.data?.type === type) handler(event.data);
   };
@@ -111,5 +114,45 @@ export async function requestFromSW(type, payload = {}, replyType = '', timeoutM
     navigator.serviceWorker.addEventListener('message', listener);
     sw.postMessage({ type, requestId, ...payload });
   });
+}
+
+/**
+ * Query active and staged versions from the Service Worker.
+ *
+ * @param {number} [timeoutMs]
+ * @returns {Promise<{ activeVersion: string|null, stagedVersion: string|null, swVersion: string|null }>}
+ */
+export async function getVersion(timeoutMs = 5000) {
+  try {
+    const res = await requestFromSW(
+      MESSAGE_TYPES.GET_VERSION,
+      {},
+      MESSAGE_TYPES.VERSION_INFO,
+      timeoutMs
+    );
+    return res || { activeVersion: null, stagedVersion: null, swVersion: null };
+  } catch {
+    return { activeVersion: null, stagedVersion: null, swVersion: null };
+  }
+}
+
+/**
+ * Query current update lifecycle status from the Service Worker.
+ *
+ * @param {number} [timeoutMs]
+ * @returns {Promise<'idle' | 'checking' | 'staging' | 'ready' | 'applying'>}
+ */
+export async function getStatus(timeoutMs = 5000) {
+  try {
+    const res = await requestFromSW(
+      MESSAGE_TYPES.GET_STATUS,
+      {},
+      MESSAGE_TYPES.STATUS_INFO,
+      timeoutMs
+    );
+    return res?.status || 'idle';
+  } catch {
+    return 'idle';
+  }
 }
 

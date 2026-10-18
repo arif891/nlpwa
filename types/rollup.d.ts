@@ -27,3 +27,13 @@ export interface RollupPluginOptions {
 export function nlpwaPlugin(options?: RollupPluginOptions): Plugin;
 
 export default nlpwaPlugin;
+
+declare module 'virtual:nlpwa-version' {
+  /** The application version resolved at build time */
+  export const APP_VERSION: string;
+  /** The base semver version from config */
+  export const BASE_VERSION: string;
+  /** Composite content hash of tracked files and configuration */
+  export const CONTENT_HASH: string;
+  export default APP_VERSION;
+}

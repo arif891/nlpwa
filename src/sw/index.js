@@ -2,8 +2,9 @@ import { initConfig, loadConfigFromCache } from './config/index.js';
 import { precacheFiles } from './cache/install.js';
 import { getStorageQuotaInfo, cleanRuntimeCache } from './cache/cleanup.js';
 import { handleFetch } from './fetch/index.js';
-import { checkForUpdate } from './update/index.js';
+import { checkForUpdate, getUpdateStatus } from './update/index.js';
 import { commitIfReady, sweepOrphanCaches } from './update/commit.js';
+import { getActive, getStaged } from './cache/store.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
 
 /**
@@ -104,6 +105,33 @@ export function initSW(userConfig = {}) {
             reply(MESSAGE_TYPES.RUNTIME_CLEANED, result);
           } catch (err) {
             reply(MESSAGE_TYPES.RUNTIME_CLEANED, null, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.GET_VERSION:
+        event.waitUntil((async () => {
+          try {
+            const active = await getActive();
+            const staged = await getStaged();
+            reply(MESSAGE_TYPES.VERSION_INFO, {
+              activeVersion: active?.version || null,
+              stagedVersion: staged?.complete ? staged.version : null,
+              swVersion: config.version,
+            });
+          } catch (err) {
+            reply(MESSAGE_TYPES.VERSION_INFO, null, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.GET_STATUS:
+        event.waitUntil((async () => {
+          try {
+            const status = await getUpdateStatus();
+            reply(MESSAGE_TYPES.STATUS_INFO, { status });
+          } catch (err) {
+            reply(MESSAGE_TYPES.STATUS_INFO, null, err);
           }
         })());
         break;

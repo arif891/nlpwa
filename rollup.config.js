@@ -82,10 +82,6 @@ export default async () => {
     },
     external: [
       /^node:/,
-      'node:fs',
-      'node:path',
-      'node:url',
-      'node:crypto',
     ],
     plugins,
   },

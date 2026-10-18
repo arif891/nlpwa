@@ -1,72 +1,68 @@
 import { getConfig } from '../config/index.js';
 import { openActive, getActive, getActiveName, resetMeta } from './store.js';
+import { resolvePathWithBase } from '../../shared/url.js';
 
 // ── Offline cache helpers ────────────────────────────────────────────────────
+
+/**
+ * Match a request against a cache with standard HTML and base path aliases.
+ *
+ * @param {Cache} cache
+ * @param {Request|string} request
+ * @param {CacheQueryOptions} [matchOptions]
+ * @param {string} [base]
+ * @returns {Promise<Response|undefined>}
+ */
+async function matchWithAliases(cache, request, matchOptions, base) {
+  let hit = await cache.match(request, matchOptions);
+  if (hit) return hit;
+
+  let pathname = null;
+  try {
+    pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+  } catch {}
+
+  if (pathname === '/') {
+    return cache.match('/index.html', matchOptions);
+  }
+  if (pathname === '/index.html') {
+    return cache.match('/', matchOptions);
+  }
+  if (base) {
+    const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+    if (pathname === cleanBase || pathname === `${cleanBase}/`) {
+      return (await cache.match(`${cleanBase}/index.html`, matchOptions))
+        ?? (await cache.match('/index.html', matchOptions))
+        ?? (await cache.match(cleanBase, matchOptions))
+        ?? (await cache.match(`${cleanBase}/`, matchOptions));
+    }
+    if (pathname === `${cleanBase}/index.html`) {
+      return (await cache.match(`${cleanBase}/`, matchOptions))
+        ?? (await cache.match(cleanBase, matchOptions))
+        ?? (await cache.match('/index.html', matchOptions));
+    }
+  }
+  return undefined;
+}
 
 /**
  * Read a response from the offline (app shell) cache.
  *
  * @param {Request|string} request
+ * @param {CacheQueryOptions} [matchOptions]
  * @returns {Promise<Response|undefined>}
  */
 export async function getFromOffline(request, matchOptions) {
   const { caches: cacheNames, retainPreviousVersionCache, base } = getConfig();
   const cache = await openActive(cacheNames.offline);
-  let hit = await cache.match(request, matchOptions);
-
-  if (!hit) {
-    let pathname = null;
-    try {
-      pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
-    } catch {}
-    if (pathname === '/') {
-      hit = await cache.match('/index.html', matchOptions);
-    } else if (pathname === '/index.html') {
-      hit = await cache.match('/', matchOptions);
-    } else if (base) {
-      const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
-      if (pathname === cleanBase || pathname === `${cleanBase}/`) {
-        hit = (await cache.match(`${cleanBase}/index.html`, matchOptions))
-          ?? (await cache.match('/index.html', matchOptions))
-          ?? (await cache.match(cleanBase, matchOptions))
-          ?? (await cache.match(`${cleanBase}/`, matchOptions));
-      } else if (pathname === `${cleanBase}/index.html`) {
-        hit = (await cache.match(`${cleanBase}/`, matchOptions))
-          ?? (await cache.match(cleanBase, matchOptions))
-          ?? (await cache.match('/index.html', matchOptions));
-      }
-    }
-  }
+  let hit = await matchWithAliases(cache, request, matchOptions, base);
 
   if (!hit && retainPreviousVersionCache) {
     const active = await getActive();
     if (active?.previousCache) {
       try {
         const prev = await caches.open(active.previousCache);
-        hit = await prev.match(request, matchOptions);
-        if (!hit) {
-          let pathname = null;
-          try {
-            pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
-          } catch {}
-          if (pathname === '/') {
-            hit = await prev.match('/index.html', matchOptions);
-          } else if (pathname === '/index.html') {
-            hit = await prev.match('/', matchOptions);
-          } else if (base) {
-            const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
-            if (pathname === cleanBase || pathname === `${cleanBase}/`) {
-              hit = (await prev.match(`${cleanBase}/index.html`, matchOptions))
-                ?? (await prev.match('/index.html', matchOptions))
-                ?? (await prev.match(cleanBase, matchOptions))
-                ?? (await prev.match(`${cleanBase}/`, matchOptions));
-            } else if (pathname === `${cleanBase}/index.html`) {
-              hit = (await prev.match(`${cleanBase}/`, matchOptions))
-                ?? (await prev.match(cleanBase, matchOptions))
-                ?? (await prev.match('/index.html', matchOptions));
-            }
-          }
-        }
+        hit = await matchWithAliases(prev, request, matchOptions, base);
       } catch {
         // previous cache may have been removed
       }
@@ -146,20 +142,6 @@ export async function putInRuntime(request, response) {
         const cl = headers.get('Content-Length');
         if (cl) {
           headers.set('X-NLPWA-Content-Length', cl);
-        } else {
-          try {
-            const buf = await response.clone().arrayBuffer();
-            headers.set('X-NLPWA-Content-Length', String(buf.byteLength));
-            responseToStore = new Response(buf, {
-              status: response.status,
-              statusText: response.statusText,
-              headers,
-            });
-            await cache.put(request, responseToStore);
-            return;
-          } catch {
-            // fallback
-          }
         }
       }
       responseToStore = new Response(responseToStore.body, {
@@ -183,9 +165,17 @@ export async function putInRuntime(request, response) {
  */
 export async function evictFromRuntime(paths) {
   if (!paths.length) return;
-  const { caches: cacheNames } = getConfig();
+  const { caches: cacheNames, base } = getConfig();
   const cache = await caches.open(cacheNames.runtime);
-  await Promise.all(paths.map(path => cache.delete(path)));
+  await Promise.all(
+    paths.flatMap((path) => {
+      const ops = [cache.delete(path)];
+      if (base) {
+        ops.push(cache.delete(resolvePathWithBase(path, base)));
+      }
+      return ops;
+    })
+  );
 }
 
 /**

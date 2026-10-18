@@ -16,12 +16,14 @@
   "files": [
     "out",
     "bin",
+    "src/shared",
     "types",
+    "test/helpers",
     "README.md",
     "LICENSE"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
   "types": "./types/index.d.ts",
   "exports": {
@@ -49,6 +51,9 @@
       "import": "./out/rollup-plugin.js",
       "default": "./out/rollup-plugin.js"
     },
+    "./testing": {
+      "default": "./test/helpers/fake-env.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -60,7 +65,7 @@
     "build:prod": "rollup -c --environment PROD && npm run sync:example",
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
-    "sync:example": "node -e \"const { copyFileSync } = require('fs'); copyFileSync('out/sw.js', 'example/sw.js'); copyFileSync('out/client.js', 'example/client.js'); console.log('[NLPWA] example/ synced with out/');\"",
+    "sync:example": "node --input-type=module -e \"import { copyFileSync } from 'node:fs'; copyFileSync('out/sw.js', 'example/sw.js'); copyFileSync('out/client.js', 'example/client.js'); console.log('[NLPWA] example/ synced with out/');\"",
     "check:drift": "git diff --exit-code example/",
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa": "node ./bin/nlpwa.js",

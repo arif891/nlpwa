@@ -219,6 +219,19 @@ export default defineConfig({
 });
 ```
 
+#### Webpack & Other Build Systems
+
+For Webpack, Parcel, esbuild, or Next.js static exports, run the CLI tool directly as a `postbuild` script in `package.json`:
+
+```json
+{
+  "scripts": {
+    "build": "webpack --mode production",
+    "postbuild": "nlpwa update --dir ./dist"
+  }
+}
+```
+
 ### 6. Register from your HTML
 
 ```html
@@ -297,7 +310,7 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 |---|---|---|---|
 | `onUpdateReady` | `Function` | — | Called with `{ version }` when update is staged |
 | `onNoUpdate` | `Function` | — | Called with `{ version }` when app is confirmed up to date |
-| `onUpdateFailed` | `Function` | — | Called with `{ version, failed, failedDetails, error, retryCount, nextRetryAt, persistent, hasHashMismatch }` when update staging fails or hash verification fails |
+| `onUpdateFailed` | `Function` | — | Called with `{ version, failed, failedDetails, error, errorCode, quotaExceeded, retryCount, nextRetryAt, persistent, hasHashMismatch }` when update staging fails or hash verification fails |
 | `onUpdateApplied` | `Function` | — | Called with `{ version }` when update is committed across any tab |
 | `onUpdatePrompt` | `Function` | — | Called when auto-reload is deferred because user is editing inputs or shouldDeferReload returns true |
 | `shouldDeferReload` | `Function` | — | Custom predicate `({ version, reason }) => boolean` to defer reload (e.g. unsaved state, uploads in progress) |
@@ -316,6 +329,41 @@ Asks the SW to switch to the staged update via dedicated `MessageChannel` port r
 Options:
 - `timeoutMs` (`number`, default: `3000`): Max wait for SW confirmation before forcing reload.
 - `reload` (`boolean`, default: `true`): Set to `false` in SPAs if you want to commit the staged cache in the SW without triggering a full browser window reload.
+
+### Client: `NLPWAClient.unregister(scope?)`
+
+Unregisters active Service Worker registrations (matching optional scope) and removes active client event listeners.
+
+```js
+import { unregister } from 'nlpwa/client';
+await unregister();
+```
+
+### Client: `NLPWAClient.getVersion()` & `NLPWAClient.getStatus()`
+
+Query live Service Worker and application version and update status directly:
+
+```js
+import { getVersion, getStatus } from 'nlpwa/client';
+
+const versionInfo = await getVersion();
+// { version: '1', activeVersion: '1.0.0-a1b2c3d4e5f6', stagedVersion: null }
+
+const statusInfo = await getStatus();
+// { status: 'idle', activeVersion: '1.0.0-a1b2c3d4e5f6', stagedVersion: null, percent: null }
+```
+
+### Client: `NLPWAClient.onStagingProgress(callback)`
+
+Subscribe to live delta update download and hash verification progress:
+
+```js
+import { onStagingProgress } from 'nlpwa/client';
+
+const unsubscribe = onStagingProgress(({ loaded, total, percent, file }) => {
+  console.log(`Update download: ${percent}% (${loaded}/${total} files) - ${file}`);
+});
+```
 
 ---
 

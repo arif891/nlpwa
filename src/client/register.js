@@ -2,6 +2,11 @@ import { onUpdateReady, onNoUpdate, onUpdateFailed, applyUpdate } from './update
 import { requestUpdateCheck, onSWMessage } from './messaging.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
 
+const NON_EDITING_INPUT_TYPES = new Set([
+  'button', 'submit', 'reset', 'checkbox', 'radio',
+  'range', 'color', 'file', 'image', 'hidden',
+]);
+
 /**
  * Check if the user is currently editing an interactive element
  * (input, textarea, select, or contenteditable) to avoid discarding unsaved inputs.
@@ -12,13 +17,14 @@ export function isUserEditing() {
   if (typeof document === 'undefined') return false;
   const activeElem = document.activeElement;
   if (!activeElem) return false;
+  if (activeElem.disabled || activeElem.readOnly) return false;
   const activeTag = activeElem.tagName?.toLowerCase();
   if (activeTag === 'textarea' || activeTag === 'select' || activeElem.isContentEditable) {
     return true;
   }
   if (activeTag === 'input') {
     const type = activeElem.type?.toLowerCase();
-    if (type === 'button' || type === 'submit' || type === 'reset') {
+    if (NON_EDITING_INPUT_TYPES.has(type)) {
       return false;
     }
     return true;
@@ -84,14 +90,15 @@ export async function register(swUrl = '/sw.js', options = {}) {
       options.onUpdateReady(data);
     }
     if (options.autoReload) {
-      const shouldDefer = typeof options.shouldDeferReload === 'function'
-        ? Boolean(options.shouldDeferReload({ version: data?.version, reason: 'ready' }))
-        : isUserEditing();
+      const customDefer = typeof options.shouldDeferReload === 'function'
+        && Boolean(options.shouldDeferReload({ version: data?.version, reason: 'ready' }));
+      const editing = isUserEditing();
+      const shouldDefer = customDefer || editing;
 
       if (!shouldDefer) {
         applyUpdate();
       } else {
-        const reason = typeof options.shouldDeferReload === 'function' && !isUserEditing() ? 'deferred' : 'editing';
+        const reason = customDefer ? 'deferred' : 'editing';
         console.warn(`[NLPWA] Auto-reload deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
           options.onUpdatePrompt({ ...data, reason });
@@ -120,14 +127,15 @@ export async function register(swUrl = '/sw.js', options = {}) {
       options.onUpdateApplied(data);
     }
     if (options.reloadOnUpdateApplied || options.autoReload) {
-      const shouldDefer = typeof options.shouldDeferReload === 'function'
-        ? Boolean(options.shouldDeferReload({ version: data?.version, reason: 'applied' }))
-        : isUserEditing();
+      const customDefer = typeof options.shouldDeferReload === 'function'
+        && Boolean(options.shouldDeferReload({ version: data?.version, reason: 'applied' }));
+      const editing = isUserEditing();
+      const shouldDefer = customDefer || editing;
 
       if (!shouldDefer) {
         window.location.reload();
       } else {
-        const reason = typeof options.shouldDeferReload === 'function' && !isUserEditing() ? 'deferred' : 'editing';
+        const reason = customDefer ? 'deferred' : 'editing';
         console.warn(`[NLPWA] Reload on update-applied deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
           options.onUpdatePrompt({ version: data?.version, updateApplied: true, reason });
@@ -215,6 +223,10 @@ export async function register(swUrl = '/sw.js', options = {}) {
     const triggerInitialCheck = () => {
       if (initialCheckDone) return;
       initialCheckDone = true;
+      if (initialCheckControllerListener) {
+        navigator.serviceWorker.removeEventListener?.('controllerchange', initialCheckControllerListener);
+        initialCheckControllerListener = null;
+      }
       requestUpdateCheck().catch(() => {});
     };
 
@@ -245,6 +257,29 @@ export async function register(swUrl = '/sw.js', options = {}) {
 }
 
 /**
+ * Unregister the NLPWA Service Worker.
+ *
+ * @param {string} [scope] Optional scope to target a specific registration
+ * @returns {Promise<boolean>} Resolves to true if unregistration succeeded
+ */
+export async function unregister(scope) {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    return false;
+  }
+  try {
+    const registration = scope
+      ? await navigator.serviceWorker.getRegistration(scope)
+      : await navigator.serviceWorker.getRegistration();
+    if (registration) {
+      return await registration.unregister();
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Register a listener for when an update is committed/applied (in this tab or another tab).
  *
  * @param {(data: { version: string }) => void} callback
@@ -252,18 +287,20 @@ export async function register(swUrl = '/sw.js', options = {}) {
  */
 export function onUpdateApplied(callback) {
   return onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, (data) => {
-    document.dispatchEvent(
-      new CustomEvent('nlpwa:update-applied', {
-        bubbles: true,
-        detail: { version: data?.version },
-      })
-    );
+    if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+      document.dispatchEvent(
+        new CustomEvent('nlpwa:update-applied', {
+          bubbles: true,
+          detail: { version: data?.version },
+        })
+      );
+    }
     if (typeof callback === 'function') {
       callback({ version: data?.version });
     }
   });
 }
 
-export { onUpdateReady, onNoUpdate, onUpdateFailed, applyUpdate } from './update-ui.js';
-export { requestUpdateCheck, sendToSW } from './messaging.js';
+export { onUpdateReady, onNoUpdate, onUpdateFailed, onStagingProgress, applyUpdate } from './update-ui.js';
+export { requestUpdateCheck, sendToSW, requestFromSW, getVersion, getStatus } from './messaging.js';
 export { getCacheInfo, cleanupRuntimeCache } from './cache-manager.js';

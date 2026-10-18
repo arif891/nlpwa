@@ -7,10 +7,12 @@ import { openActive } from '../cache/store.js';
  * @returns {Promise<{ version: string }>}
  */
 export async function fetchServerVersion() {
+  const config = getConfig();
   const { versionEndpoint } = getUpdateEndpoints();
 
+  const timeoutMs = config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(15000)
+    ? AbortSignal.timeout(timeoutMs)
     : undefined;
 
   const response = await fetch(versionEndpoint, {
@@ -38,10 +40,12 @@ export async function fetchServerVersion() {
  * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }>}
  */
 export async function fetchServerInfo() {
+  const config = getConfig();
   const { infoEndpoint } = getUpdateEndpoints();
 
+  const timeoutMs = config.updateTimeoutMs ? config.updateTimeoutMs * 2 : (config.updateAPI?.timeoutMs ? config.updateAPI.timeoutMs * 2 : 30000);
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(30000)
+    ? AbortSignal.timeout(timeoutMs)
     : undefined;
 
   const response = await fetch(infoEndpoint, {
@@ -116,9 +120,6 @@ export async function loadCachedSnapshot() {
  */
 export async function writeSnapshot(cache, snapshotData) {
   const snapshot = { swVersion: getConfig().version, ...snapshotData };
-  if (Array.isArray(snapshotData?.files)) {
-    _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
-  }
   await cache.put(getSnapshotPath(), new Response(JSON.stringify(snapshot), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -129,4 +130,7 @@ export async function writeSnapshot(cache, snapshotData) {
 export async function saveCachedSnapshot(snapshotData) {
   const cache = await openActive(getConfig().caches.offline);
   await writeSnapshot(cache, snapshotData);
+  if (Array.isArray(snapshotData?.files)) {
+    _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
+  }
 }

@@ -1,5 +1,5 @@
 import { getConfig } from '../config/index.js';
-import { getStaged, clearStaged, tryAcquire, release } from '../cache/store.js';
+import { getStaged, clearStaged, tryAcquire, release, withLock } from '../cache/store.js';
 import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
@@ -37,8 +37,21 @@ export async function checkForUpdate(options = {}) {
   return await runUpdateCheck(options);
 }
 
+let _currentStatus = 'idle';
+
+export function setUpdateStatus(status) {
+  _currentStatus = status;
+}
+
+export async function getUpdateStatus() {
+  const staged = await getStaged();
+  if (staged?.complete) return 'ready';
+  return _currentStatus;
+}
+
 async function runUpdateCheck({ force = false } = {}) {
   const config = getConfig();
+  _currentStatus = 'checking';
 
   // ── Tier 1: lightweight version check ────────────────────────────────────
   let serverVersion;
@@ -70,22 +83,19 @@ async function runUpdateCheck({ force = false } = {}) {
 
   const discardStaged = async () => {
     if (staged) {
-      if (tryAcquire()) {
-        try {
-          console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
-          await clearStaged();
-          if (staged.cache) {
-            await caches.delete(staged.cache).catch(() => {});
-          }
-        } finally {
-          release();
+      await withLock(async () => {
+        console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
+        await clearStaged();
+        if (staged.cache) {
+          await caches.delete(staged.cache).catch(() => {});
         }
-      }
+      });
     }
   };
 
   if (serverVersion && isCurrent(serverVersion)) {
     await discardStaged();
+    _currentStatus = 'idle';
     console.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
     return { updated: false, rolledBack: Boolean(staged) };
@@ -102,6 +112,7 @@ async function runUpdateCheck({ force = false } = {}) {
 
   if (isCurrent(serverManifest.version)) {
     await discardStaged();
+    _currentStatus = 'idle';
     console.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
     return { updated: false, rolledBack: Boolean(staged) };
@@ -113,14 +124,18 @@ async function runUpdateCheck({ force = false } = {}) {
 
   // ── Stage (active version keeps serving) ─────────────────────────────────
   // Narrow lock: acquire only around staging cache writes and commit
-  if (!tryAcquire()) {
-    console.log('[NLPWA] Staging already in progress, skipping.');
-    return { updated: false };
-  }
-  try {
+  _currentStatus = 'staging';
+  return withLock(async () => {
     const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
 
     if (result.status === 'incomplete') {
+      _currentStatus = 'idle';
+      const errorCode = result.hasHashMismatch
+        ? 'HASH_MISMATCH'
+        : result.quotaExceeded
+          ? 'QUOTA_EXCEEDED'
+          : 'DOWNLOAD_FAILED';
+
       const errorMsg = result.hasHashMismatch
         ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
         : result.quotaExceeded
@@ -129,6 +144,7 @@ async function runUpdateCheck({ force = false } = {}) {
 
       await broadcast({
         type: MESSAGE_TYPES.UPDATE_FAILED,
+        errorCode,
         version: serverManifest.version,
         failed: result.failed,
         failedDetails: result.failedDetails,
@@ -140,21 +156,24 @@ async function runUpdateCheck({ force = false } = {}) {
         quotaExceeded: Boolean(result.quotaExceeded),
       });
 
-      return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
+      return { updated: false, errorCode, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
     }
 
     if (isFresh) {
+      _currentStatus = 'idle';
       await commitStaged();
       return { updated: false, version: serverManifest.version, initial: true };
     }
 
+    _currentStatus = 'ready';
     await broadcast({
       type: MESSAGE_TYPES.UPDATE_READY,
       version: serverManifest.version,
       staged: true,
     });
     return { updated: true, version: serverManifest.version, staged: true };
-  } finally {
-    release();
-  }
+  }, () => {
+    console.log('[NLPWA] Staging already in progress, skipping.');
+    return { updated: false };
+  });
 }

@@ -10,6 +10,7 @@ import {
   collectTrackedFiles,
   resolveUpdateEndpoints,
   getApiDiskPath,
+  computeManifestHash,
 } from '../bin/build-utils.js';
 
 /**
@@ -65,7 +66,22 @@ export function nlpwaPlugin(options = {}) {
         if (!targetVersion) {
           await resolveTargetVersion();
         }
-        return `export const APP_VERSION = ${JSON.stringify(targetVersion)};\nexport const BASE_VERSION = ${JSON.stringify(targetVersion)};\nexport default APP_VERSION;\n`;
+        // virtual:nlpwa-version provides:
+        // - BASE_VERSION: the base configured version (e.g. '1.0.0')
+        // - APP_VERSION: the base app version at build time (e.g. '1.0.0').
+        // - CONTENT_HASH: composite 12-char content hash of tracked files & config
+        // Note: when deriveVersion is enabled (default), runtime manifests append the content hash
+        // (e.g. '1.0.0-a1b2c3d4e5f6'). If autoIncrement is true or deriveVersion is false,
+        // APP_VERSION matches the manifest version exactly.
+        let contentHash = '';
+        try {
+          const distDir = resolve(process.cwd(), options.distDir ?? './dist');
+          if (existsSync(distDir)) {
+            const { files } = collectTrackedFiles(targetConfig || {}, distDir);
+            contentHash = computeManifestHash(files, targetConfig || {});
+          }
+        } catch {}
+        return `export const APP_VERSION = ${JSON.stringify(targetVersion)};\nexport const BASE_VERSION = ${JSON.stringify(targetVersion)};\nexport const CONTENT_HASH = ${JSON.stringify(contentHash)};\nexport default APP_VERSION;\n`;
       }
     },
 

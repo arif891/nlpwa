@@ -114,9 +114,10 @@ ${c.bold}COMMANDS${c.reset}
            generates config.json, hashes ONLY tracked offline files,
            and emits update API endpoints (/api/update/version & info).
   ${c.green}build${c.reset}    Alias for "update" — builds manifest and update endpoints.
+  ${c.green}status${c.reset}   Inspects manifest version, update endpoints, and tracked files.
 
-${c.bold}OPTIONS (init)${c.reset}
-  ${c.cyan}--dir${c.reset}     <path>      Target directory to drop files into (default: ./)
+${c.bold}OPTIONS (init, status)${c.reset}
+  ${c.cyan}--dir${c.reset}     <path>      Target directory (default: ./ or ./dist)
 
 ${c.bold}OPTIONS (update)${c.reset}
   ${c.cyan}--config${c.reset}      <path>      Config file path            (default: auto-detect ./config.js)
@@ -173,6 +174,32 @@ async function cmdInit(args) {
       missing.push(item.src);
       console.error(`  ${c.red}X Source file missing:${c.reset} ${srcPath}`);
     }
+  }
+
+  const configJsPath = resolve(targetDir, 'config.js');
+  const nlpwaConfigJsPath = resolve(targetDir, 'nlpwa.config.js');
+  const configJsonPath = resolve(targetDir, 'config.json');
+
+  if (!existsSync(configJsPath) && !existsSync(nlpwaConfigJsPath) && !existsSync(configJsonPath)) {
+    const starterConfigJs = `/**
+ * NLPWA Configuration
+ * https://github.com/arif891/nlpwa
+ */
+export default {
+  version: '1.0.0',
+  precache: [
+    '/',
+    '/index.html',
+    '/client.js',
+  ],
+  routes: [
+    { match: '/assets/**', strategy: 'cache-first' },
+    { match: '/api/**', strategy: 'network-first', options: { networkTimeoutMs: 3000 } },
+  ],
+};
+`;
+    writeFileSync(configJsPath, starterConfigJs, 'utf8');
+    console.log(`  ${c.green}+${c.reset} ${c.bold}Scaffolded starter config:${c.reset} config.js`);
   }
 
   if (missing.length > 0) {
@@ -327,6 +354,52 @@ ${c.bold}${c.green}  Update outputs written successfully${c.reset}
 `);
 }
 
+async function cmdStatus(args) {
+  printBanner();
+  const targetDir = resolve(process.cwd(), args.dir ?? (existsSync(resolve(process.cwd(), 'dist')) ? 'dist' : '.'));
+  console.log(`${c.bold}[NLPWA] Status for ${c.cyan}${targetDir}${c.reset}\n`);
+
+  const configFile = findConfigFile(args.config, process.cwd());
+  const configJsonPath = resolve(targetDir, 'config.json');
+
+  let activeConfig = null;
+  if (existsSync(configJsonPath)) {
+    try {
+      activeConfig = JSON.parse(readFileSync(configJsonPath, 'utf8'));
+    } catch {}
+  }
+
+  const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(activeConfig ?? {});
+  const versionOut = getApiDiskPath(targetDir, versionEndpoint);
+  const infoOut = getApiDiskPath(targetDir, infoEndpoint);
+
+  let versionData = null;
+  let infoData = null;
+
+  if (existsSync(versionOut)) {
+    try {
+      versionData = JSON.parse(readFileSync(versionOut, 'utf8'));
+    } catch {}
+  }
+  if (existsSync(infoOut)) {
+    try {
+      infoData = JSON.parse(readFileSync(infoOut, 'utf8'));
+    } catch {}
+  }
+
+  console.log(`  ${c.dim}Source Config         :${c.reset} ${configFile ? c.green + configFile + c.reset : c.yellow + 'not found' + c.reset}`);
+  console.log(`  ${c.dim}Deployed config.json  :${c.reset} ${existsSync(configJsonPath) ? c.green + configJsonPath + c.reset : c.red + 'missing' + c.reset}`);
+  console.log(`  ${c.dim}Version API Endpoint  :${c.reset} ${existsSync(versionOut) ? c.green + versionOut + c.reset : c.red + 'missing' + c.reset}`);
+  console.log(`  ${c.dim}Info API Endpoint     :${c.reset} ${existsSync(infoOut) ? c.green + infoOut + c.reset : c.red + 'missing' + c.reset}`);
+  console.log(`  ${c.dim}App Version           :${c.reset} ${versionData?.version ? c.cyan + c.bold + versionData.version + c.reset : (activeConfig?.version ?? 'unknown')}`);
+  console.log(`  ${c.dim}Tracked Files in Info :${c.reset} ${infoData?.files ? infoData.files.length : 0}`);
+
+  const swFile = resolve(targetDir, 'sw.js');
+  const clientFile = resolve(targetDir, 'client.js');
+  console.log(`  ${c.dim}Service Worker (sw.js):${c.reset} ${existsSync(swFile) ? c.green + 'present' + c.reset : c.yellow + 'missing' + c.reset}`);
+  console.log(`  ${c.dim}Client SDK (client.js):${c.reset} ${existsSync(clientFile) ? c.green + 'present' + c.reset : c.yellow + 'missing' + c.reset}\n`);
+}
+
 // ── Entry ─────────────────────────────────────────────────────────────────────
 
 const argv    = process.argv.slice(2);
@@ -346,6 +419,10 @@ switch (command) {
   case 'build':
   case 'update':
     await cmdUpdate(args);
+    break;
+
+  case 'status':
+    await cmdStatus(args);
     break;
 
   default:

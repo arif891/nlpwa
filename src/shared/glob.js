@@ -1,5 +1,11 @@
 /** Compiled regex cache — avoids recompiling the same glob on every fetch event */
+const MAX_REGEX_CACHE_SIZE = 100;
 const _regexCache = new Map();
+
+/** Clear compiled regex cache (e.g. for testing or config reloads) */
+export function clearGlobCache() {
+  _regexCache.clear();
+}
 
 /**
  * Convert a glob pattern to a RegExp.
@@ -33,6 +39,12 @@ export function globToRegex(pattern) {
     .replace(/\x00GLOBSTAR\x00/g, '.*');
 
   const regex = new RegExp('^' + regexStr + '$');
+
+  if (_regexCache.size >= MAX_REGEX_CACHE_SIZE) {
+    const oldestKey = _regexCache.keys().next().value;
+    if (oldestKey !== undefined) _regexCache.delete(oldestKey);
+  }
+
   _regexCache.set(pattern, regex);
   return regex;
 }

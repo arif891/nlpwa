@@ -10,8 +10,28 @@ export interface UpdateAppliedData {
   version?: string;
 }
 
+export interface UpdatePromptData {
+  version?: string;
+  updateApplied?: boolean;
+}
+
+export interface StagingProgressData {
+  version: string;
+  loaded: number;
+  total: number;
+  percent: number;
+  file?: string;
+}
+
+export interface VersionInfoData {
+  activeVersion: string | null;
+  stagedVersion: string | null;
+  swVersion: string | null;
+}
+
 export interface UpdateFailedData {
   version?: string;
+  errorCode?: 'HASH_MISMATCH' | 'QUOTA_EXCEEDED' | 'DOWNLOAD_FAILED' | string;
   failed?: string[];
   failedDetails?: Record<string, string>;
   error?: string;
@@ -19,6 +39,7 @@ export interface UpdateFailedData {
   nextRetryAt?: number | null;
   persistent?: boolean;
   hasHashMismatch?: boolean;
+  quotaExceeded?: boolean;
 }
 
 export interface CacheInfoData {
@@ -79,8 +100,10 @@ export interface RegisterOptions {
   onUpdateFailed?: (data: UpdateFailedData) => void;
   /** Called when an update is committed/applied (in this tab or another tab) */
   onUpdateApplied?: (data: UpdateAppliedData) => void;
-  /** Called when auto-reload is deferred because user is editing form inputs */
-  onUpdatePrompt?: (data: UpdateReadyData | { version?: string; updateApplied?: boolean }) => void;
+  /** Called when auto-reload is deferred because user is editing form inputs or shouldDeferReload returned true */
+  onUpdatePrompt?: (data: UpdatePromptData) => void;
+  /** Predicate to defer auto-reload (e.g. for unsaved in-memory state or active video calls) */
+  shouldDeferReload?: (context: { version?: string; reason: string }) => boolean;
   /** Automatically apply update and reload on update (default: false) */
   autoReload?: boolean;
   /** Automatically reload when another tab applies an update (default: false) */
@@ -109,6 +132,13 @@ export interface RegistrationHandle {
  * @param options Registration and update options
  */
 export function register(swUrl?: string, options?: RegisterOptions): Promise<RegistrationHandle | null>;
+
+/**
+ * Unregister the NLPWA Service Worker.
+ *
+ * @param scope Optional scope of registration to unregister
+ */
+export function unregister(scope?: string): Promise<boolean>;
 
 /**
  * Register a handler to be called when the SW signals an update is ready.
@@ -143,11 +173,19 @@ export function onUpdateFailed(callback?: (data: UpdateFailedData) => void): () 
 export function onUpdateApplied(callback?: (data: UpdateAppliedData) => void): () => void;
 
 /**
+ * Register a handler to be called when update staging download progress occurs.
+ *
+ * @param callback Callback receiving progress info (loaded, total, percent, file)
+ * @returns Unsubscribe function
+ */
+export function onStagingProgress(callback?: (data: StagingProgressData) => void): () => void;
+
+/**
  * Switch to the staged update, then reload the page (or commit without reloading in SPAs).
  *
  * @param options Options including timeout and whether to reload (default: true)
  */
-export function applyUpdate(options?: { timeoutMs?: number; reload?: boolean }): Promise<void>;
+export function applyUpdate(options?: { timeoutMs?: number; reload?: boolean }): Promise<boolean>;
 
 /**
  * Trigger a manual update check from the client side.
@@ -158,6 +196,26 @@ export function requestUpdateCheck(): Promise<void>;
  * Send a typed message to the active Service Worker.
  */
 export function sendToSW(message: Record<string, unknown>): Promise<void>;
+
+/**
+ * Send a request message to the active Service Worker and await a response.
+ */
+export function requestFromSW<T = any>(
+  type: string,
+  payload?: Record<string, unknown>,
+  replyType?: string,
+  timeoutMs?: number
+): Promise<T>;
+
+/**
+ * Query active and staged versions from the Service Worker.
+ */
+export function getVersion(timeoutMs?: number): Promise<VersionInfoData>;
+
+/**
+ * Query current update lifecycle status from the Service Worker.
+ */
+export function getStatus(timeoutMs?: number): Promise<'idle' | 'checking' | 'staging' | 'ready' | 'applying'>;
 
 /**
  * Request storage quota and runtime cache usage metrics from the Service Worker.
@@ -181,13 +239,18 @@ export function isUserEditing(): boolean;
 
 export interface NLPWAClientAPI {
   register: typeof register;
+  unregister: typeof unregister;
   onUpdateReady: typeof onUpdateReady;
   onNoUpdate: typeof onNoUpdate;
   onUpdateFailed: typeof onUpdateFailed;
   onUpdateApplied: typeof onUpdateApplied;
+  onStagingProgress: typeof onStagingProgress;
   applyUpdate: typeof applyUpdate;
   requestUpdateCheck: typeof requestUpdateCheck;
   sendToSW: typeof sendToSW;
+  requestFromSW: typeof requestFromSW;
+  getVersion: typeof getVersion;
+  getStatus: typeof getStatus;
   getCacheInfo: typeof getCacheInfo;
   cleanupRuntimeCache: typeof cleanupRuntimeCache;
   isUserEditing: typeof isUserEditing;

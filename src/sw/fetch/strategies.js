@@ -104,6 +104,13 @@ function resolveMaxAgeMs(options) {
 }
 
 /**
+ * Resolve offline navigation fallback URL from route options or global config.
+ */
+function resolveFallbackUrl(options = {}) {
+  return options.offlineFallback ?? options.navigationFallback ?? getConfig().offlineFallback ?? getConfig().navigationFallback ?? '/index.html';
+}
+
+/**
  * Check if a cached Response has expired based on its cached timestamp and maxAgeMs.
  */
 function isResponseExpired(response, maxAgeMs) {
@@ -171,7 +178,7 @@ export async function cacheFirst(request, event, options = {}) {
   } catch (err) {
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate') {
-      const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+      const fallbackUrl = resolveFallbackUrl(options);
       const fallbackRes = await getFromCache(fallbackUrl);
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
@@ -273,7 +280,7 @@ export async function networkFirst(request, event, options = {}) {
 
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate') {
-      const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+      const fallbackUrl = resolveFallbackUrl(options);
       const fallbackRes = await getFromCache(fallbackUrl);
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
@@ -345,29 +352,45 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const cached = (await getFromRuntime(request, matchOptions)) ?? (await getFromOffline(request, matchOptions));
 
-  // Single network request, shared by the background refresh and the
-  // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
-  const revalidate = (async () => {
-    const response = await fetch(request);
-    await safePutInRuntime(request, response, event, options);
-    return response;
-  })();
+  const maxAgeMs = resolveMaxAgeMs(options);
 
   if (cached) {
-    // Serve stale immediately; keep the SW alive for the background refresh.
-    const settled = revalidate.catch(() => {/* offline during revalidation is fine */});
-    if (event && typeof event.waitUntil === 'function') event.waitUntil(settled);
-    return tagResponse(cached, CACHE_STATUS.STALE);
+    const expired = maxAgeMs ? isResponseExpired(cached, maxAgeMs) : false;
+    if (!expired) {
+      // Serve stale immediately; keep the SW alive for the background refresh.
+      const revalidate = (async () => {
+        try {
+          const response = await fetch(request);
+          await safePutInRuntime(request, response, event, options);
+          return response;
+        } catch {
+          // offline during revalidation is fine
+        }
+      })();
+      if (event && typeof event.waitUntil === 'function') event.waitUntil(revalidate);
+      return tagResponse(cached, CACHE_STATUS.STALE);
+    }
+
+    // Cached copy has expired: wait for revalidation (network-first semantics),
+    // falling back to the expired cached entry if network fails (offline).
+    try {
+      const response = await fetch(request);
+      await safePutInRuntime(request, response, event, options);
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch {
+      return tagResponse(cached, CACHE_STATUS.STALE);
+    }
   }
 
   // No cache — wait for network, fall back to offline handling if network fails
   try {
-    const response = await revalidate;
+    const response = await fetch(request);
+    await safePutInRuntime(request, response, event, options);
     return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate') {
-      const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+      const fallbackUrl = resolveFallbackUrl(options);
       const fallbackRes = await getFromCache(fallbackUrl);
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
@@ -414,7 +437,7 @@ export async function cacheOnly(request, event, options = {}) {
   if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
 
   if (request.mode === 'navigate') {
-    const fallbackUrl = options.navigationFallback ?? getConfig().navigationFallback ?? '/index.html';
+    const fallbackUrl = resolveFallbackUrl(options);
     const fallbackRes = await getFromCache(fallbackUrl);
     if (fallbackRes) {
       return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);

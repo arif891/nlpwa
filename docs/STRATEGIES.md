@@ -96,7 +96,7 @@ Request → network (within networkTimeoutMs) → store in runtime → return
 3. If no cached response exists, it continues waiting for the network rather than immediately returning 503.
 4. On network success: store in `runtime` cache, return response.
 5. On network failure: check `offline` then `runtime` cache.
-6. If offline with no cache match for navigation requests: falls back to `navigationFallback` if configured. Otherwise returns a `503` text response (never throws).
+6. If offline with no cache match for navigation requests: falls back to `offlineFallback` (or `navigationFallback`, default `'/index.html'`) if present in the offline cache. Otherwise returns a `503` text response (or throws if `throwOnFailure: true`).
 
 **Characteristics:**
 - Always fresh when online
@@ -160,15 +160,14 @@ Request → runtime/offline cache → return immediately (stale)
 ```
 
 **Behaviour:**
-1. Serve cached response immediately (zero latency)
-2. Simultaneously fetch fresh response from network in the background
-3. Store fresh response in `runtime` cache (for the **next** request)
-4. If no cache exists: block on network, store and return
+1. Serve cached response immediately if present (zero latency)
+2. If cached response is fresh (or no `maxAge` specified), trigger a background network fetch to revalidate and refresh `runtime` cache for the next request
+3. If no cache exists: block on network, store in `runtime` cache, and return response
 
 **Characteristics:**
 - Fastest user-perceived response (immediate from cache)
-- Always one request behind — the user sees the cached version, next load is fresh
-- Background network failure is silently swallowed (cached version remains)
+- Keeps cache up-to-date in background without blocking screen render
+- Background network failure is safely caught without disrupting the served response
 
 **Best for:** Content that changes frequently but where slight staleness is acceptable:
 - News feeds, social timelines
@@ -287,12 +286,12 @@ You can define cross-origin routes in either style:
 - When assets are loaded via `<script>` tags, Web Workers, or `importScripts` without CORS headers, the browser generates an **opaque response** (`status: 0`, `type: 'opaque'`).
 - In Chromium browsers, every cached opaque response is subject to a quota padding of **~7 MB** (to mitigate side-channel size leaks), and HTTP 404/500 errors cannot be distinguished from successful responses.
 - To protect storage quota and prevent caching CDN errors, NLPWA **skips caching opaque responses by default**.
-- If you specifically need to cache cross-origin CDN assets without CORS (such as unauthenticated `.wasm` binaries or scripts), explicitly opt in on that route via `options: { cacheOpaque: true }`:
+- If you specifically need to cache cross-origin CDN assets without CORS (such as unauthenticated `.wasm` binaries or scripts), explicitly opt in on that route via `cacheOpaque: true`:
   ```javascript
   {
     match: 'https://cdn.jsdelivr.net/**',
     strategy: 'cache-first',
-    options: { cacheOpaque: true },
+    cacheOpaque: true,
   }
   ```
 - Any request not matching an explicit cross-origin route automatically passes through via `networkOnly` without caching.

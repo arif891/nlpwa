@@ -14,15 +14,29 @@ import { onSWMessage, sendToSW, requestFromSW } from './messaging.js';
  * @param {(data: { version: string }) => void} [callback]
  * @returns {Function}  unsubscribe — call when the listening component unmounts
  */
+function safeDispatchEvent(name, detail) {
+  if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+    document.dispatchEvent(new CustomEvent(name, { bubbles: true, detail }));
+  }
+}
+
+/**
+ * Register a handler to be called when the SW signals an update is ready.
+ *
+ * Also fires a `nlpwa:update-ready` CustomEvent on `document` so any part
+ * of the app can listen without importing this module directly:
+ *
+ *   document.addEventListener('nlpwa:update-ready', (e) => {
+ *     console.log('New version:', e.detail.version);
+ *   });
+ *
+ * @param {(data: { version: string }) => void} [callback]
+ * @returns {Function}  unsubscribe — call when the listening component unmounts
+ */
 export function onUpdateReady(callback) {
   return onSWMessage(MESSAGE_TYPES.UPDATE_READY, (data) => {
     // Dispatch CustomEvent for decoupled listeners
-    document.dispatchEvent(
-      new CustomEvent('nlpwa:update-ready', {
-        bubbles: true,
-        detail: { version: data.version },
-      })
-    );
+    safeDispatchEvent('nlpwa:update-ready', { version: data.version });
 
     // Direct callback
     if (typeof callback === 'function') {
@@ -46,12 +60,7 @@ export function onUpdateReady(callback) {
  */
 export function onNoUpdate(callback) {
   return onSWMessage(MESSAGE_TYPES.NO_UPDATE, (data) => {
-    document.dispatchEvent(
-      new CustomEvent('nlpwa:no-update', {
-        bubbles: true,
-        detail: { version: data.version },
-      })
-    );
+    safeDispatchEvent('nlpwa:no-update', { version: data.version });
 
     if (typeof callback === 'function') {
       callback({ version: data.version });
@@ -83,21 +92,16 @@ export function onNoUpdate(callback) {
  */
 export function onUpdateFailed(callback) {
   return onSWMessage(MESSAGE_TYPES.UPDATE_FAILED, (data) => {
-    document.dispatchEvent(
-      new CustomEvent('nlpwa:update-failed', {
-        bubbles: true,
-        detail: {
-          version: data.version,
-          failed: data.failed ?? [],
-          failedDetails: data.failedDetails ?? {},
-          error: data.error,
-          retryCount: data.retryCount,
-          nextRetryAt: data.nextRetryAt,
-          persistent: Boolean(data.persistent),
-          hasHashMismatch: Boolean(data.hasHashMismatch),
-        },
-      })
-    );
+    safeDispatchEvent('nlpwa:update-failed', {
+      version: data.version,
+      failed: data.failed ?? [],
+      failedDetails: data.failedDetails ?? {},
+      error: data.error,
+      retryCount: data.retryCount,
+      nextRetryAt: data.nextRetryAt,
+      persistent: Boolean(data.persistent),
+      hasHashMismatch: Boolean(data.hasHashMismatch),
+    });
 
     if (typeof callback === 'function') {
       callback({
@@ -153,5 +157,32 @@ export async function applyUpdate({ timeoutMs = 3000, reload = true } = {}) {
     window.location.reload();
   }
   return true;
+}
+
+/**
+ * Register a listener for update download/staging progress events.
+ *
+ * Also fires a `nlpwa:staging-progress` CustomEvent on `document`:
+ *
+ *   document.addEventListener('nlpwa:staging-progress', (e) => {
+ *     console.log(`Progress: ${e.detail.percent}% (${e.detail.loaded}/${e.detail.total})`);
+ *   });
+ *
+ * @param {(data: { version: string, loaded: number, total: number, percent: number, file?: string }) => void} callback
+ * @returns {Function} unsubscribe function
+ */
+export function onStagingProgress(callback) {
+  return onSWMessage(MESSAGE_TYPES.STAGING_PROGRESS, (data) => {
+    safeDispatchEvent('nlpwa:staging-progress', {
+      version: data.version,
+      loaded: data.loaded,
+      total: data.total,
+      percent: data.percent,
+      file: data.file,
+    });
+    if (typeof callback === 'function') {
+      callback(data);
+    }
+  });
 }
 

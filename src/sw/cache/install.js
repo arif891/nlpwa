@@ -1,5 +1,5 @@
 import { getConfig, updateActiveConfig, loadConfigFromCache } from '../config/index.js';
-import { tryAcquire, release, openActive } from './store.js';
+import { tryAcquire, release, openActive, withLock } from './store.js';
 import { fetchServerInfo, loadCachedSnapshot } from '../update/manifest.js';
 import { stageUpdate } from '../update/stage.js';
 import { commitStaged } from '../update/commit.js';
@@ -20,6 +20,8 @@ import { resolvePathWithBase } from '../../shared/url.js';
  * Fallback (no manifest, e.g. `nlpwa update` was never run): precache from
  * config.precache without hashes. The first update check then builds the
  * hashed snapshot.
+ *
+ * @returns {Promise<Object|undefined>}
  */
 export async function precacheFiles() {
   let manifest = null;
@@ -32,8 +34,7 @@ export async function precacheFiles() {
   const activeSnapshot = await loadCachedSnapshot();
 
   if (manifest) {
-    if (!tryAcquire()) return;
-    try {
+    return withLock(async () => {
       const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
       const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
       if (result.status === 'incomplete' && !activeSnapshot) {
@@ -43,18 +44,13 @@ export async function precacheFiles() {
         await commitStaged();
       }
       return result;
-    } finally {
-      release();
-    }
+    });
   }
 
   if (!activeSnapshot) {
-    if (!tryAcquire()) return;
-    try {
+    return withLock(async () => {
       return await precacheWithoutManifest();
-    } finally {
-      release();
-    }
+    });
   }
 }
 

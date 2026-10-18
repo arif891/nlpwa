@@ -1,13 +1,24 @@
 import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
-import { openActive } from '../cache/store.js';
+import { openActive, setMetaCacheName } from '../cache/store.js';
 import { setActiveSnapshotPaths } from '../update/manifest.js';
-import { resolvePathWithBase } from '../../shared/url.js';
+import { resolvePathWithBase, resolveUpdateEndpoints } from '../../shared/url.js';
 
-export { resolvePathWithBase };
+export { resolvePathWithBase, resolveUpdateEndpoints };
 
 /** Singleton config instance, set by initConfig() */
 let _config = null;
+
+function normalizeRoutes(routes) {
+  if (!Array.isArray(routes)) return routes;
+  return routes.map((r) => {
+    if (r && typeof r === 'object' && r.options && typeof r.options === 'object') {
+      const { options, ...rest } = r;
+      return { ...rest, ...options };
+    }
+    return r;
+  });
+}
 
 /**
  * Initialize the NLPWA config by merging user config with defaults.
@@ -20,12 +31,17 @@ export function initConfig(userConfig = {}) {
   const merged = {
     ...DEFAULTS,
     ...userConfig,
+    routes: normalizeRoutes(userConfig.routes ?? DEFAULTS.routes),
     // Deep merge nested objects
     caches: {
       ...DEFAULTS.caches,
       ...(userConfig.caches ?? {}),
     },
   };
+
+  if (merged.caches?.meta) {
+    setMetaCacheName(merged.caches.meta);
+  }
 
   const errors = validateConfig(merged);
   if (errors.length > 0) {
@@ -68,15 +84,16 @@ export function updateActiveConfig(runtimeConfig = {}) {
     appVersion: runtimeConfig.version ?? _config.appVersion ?? runtimeConfig.appVersion,
 
     // Same-origin trust boundary protection:
-    // Core security and storage namespace settings are locked to the compiled SW engine
+    // Core security, base path, and storage namespace settings are locked to the compiled SW engine
     // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
+    base: _config.base,
     verifyHashes: _config.verifyHashes,
     maxVerifyBytes: _config.maxVerifyBytes,
     caches: _config.caches,
     snapshotCachePath: _config.snapshotCachePath,
 
     // Runtime routes and precache take priority if provided
-    routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
+    routes: Array.isArray(runtimeConfig.routes) ? normalizeRoutes(runtimeConfig.routes) : _config.routes,
     precache: Array.isArray(runtimeConfig.precache) ? runtimeConfig.precache : _config.precache,
     updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
   };
@@ -95,7 +112,11 @@ let _configReadyPromise = null;
  */
 export function ensureConfigReady() {
   if (!_configReadyPromise) {
-    _configReadyPromise = loadConfigFromCache();
+    _configReadyPromise = loadConfigFromCache().catch((err) => {
+      _configReadyPromise = null;
+      console.warn('[NLPWA] Config load failed, will retry:', err?.message || err);
+      return null;
+    });
   }
   return _configReadyPromise;
 }
@@ -155,17 +176,5 @@ export async function loadConfigFromCache() {
  * @returns {{ versionEndpoint: string, infoEndpoint: string }}
  */
 export function getUpdateEndpoints() {
-  const config = getConfig();
-  let versionEndpoint = '/api/update/version.json';
-  let infoEndpoint = '/api/update/info.json';
-
-  if (config.updateAPI && typeof config.updateAPI === 'object' && !Array.isArray(config.updateAPI)) {
-    if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
-    if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
-  }
-
-  return {
-    versionEndpoint: resolvePathWithBase(versionEndpoint, config.base),
-    infoEndpoint: resolvePathWithBase(infoEndpoint, config.base),
-  };
+  return resolveUpdateEndpoints(getConfig());
 }

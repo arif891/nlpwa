@@ -251,3 +251,55 @@ test('cacheFirst: expired maxAge falls back gracefully to stale cache when offli
   assert.equal(res.headers.get('X-Cache-Status'), 'runtime-cache');
 });
 
+test('staleWhileRevalidate: serves stale immediately when within maxAge', async () => {
+  let networkFetches = 0;
+  const caches = setupEnv(async () => {
+    networkFetches++;
+    return new Response('fresh');
+  });
+  const cachedRes = new Response('cached', {
+    headers: { 'X-NLPWA-Cached-At': String(Date.now() - 5000) },
+  });
+  await (await caches.open('runtime')).put(req('/feed'), cachedRes);
+
+  const event = fakeEvent();
+  const res = await staleWhileRevalidate(req('/feed'), event, { maxAge: '1h' });
+  assert.equal(await res.text(), 'cached');
+  assert.equal(res.headers.get('X-Cache-Status'), 'stale');
+
+  await event.settle();
+  assert.equal(networkFetches, 1);
+});
+
+test('staleWhileRevalidate: blocks on network when runtime cache exceeds maxAge', async () => {
+  let networkFetches = 0;
+  const caches = setupEnv(async () => {
+    networkFetches++;
+    return new Response('fresh-from-network');
+  });
+  const expiredRes = new Response('expired-cached', {
+    headers: { 'X-NLPWA-Cached-At': String(Date.now() - 7200000) },
+  });
+  await (await caches.open('runtime')).put(req('/feed'), expiredRes);
+
+  const event = fakeEvent();
+  const res = await staleWhileRevalidate(req('/feed'), event, { maxAge: '1h' });
+  assert.equal(await res.text(), 'fresh-from-network');
+  assert.equal(res.headers.get('X-Cache-Status'), 'network');
+  assert.equal(networkFetches, 1);
+});
+
+test('staleWhileRevalidate: expired maxAge falls back to stale cache when offline', async () => {
+  const caches = setupEnv(async () => { throw new TypeError('Network down'); });
+  const expiredRes = new Response('expired-cached-fallback', {
+    headers: { 'X-NLPWA-Cached-At': String(Date.now() - 7200000) },
+  });
+  await (await caches.open('runtime')).put(req('/feed'), expiredRes);
+
+  const event = fakeEvent();
+  const res = await staleWhileRevalidate(req('/feed'), event, { maxAge: '1h' });
+  assert.equal(await res.text(), 'expired-cached-fallback');
+  assert.equal(res.headers.get('X-Cache-Status'), 'stale');
+});
+
+

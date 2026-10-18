@@ -4,14 +4,19 @@ import { computeDiff, isSafePath } from './diff.js';
 import { writeSnapshot } from './manifest.js';
 import { cleanRuntimeCache } from '../cache/cleanup.js';
 import { sha256Hex, hashMatches } from '../../shared/hash.js';
-import { MAX_RETRY_ATTEMPTS, FETCH_CONCURRENCY } from '../../shared/constants.js';
+import { MAX_RETRY_ATTEMPTS, FETCH_CONCURRENCY, MESSAGE_TYPES } from '../../shared/constants.js';
 import { resolvePathWithBase } from '../../shared/url.js';
 
 /** Run `fn` over `items` with at most `limit` in flight. */
 async function mapLimit(items, limit, fn) {
   let next = 0;
+  // JavaScript runtimes are single-threaded; next++ evaluates synchronously before
+  // any microtask yield in `await fn(...)`, ensuring workers never claim the same item.
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) await fn(items[next++]);
+    while (next < items.length) {
+      const idx = next++;
+      await fn(items[idx]);
+    }
   });
   await Promise.all(workers);
 }
@@ -130,11 +135,31 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     }
   };
 
+  let processedCount = 0;
+  const totalFiles = files.length;
+  const notifyProgress = (filePath) => {
+    processedCount++;
+    if (activeSnapshot && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+      self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+        const percent = totalFiles > 0 ? Math.round((processedCount / totalFiles) * 100) : 100;
+        clients.forEach((c) => c.postMessage({
+          type: MESSAGE_TYPES.STAGING_PROGRESS,
+          version: manifest.version,
+          loaded: processedCount,
+          total: totalFiles,
+          percent,
+          file: filePath,
+        }));
+      }).catch(() => {});
+    }
+  };
+
   await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
     const fetchUrl = resolvePathWithBase(path, config.base);
     try {
       if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size, fetchUrl)) {
         stats.reused++;
+        notifyProgress(path);
         return;
       }
       if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
@@ -146,6 +171,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
             await putWithQuotaRecovery(path, copyForPath);
           }
           stats.copied++;
+          notifyProgress(path);
           return;
         }
       }
@@ -156,9 +182,11 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         await putWithQuotaRecovery(path, copyForPath);
       }
       stats.fetched++;
+      notifyProgress(path);
     } catch (err) {
       failed.push(path);
       failedDetails[path] = err.message;
+      notifyProgress(path);
       console.warn(`[NLPWA] Staging failed: ${fetchUrl} - ${err.message}`);
     }
   });

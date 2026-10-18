@@ -40,6 +40,29 @@ async function getResponseMetadata(res) {
 }
 
 /**
+ * Run an async mapper over items with bounded concurrency.
+ *
+ * @template T, R
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T, index: number) => Promise<R>} fn
+ * @returns {Promise<R[]>}
+ */
+async function mapConcurrent(items, limit, fn) {
+  if (!items || items.length === 0) return [];
+  const results = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
  * Query current storage quota and runtime cache usage metrics.
  *
  * @returns {Promise<{
@@ -83,16 +106,21 @@ export async function getStorageQuotaInfo() {
   let runtimeBytes = 0;
   const entries = [];
 
-  for (const req of requests) {
+  const itemMetas = await mapConcurrent(requests, 6, async (req) => {
     const res = await cache.match(req);
-    if (res) {
-      const meta = await getResponseMetadata(res);
-      runtimeBytes += meta.size;
-      entries.push({
-        url: typeof req === 'string' ? req : req.url,
-        size: meta.size,
-        cachedAt: meta.cachedAt,
-      });
+    if (!res) return null;
+    const meta = await getResponseMetadata(res);
+    return {
+      url: typeof req === 'string' ? req : req.url,
+      size: meta.size,
+      cachedAt: meta.cachedAt,
+    };
+  });
+
+  for (const item of itemMetas) {
+    if (item) {
+      runtimeBytes += item.size;
+      entries.push(item);
     }
   }
 
@@ -175,34 +203,50 @@ export function resolveByteSize(bytesVal, mbVal, kbVal) {
  *   quota: Object
  * }>}
  */
+let _cleanupPromise = null;
+
 export async function cleanRuntimeCache(options = {}) {
-  const strategy = options.strategy || CLEANUP_STRATEGIES.LRU;
+  while (_cleanupPromise) {
+    try {
+      await _cleanupPromise;
+    } catch {
+      // Continue to next run if previous cleanup failed
+    }
+  }
 
-  const maxTotalBytes = resolveByteSize(options.maxTotalBytes ?? options.maxTotal, options.maxTotalMB, options.maxTotalKB);
-  const maxItemBytes = resolveByteSize(options.maxItemBytes ?? options.maxItem, options.maxItemMB, options.maxItemKB);
-  const minItemBytes = resolveByteSize(options.minItemBytes ?? options.minItem, options.minItemMB, options.minItemKB);
-  const maxQuotaBytes = resolveByteSize(options.maxQuotaBytes ?? options.maxQuota, options.maxQuotaMB, options.maxQuotaKB);
+  const run = async () => {
+    const strategy = options.strategy || CLEANUP_STRATEGIES.LRU;
 
-  const { caches: cacheNames } = getConfig();
-  const cache = await caches.open(cacheNames.runtime);
-  const requests = await cache.keys();
+    const maxTotalBytes = resolveByteSize(options.maxTotalBytes ?? options.maxTotal, options.maxTotalMB, options.maxTotalKB);
+    const maxItemBytes = resolveByteSize(options.maxItemBytes ?? options.maxItem, options.maxItemMB, options.maxItemKB);
+    const minItemBytes = resolveByteSize(options.minItemBytes ?? options.minItem, options.minItemMB, options.minItemKB);
+    const maxQuotaBytes = resolveByteSize(options.maxQuotaBytes ?? options.maxQuota, options.maxQuotaMB, options.maxQuotaKB);
 
-  const allItems = [];
-  let totalBytes = 0;
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    const requests = await cache.keys();
 
-  for (const req of requests) {
-    const res = await cache.match(req);
-    if (res) {
+    const allItems = [];
+    let totalBytes = 0;
+
+    const itemEntries = await mapConcurrent(requests, 6, async (req) => {
+      const res = await cache.match(req);
+      if (!res) return null;
       const meta = await getResponseMetadata(res);
-      totalBytes += meta.size;
-      allItems.push({
+      return {
         req,
         url: typeof req === 'string' ? req : req.url,
         size: meta.size,
         cachedAt: meta.cachedAt,
-      });
+      };
+    });
+
+    for (const item of itemEntries) {
+      if (item) {
+        totalBytes += item.size;
+        allItems.push(item);
+      }
     }
-  }
 
   const toEvictSet = new Set();
   let remainingBytes = totalBytes;
@@ -333,12 +377,10 @@ export async function cleanRuntimeCache(options = {}) {
   const evicted = [...toEvictSet];
   let freedBytes = 0;
 
-  await Promise.all(
-    evicted.map(async (item) => {
-      freedBytes += item.size;
-      await cache.delete(item.req);
-    })
-  );
+  await mapConcurrent(evicted, 8, async (item) => {
+    freedBytes += item.size;
+    await cache.delete(item.req);
+  });
 
   const finalRemainingEntries = allItems.length - evicted.length;
   const finalRemainingBytes = Math.max(0, totalBytes - freedBytes);
@@ -359,4 +401,12 @@ export async function cleanRuntimeCache(options = {}) {
     remainingBytes: finalRemainingBytes,
     quota: updatedQuota,
   };
+  };
+
+  _cleanupPromise = run();
+  try {
+    return await _cleanupPromise;
+  } finally {
+    _cleanupPromise = null;
+  }
 }

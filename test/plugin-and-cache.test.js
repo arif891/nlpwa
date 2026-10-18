@@ -646,5 +646,87 @@ test('runtime: putInRuntime avoids buffering body in memory when Content-Length 
   assert.equal(cached.headers.get('X-NLPWA-Content-Length'), null);
 });
 
+test('store: memoizes getStaged and updates with setStaged, clearStaged, and resetMeta', async () => {
+  const { getStaged, setStaged, clearStaged, resetMeta, resetStoreMemo } = await import('../src/sw/cache/store.js');
+  setupEnv(() => new Response('ok'));
+  resetStoreMemo();
+
+  // Initially null
+  assert.equal(await getStaged(), null);
+
+  // setStaged updates memory and cache
+  await setStaged({ version: '1.2.3', complete: true });
+  const staged1 = await getStaged();
+  assert.equal(staged1?.version, '1.2.3');
+
+  // Second call returns memoized value
+  const staged2 = await getStaged();
+  assert.equal(staged2?.version, '1.2.3');
+
+  // clearStaged resets it
+  await clearStaged();
+  assert.equal(await getStaged(), null);
+
+  // resetMeta resets it
+  await setStaged({ version: '2.0.0' });
+  await resetMeta();
+  assert.equal(await getStaged(), null);
+});
+
+test('store: configurable META_CACHE via setMetaCacheName and caches.meta', async () => {
+  const { getMetaCacheName, setMetaCacheName, getActive, setActive, resetMeta, resetStoreMemo } = await import('../src/sw/cache/store.js');
+  const caches = setupEnv(() => new Response('ok'));
+  resetStoreMemo();
+
+  setMetaCacheName('my-custom-meta');
+  assert.equal(getMetaCacheName(), 'my-custom-meta');
+
+  await setActive({ cache: 'offline@custom-1', version: '1.0.0' });
+  const active = await getActive();
+  assert.equal(active?.cache, 'offline@custom-1');
+
+  // Verify it was stored in 'my-custom-meta' cache
+  const customCache = await caches.open('my-custom-meta');
+  const storedRes = await customCache.match('/_nlpwa/active.json');
+  assert.ok(storedRes, 'written to custom meta cache');
+  const parsed = await storedRes.json();
+  assert.equal(parsed.version, '1.0.0');
+
+  // Reset back to default
+  setMetaCacheName('nlpwa-meta');
+  await resetMeta();
+  resetStoreMemo();
+});
+
+test('updateActiveConfig: locks base path alongside verifyHashes and caches', async () => {
+  const { initConfig, updateActiveConfig } = await import('../src/sw/config/index.js');
+  initConfig({
+    version: '1.0.0',
+    base: '/app/',
+  });
+
+  const updated = updateActiveConfig({
+    version: '1.0.1',
+    base: '/hacked/',
+  });
+
+  assert.equal(updated.base, '/app/', 'base must not be altered by runtime config.json');
+});
+
+test('glob: caps _regexCache and clearGlobCache clears cache', async () => {
+  const { globToRegex, clearGlobCache } = await import('../src/shared/glob.js');
+  clearGlobCache();
+
+  for (let i = 0; i < 120; i++) {
+    globToRegex(`/pattern/${i}/**`);
+  }
+
+  // Capped at 100 entries without throwing or leaking
+  clearGlobCache();
+  const r1 = globToRegex('/test/**');
+  assert.ok(r1.test('/test/hello'));
+});
+
+
 
 

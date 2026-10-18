@@ -16,7 +16,9 @@
   "files": [
     "out",
     "bin",
+    "src/shared",
     "types",
+    "test/helpers",
     "README.md",
     "LICENSE"
   ],
@@ -48,6 +50,9 @@
       "types": "./types/vite.d.ts",
       "import": "./out/rollup-plugin.js",
       "default": "./out/rollup-plugin.js"
+    },
+    "./testing": {
+      "default": "./test/helpers/fake-env.js"
     },
     "./package.json": "./package.json"
   },

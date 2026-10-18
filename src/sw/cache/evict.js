@@ -1,9 +1,8 @@
 import { getConfig } from '../config/index.js';
-import { matchGlob } from '../../shared/glob.js';
 import { CACHING_CAPABLE_STRATEGIES } from '../../shared/constants.js';
 import { resolvePathWithBase } from '../../shared/url.js';
 import { openActive } from './store.js';
-import { isManifestFile } from '../fetch/router.js';
+import { isManifestFile, matchRoute } from '../fetch/router.js';
 
 /**
  * Determine if a URL should remain in any cache.
@@ -30,45 +29,14 @@ export function isCacheableUrl(url) {
     return true;
   }
 
+  const matchedRoute = matchRoute(requestUrl, routes, config);
+  if (matchedRoute) {
+    return CACHING_CAPABLE_STRATEGIES.has(matchedRoute.strategy);
+  }
+
   const isSameOrigin = typeof self !== 'undefined' && self.location
     ? requestUrl.origin === self.location.origin
     : true;
-
-  let appPathname = requestUrl.pathname;
-  if (config.base && appPathname.startsWith(config.base)) {
-    appPathname = appPathname.slice(config.base.length);
-    if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
-  }
-
-  for (const route of routes) {
-    let routeOrigin = route.origin;
-    let matchPattern = route.match;
-
-    if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
-      try {
-        routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
-      } catch {
-        // fallback
-      }
-    }
-
-    if (routeOrigin) {
-      if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
-        continue;
-      }
-    } else if (!isSameOrigin) {
-      // Unspecified origin matches ONLY same-origin requests
-      continue;
-    }
-
-    if (
-      matchGlob(matchPattern, requestUrl.href) ||
-      matchGlob(matchPattern, requestUrl.pathname) ||
-      matchGlob(matchPattern, appPathname)
-    ) {
-      return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
-    }
-  }
 
   // Cross-origin requests without an explicit origin route pass through without caching
   if (!isSameOrigin) {

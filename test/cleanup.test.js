@@ -314,3 +314,25 @@ test('cleanup: supports KB, MB, and string units (e.g. maxTotalMB, maxItemKB, "5
   assert.ok(result3.evictedUrls.includes('https://example.com/500kb.bin'));
   assert.equal(result3.remainingEntries, 0);
 });
+
+test('cleanup: serializes concurrent cleanRuntimeCache calls without colliding', async () => {
+  setupEnv(() => new Response('ok'));
+
+  await putInRuntime(req('/file1.dat'), new Response('1', { headers: { 'Content-Length': '100' } }));
+  await putInRuntime(req('/file2.dat'), new Response('2', { headers: { 'Content-Length': '200' } }));
+  await putInRuntime(req('/file3.dat'), new Response('3', { headers: { 'Content-Length': '300' } }));
+
+  // Run two concurrent cleanups simultaneously
+  const [res1, res2] = await Promise.all([
+    cleanRuntimeCache({ maxItemBytes: 150 }),
+    cleanRuntimeCache({ strategy: CLEANUP_STRATEGIES.ALL }),
+  ]);
+
+  assert.equal(res1.success, true);
+  assert.equal(res2.success, true);
+  // Both executed cleanly without errors and cache is empty
+  const cache = await caches.open('runtime');
+  const remaining = await cache.keys();
+  assert.equal(remaining.length, 0);
+});
+

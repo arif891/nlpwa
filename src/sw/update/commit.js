@@ -6,6 +6,8 @@ import {
   cleanupCaches, tryAcquire, release, withLock,
 } from '../cache/store.js';
 import { getSnapshotPath } from './manifest.js';
+import { setUpdateStatus } from './index.js';
+import { MESSAGE_TYPES } from '../../shared/constants.js';
 
 /**
  * Make the staged update the live one. The switch itself is ONE write
@@ -19,6 +21,8 @@ export async function commitStaged() {
   const config = getConfig();
   const staged = await getStaged();
   if (!staged?.complete) return false;
+
+  setUpdateStatus('applying');
 
   // A complete cache always contains its snapshot. If not, discard it.
   const cache = await caches.open(staged.cache);
@@ -62,11 +66,12 @@ export async function commitStaged() {
 
   if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
     self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
-      clients.forEach((c) => c.postMessage({ type: 'UPDATE_APPLIED', version: staged.version }));
+      clients.forEach((c) => c.postMessage({ type: MESSAGE_TYPES.UPDATE_APPLIED, version: staged.version }));
     }).catch(() => {});
   }
 
   console.log(`[NLPWA] Switched to v${staged.version}`);
+  setUpdateStatus('idle');
   return true;
 }
 

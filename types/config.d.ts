@@ -16,6 +16,8 @@ export interface RouteConfig {
   networkTimeoutMs?: number;
   /** Fallback URL if request fails offline (for navigation) */
   navigationFallback?: string;
+  /** Offline fallback page URL (alias/override for navigationFallback) */
+  offlineFallback?: string;
   /** Ignore URL search query parameters when matching cache */
   ignoreSearch?: boolean;
   /** Whether failures should throw/reject instead of returning a synthetic 503 response */
@@ -26,12 +28,19 @@ export interface RouteConfig {
   cacheOpaque?: boolean;
 }
 
-export interface UpdateAPIConfig {
+export interface UpdateAPIConfigObject {
   /** Lightweight check returning { version: string } */
   version: string;
   /** Full manifest check returning { version: string, files: Array<{ path: string, hash: string }> } */
   info: string;
 }
+
+export interface UpdateAPIEndpointEntry {
+  type: 'version' | 'info';
+  endpoint: string;
+}
+
+export type UpdateAPIConfig = UpdateAPIConfigObject | UpdateAPIEndpointEntry[];
 
 export interface NLPWAConfig {
   /** Service Worker / App version */
@@ -50,6 +59,7 @@ export interface NLPWAConfig {
   caches?: {
     offline?: string;
     runtime?: string;
+    meta?: string;
   };
   /** Path inside offline cache where snapshot is stored */
   snapshotCachePath?: string;
@@ -63,6 +73,10 @@ export interface NLPWAConfig {
   networkTimeoutMs?: number;
   /** Default fallback URL for navigation requests when offline */
   navigationFallback?: string;
+  /** Default offline fallback page URL (for navigation) */
+  offlineFallback?: string;
+  /** Logging verbosity: 'silent' | 'error' | 'warn' | 'info' | 'debug' (default: 'info') */
+  logLevel?: 'silent' | 'error' | 'warn' | 'info' | 'debug';
   /** Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths) */
   base?: string;
   /** Retain immediate prior version cache on commit for multi-tab grace retention */

@@ -2,6 +2,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { incrementPatch } from '../src/shared/version.js';
+import { matchGlob } from '../src/shared/glob.js';
+import { resolveUpdateEndpoints } from '../src/shared/url.js';
+
+export { incrementPatch, resolveUpdateEndpoints };
 
 /**
  * SHA-256 first 32 hex characters (128 bits).
@@ -12,18 +17,6 @@ import { pathToFileURL } from 'node:url';
 export function hashFile(filePath) {
   const content = readFileSync(filePath);
   return createHash('sha256').update(content).digest('hex').slice(0, 32);
-}
-
-/**
- * Increment semver patch version helper (x.y.z -> x.y.(z+1)).
- *
- * @param {string} version
- * @returns {string}
- */
-export function incrementPatch(version) {
-  const base = String(version || '1.0.0').split('-')[0];
-  const parts = base.split('.').map(s => parseInt(s, 10) || 0);
-  return `${parts[0] ?? 0}.${parts[1] ?? 0}.${(parts[2] ?? 0) + 1}`;
 }
 
 function canonicalizeConfig(obj, depth = 0) {
@@ -190,29 +183,7 @@ export function syncSourceConfigVersion(configPath, newVersion) {
 }
 
 /**
- * Resolve version and info API endpoint paths from runtime config.
- *
- * @param {Object} runtimeConfig
- * @returns {{ versionEndpoint: string, infoEndpoint: string }}
- */
-export function resolveUpdateEndpoints(runtimeConfig = {}) {
-  let versionEndpoint = '/api/update/version.json';
-  let infoEndpoint = '/api/update/info.json';
-
-  if (runtimeConfig.updateAPI) {
-    if (typeof runtimeConfig.updateAPI === 'object' && !Array.isArray(runtimeConfig.updateAPI)) {
-      versionEndpoint = runtimeConfig.updateAPI.version || versionEndpoint;
-      infoEndpoint = runtimeConfig.updateAPI.info || infoEndpoint;
-    } else if (Array.isArray(runtimeConfig.updateAPI)) {
-      const v = runtimeConfig.updateAPI.find(e => e.type === 'version');
-      const i = runtimeConfig.updateAPI.find(e => e.type === 'info');
-      if (v?.endpoint) versionEndpoint = v.endpoint;
-      if (i?.endpoint) infoEndpoint = i.endpoint;
-    }
-  }
-
-  return { versionEndpoint, infoEndpoint };
-}
+export { resolveUpdateEndpoints };
 
 /**
  * Resolve disk path for an API endpoint.
@@ -229,21 +200,6 @@ export function getApiDiskPath(baseDir, endpoint) {
   return resolve(baseDir, clean, 'index.json');
 }
 
-function globToRegex(pattern) {
-  const regexStr = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\/\*\*\//g, '\x00GLOBSTARSLASH\x00')
-    .replace(/\*\*/g, '\x00GLOBSTAR\x00')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '[^/]')
-    .replace(/\x00GLOBSTARSLASH\x00/g, '/(?:.*/)?')
-    .replace(/\x00GLOBSTAR\x00/g, '.*');
-  return new RegExp('^' + regexStr + '$');
-}
-
-function matchGlob(pattern, path) {
-  return globToRegex(pattern).test(path);
-}
 
 function walkFiles(dir) {
   const files = [];

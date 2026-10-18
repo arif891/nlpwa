@@ -19,41 +19,44 @@ Runtime configuration is completely decoupled from `sw.js` and loaded dynamicall
 
 ```
 src/
-├── shared/                         ← Shared by both SW, client, and build tool
-│   ├── constants.js                Cache names, message types, strategy names
+├── shared/                         ← Shared by SW, client, and build tool
+│   ├── constants.js                Cache names (OFFLINE, RUNTIME, META), message types, strategies
 │   ├── hash.js                     sha256Hex(), hashMatches()
 │   ├── glob.js                     Glob URL pattern matching (*, **, ?)
-│   └── version.js                  Semver comparison & incrementPatch (isNewer, compare)
+│   ├── version.js                  Semver comparison & incrementPatch (isNewer, compare)
+│   ├── url.js                      resolvePathWithBase(), resolveUpdateEndpoints()
+│   └── logger.js                   Tiered logging utility (silent, error, warn, info, debug)
 │
 ├── sw/                             ← Runs in Service Worker thread
-│   ├── index.js                    Entry: initSW(config) — wires all lifecycle events
+│   ├── index.js                    Entry: initSW(config) — wires all lifecycle events & messages
+│   ├── logger.js                   SW-scoped loggers (error, warn, log, debug)
 │   ├── config/
-│   │   ├── defaults.js             Default config values (SW version, endpoints, paths)
+│   │   ├── defaults.js             Default config values (SW version, endpoints, paths, logLevel)
 │   │   ├── schema.js               Config validation (returns error strings)
-│   │   └── index.js                loadConfigFromCache(), updateActiveConfig(), getUpdateEndpoints()
+│   │   └── index.js                loadConfigFromCache(), updateActiveConfig(), ensureConfigReady()
 │   ├── cache/
-│   │   ├── store.js                nlpwa-meta pointers (active / staged), lock, old-cache cleanup
+│   │   ├── store.js                nlpwa-meta pointers (active / staged memoised), Web Locks / withLock
 │   │   ├── install.js              precacheFiles() — install-time stage + commit (manifest-driven)
 │   │   ├── runtime.js              get/put/delete helpers for offline + runtime caches, clearAllCaches()
-│   │   ├── cleanup.js              cleanRuntimeCache(), getStorageQuotaInfo() — quota & size-based eviction
-│   │   ├── evict.js                evictByRoute() — route-aware eviction on route changes
+│   │   ├── cleanup.js              cleanRuntimeCache(), getStorageQuotaInfo() — bounded batching & eviction
+│   │   ├── evict.js                evictByRoute() — route-aware eviction delegating to matchRoute
 │   │   └── index.js                Barrel re-export
 │   ├── fetch/
-│   │   ├── strategies.js           5 strategy functions (tagged with X-Cache-Status)
-│   │   ├── router.js               resolveStrategy(request) — glob route matching
+│   │   ├── strategies.js           5 strategy functions (X-Cache-Status, offlineFallback, safePutInRuntime)
+│   │   ├── router.js               resolveStrategy(request), matchRoute(url, routes, config)
 │   │   └── index.js                handleFetch(event) — SW fetch event handler
 │   └── update/
 │       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerInfo (Tier 2), save snapshot
 │       ├── diff.js                 computeDiff(newFiles, oldFiles) → { added, modified, removed }
-│       ├── stage.js                stageUpdate() — builds + hash-verifies the new version in a separate cache
-│       ├── commit.js               commitStaged() — one-write switch to the staged version
-│       └── index.js                checkForUpdate() with two-tier checks and concurrency lock
+│       ├── stage.js                stageUpdate() — builds, hash-verifies & broadcasts STAGING_PROGRESS
+│       ├── commit.js               commitStaged() — one-write atomic switch to staged version
+│       └── index.js                checkForUpdate(), getUpdateStatus(), setUpdateStatus()
 │
-├── client/                         ← Runs in main browser thread (built to out/client.js)
-│   ├── register.js                 register(swUrl, options) — SW registration & client SDK entry
-│   ├── messaging.js                sendToSW(), onSWMessage(), requestUpdateCheck()
+├── client/                         ← Runs in main browser thread (built to out/client.js / client.esm.js)
+│   ├── register.js                 register(swUrl, options), unregister(scope)
+│   ├── messaging.js                sendToSW(), onSWMessage(), getVersion(), getStatus(), requestFromSW()
 │   ├── cache-manager.js            getCacheInfo(), cleanupRuntimeCache() — quota & cache management
-│   └── update-ui.js                onUpdateReady() → callback + CustomEvent, applyUpdate()
+│   └── update-ui.js                onUpdateReady(), onStagingProgress(), applyUpdate()
 │
 ├── rollup-plugin.js                ← Bundler plugin for Vite / Rollup integration
 └── config.js                       ← Starter config template (emits out/config.json)
@@ -151,6 +154,8 @@ checkForUpdate()
   │    ├─ reuse files already verified in partial staging cache (resume)
   │    ├─ copy unchanged files locally from active cache (zero network bytes)
   │    ├─ fetch added + modified files with { cache: 'no-store' }
+  │    ├─ broadcast STAGING_PROGRESS to clients ({ loaded, total, percent, file })
+  │    ├─ auto-recover on QuotaExceededError: evicts runtime cache and retries
   │    ├─ verify SHA-256 against manifest hashes (config.verifyHashes)
   │    │    └─ Note: same-origin hashes guard against network corruption, captive portals, and partial deploys (not compromised origin)
   │    ├─ if any file fails: remains incomplete, resumes on next check (exponential backoff after 5 attempts)
@@ -162,11 +167,11 @@ checkForUpdate()
 
 Commit Phase: commitStaged() (triggered on navigation or APPLY_UPDATE message):
   ├─ atomically switch active pointer in nlpwa-meta (/_nlpwa/active.json)
-  ├─ clear staged pointer
+  ├─ clear staged pointer (invalidates memoised _stagedPromise)
   ├─ reload config.json into in-memory router
   ├─ evict modified/removed entries from runtime cache
-  ├─ evictByRoute() using updated routes
-  └─ prune old offline caches
+  ├─ evictByRoute() delegating to matchRoute
+  └─ prune old offline caches (preserving v(N-1) if retainPreviousVersionCache: true)
 ```
 
 ### 5. Client Update Flow
@@ -216,9 +221,16 @@ NLPWA includes an intelligent cleanup manager for the dynamic `runtime` cache:
 
 ---
 
-## Concurrency Model
+## Concurrency Model & Locking
 
-The SW is single-threaded, but `checkForUpdate()` is async. A boolean lock (`_updateInProgress`) prevents two overlapping update runs (e.g. if the interval fires while a previous check is still in flight). The lock is released in a `finally` block so it always resets even on error.
+1. **Atomic Operation Lock (`withLock`)**:
+   Staging and committing must not overlap. NLPWA uses the standard Web Locks API (`navigator.locks.request('nlpwa-operation-lock', { ifAvailable: true })`) across concurrent tabs and worker threads, falling back gracefully to in-memory cooperative locking (`tryAcquire` / `release`).
+2. **Update Check Throttling**:
+   A boolean lock (`_updateInProgress`) prevents overlapping `checkForUpdate()` runs from intervals, tab focus, or manual calls.
+3. **Cache Cleanup Serialization**:
+   Concurrent `cleanRuntimeCache()` calls are queued sequentially via `_cleanupPromise`, ensuring quota calculations and deletions never collide.
+4. **Pointer Memoization**:
+   Active and staged metadata pointers (`_activePromise` and `_stagedPromise`) are cached in memory. Reads on navigation bypass `CacheStorage` I/O, updating instantly upon `setActive()`, `setStaged()`, or `clearStaged()`.
 
 ---
 

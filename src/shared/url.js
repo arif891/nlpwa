@@ -22,3 +22,35 @@ export function resolvePathWithBase(path, base) {
   }
   return `${cleanBase}${cleanPath}`;
 }
+
+/**
+ * Resolve version and info API endpoint paths from runtime config or updateAPI configuration.
+ * Supports both object format { version, info } and array format [{ type: 'version', endpoint }, ...].
+ *
+ * @param {Object} [config]
+ * @returns {{ versionEndpoint: string, infoEndpoint: string }}
+ */
+export function resolveUpdateEndpoints(config = {}) {
+  let versionEndpoint = '/api/update/version.json';
+  let infoEndpoint = '/api/update/info.json';
+
+  const updateAPI = config?.updateAPI ?? config;
+  if (updateAPI) {
+    if (typeof updateAPI === 'object' && !Array.isArray(updateAPI)) {
+      if (updateAPI.version) versionEndpoint = updateAPI.version;
+      if (updateAPI.info) infoEndpoint = updateAPI.info;
+    } else if (Array.isArray(updateAPI)) {
+      const v = updateAPI.find((e) => e?.type === 'version');
+      const i = updateAPI.find((e) => e?.type === 'info');
+      if (v?.endpoint) versionEndpoint = v.endpoint;
+      if (i?.endpoint) infoEndpoint = i.endpoint;
+    }
+  }
+
+  if (config?.base) {
+    versionEndpoint = resolvePathWithBase(versionEndpoint, config.base);
+    infoEndpoint = resolvePathWithBase(infoEndpoint, config.base);
+  }
+
+  return { versionEndpoint, infoEndpoint };
+}

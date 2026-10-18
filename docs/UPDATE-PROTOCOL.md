@@ -271,9 +271,14 @@ Failures during staging never corrupt the running application:
 | Type | Payload | Meaning |
 |---|---|---|
 | `UPDATE_READY` | `{ type, version }` | Staged update is complete; client should prompt user |
-| `UPDATE_APPLIED` | `{ type, applied }` | Staged update has been switched to active; client may reload |
+| `UPDATE_APPLIED` | `{ type, version, applied }` | Staged update has been switched to active; client may reload |
 | `NO_UPDATE` | `{ type, version }` | Version check ran; client is already up to date |
+| `STAGING_PROGRESS` | `{ type, loaded, total, percent, file }` | Staging download and verification progress |
 | `UPDATE_FAILED` | `{ type, version, failed, error, persistent, hasHashMismatch }` | Staging or hash verification failed |
+| `VERSION_INFO` | `{ type, version, activeVersion, stagedVersion }` | Reply with current active & staged versions |
+| `STATUS_INFO` | `{ type, status, activeVersion, stagedVersion, percent }` | Reply with current update lifecycle status |
+| `CACHE_INFO` | `{ type, data: { quota, usage, runtimeEntries, runtimeBytes, largestEntries } }` | Reply with storage quota & cache metrics |
+| `RUNTIME_CLEANED` | `{ type, data: { evictedCount, evictedUrls, freedBytes, remainingEntries } }` | Reply with cache cleanup summary |
 
 ### Client → SW
 
@@ -281,11 +286,15 @@ Failures during staging never corrupt the running application:
 |---|---|---|
 | `CHECK_UPDATE` | `{ type }` | Client requests an immediate update check |
 | `APPLY_UPDATE` | `{ type }` | Client asks SW to commit staged update immediately |
+| `GET_VERSION` | `{ type }` | Client requests current SW and app version info |
+| `GET_STATUS` | `{ type }` | Client requests current update staging status |
+| `GET_CACHE_INFO` | `{ type }` | Client requests storage quota & cache stats |
+| `CLEANUP_RUNTIME` | `{ type, options }` | Client requests runtime cache eviction |
 
 ### Client usage
 
 ```js
-import { register, applyUpdate } from '/client.js';
+import { register, applyUpdate, onStagingProgress, getVersion, getStatus } from 'nlpwa/client';
 
 register('/sw.js', {
   onUpdateReady: ({ version }) => {
@@ -299,6 +308,19 @@ register('/sw.js', {
     }
   },
 });
+
+// Subscribe to delta staging progress bar
+onStagingProgress(({ loaded, total, percent, file }) => {
+  console.log(`Downloading update: ${percent}% (${loaded}/${total} - ${file})`);
+  updateProgressBar(percent);
+});
+
+// Query live versions and SW status
+const versionInfo = await getVersion();
+console.log('Active:', versionInfo.activeVersion, 'Staged:', versionInfo.stagedVersion);
+
+const statusInfo = await getStatus();
+console.log('Update status:', statusInfo.status); // 'idle' | 'checking' | 'staging' | 'ready' | 'applying'
 
 // When user confirms update
 async function onUserClickUpdate() {

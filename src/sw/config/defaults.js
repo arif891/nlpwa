@@ -90,10 +90,20 @@ export const DEFAULTS = {
   /** Explicitly bypass Vite dev server and HMR requests to network. Default: false */
   devBypass: false,
 
+  /** Log level: 'silent' | 'error' | 'warn' | 'info' | 'debug'. Default: 'info' */
+  logLevel: 'info',
+
+  /**
+   * Fallback URL for navigation requests when offline.
+   * Default: '/index.html'
+   */
+  offlineFallback: '/index.html',
+
   /** Cache storage names */
   caches: {
     offline: CACHE_NAMES.OFFLINE,
     runtime: CACHE_NAMES.RUNTIME,
+    meta: CACHE_NAMES.META,
   },
 
   /** Path inside the offline cache where the manifest snapshot is stored */

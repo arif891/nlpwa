@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isUserEditing, register, applyUpdate } from '../src/client/register.js';
+import { isUserEditing, register, applyUpdate, unregister, getVersion, getStatus, onStagingProgress } from '../src/client/register.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
 
 test('isUserEditing: correctly identifies when user has focused input/editing fields', () => {
@@ -342,7 +342,73 @@ test('applyUpdate: aborts reload when SW replies applied: false', async () => {
   }
 });
 
+test('register: shouldDeferReload priority sets reason "deferred" when user is also editing', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDoc = globalThis.document;
 
+  try {
+    const swListeners = new Map();
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          register: async () => ({ scope: '/' }),
+          controller: { postMessage() {} },
+          addEventListener(event, listener) {
+            if (!swListeners.has(event)) swListeners.set(event, []);
+            swListeners.get(event).push(listener);
+          },
+          removeEventListener(event, listener) {
+            const list = swListeners.get(event) || [];
+            swListeners.set(event, list.filter(l => l !== listener));
+          },
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    // Simulate user editing text input
+    globalThis.document = {
+      activeElement: { tagName: 'INPUT', type: 'text' },
+      dispatchEvent() {},
+      addEventListener() {},
+      removeEventListener() {},
+    };
+
+    let promptData = null;
+    const handle = await register('/sw.js', {
+      autoReload: true,
+      pollIntervalMs: 0,
+      checkOnRegister: false,
+      shouldDeferReload: () => true, // custom defer
+      onUpdatePrompt: (data) => {
+        promptData = data;
+      },
+    });
+
+    const listeners = swListeners.get('message') || [];
+    assert.ok(listeners.length > 0);
+    for (const l of listeners) {
+      l({
+        data: {
+          type: MESSAGE_TYPES.UPDATE_READY,
+          version: '1.2.0',
+        },
+      });
+    }
+
+    assert.ok(promptData);
+    assert.equal(promptData.reason, 'deferred', 'custom defer takes precedence over editing for reason string');
+    handle?.unsubscribe();
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+    globalThis.document = origDoc;
+  }
+});
 test('register: checkOnRegister sends CHECK_UPDATE to SW without blocking', async () => {
   const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   try {
@@ -506,6 +572,157 @@ test('register: periodicSync: false suppresses periodicSync registration', async
     });
     assert.equal(periodicSyncRegistered, null, 'periodicSync should not be registered');
     handle?.unsubscribe();
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});
+
+test('unregister: unregisters service worker when available', async () => {
+  let unregistered = false;
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          async getRegistration() {
+            return {
+              async unregister() {
+                unregistered = true;
+                return true;
+              },
+            };
+          },
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const result = await unregister();
+    assert.equal(result, true);
+    assert.equal(unregistered, true);
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});
+
+test('getVersion and getStatus: query active version and status from SW via MessageChannel', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origChan = globalThis.MessageChannel;
+  try {
+    class MockChannel {
+      constructor() {
+        this.port1 = {
+          onmessage: null,
+          close() {},
+        };
+        this.port2 = {
+          postMessage: (data) => {
+            if (this.port1.onmessage) {
+              this.port1.onmessage({ data });
+            }
+          },
+        };
+      }
+    }
+    globalThis.MessageChannel = MockChannel;
+
+    const mockSW = {
+      postMessage(msg, ports) {
+        if (msg.type === MESSAGE_TYPES.GET_VERSION) {
+          ports?.[0]?.postMessage({
+            type: MESSAGE_TYPES.VERSION_INFO,
+            requestId: msg.requestId,
+            data: { activeVersion: '1.2.3', stagedVersion: '1.2.4', swVersion: '1' },
+          });
+        } else if (msg.type === MESSAGE_TYPES.GET_STATUS) {
+          ports?.[0]?.postMessage({
+            type: MESSAGE_TYPES.STATUS_INFO,
+            requestId: msg.requestId,
+            data: { status: 'staging' },
+          });
+        }
+      },
+    };
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockSW,
+          ready: Promise.resolve({ active: mockSW }),
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const versionInfo = await getVersion();
+    assert.equal(versionInfo.activeVersion, '1.2.3');
+    assert.equal(versionInfo.stagedVersion, '1.2.4');
+
+    const status = await getStatus();
+    assert.equal(status, 'staging');
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+    if (origChan) {
+      globalThis.MessageChannel = origChan;
+    } else {
+      delete globalThis.MessageChannel;
+    }
+  }
+});
+
+test('onStagingProgress: receives staging progress events', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  try {
+    let messageListener = null;
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          addEventListener(event, listener) {
+            if (event === 'message') messageListener = listener;
+          },
+          removeEventListener() {},
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const progressReports = [];
+    const unsubscribe = onStagingProgress((progress) => {
+      progressReports.push(progress);
+    });
+
+    assert.ok(messageListener);
+    messageListener({
+      data: {
+        type: MESSAGE_TYPES.STAGING_PROGRESS,
+        version: '1.1.0',
+        loaded: 5,
+        total: 10,
+        percent: 50,
+        file: '/app.js',
+      },
+    });
+
+    assert.equal(progressReports.length, 1);
+    assert.equal(progressReports[0].percent, 50);
+    assert.equal(progressReports[0].file, '/app.js');
+
+    unsubscribe();
   } finally {
     if (origNavDesc) {
       Object.defineProperty(globalThis, 'navigator', origNavDesc);

@@ -7,10 +7,12 @@ import { openActive } from '../cache/store.js';
  * @returns {Promise<{ version: string }>}
  */
 export async function fetchServerVersion() {
+  const config = getConfig();
   const { versionEndpoint } = getUpdateEndpoints();
 
+  const timeoutMs = config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(15000)
+    ? AbortSignal.timeout(timeoutMs)
     : undefined;
 
   const response = await fetch(versionEndpoint, {
@@ -38,10 +40,12 @@ export async function fetchServerVersion() {
  * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }>}
  */
 export async function fetchServerInfo() {
+  const config = getConfig();
   const { infoEndpoint } = getUpdateEndpoints();
 
+  const timeoutMs = config.updateTimeoutMs ? config.updateTimeoutMs * 2 : (config.updateAPI?.timeoutMs ? config.updateAPI.timeoutMs * 2 : 30000);
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(30000)
+    ? AbortSignal.timeout(timeoutMs)
     : undefined;
 
   const response = await fetch(infoEndpoint, {

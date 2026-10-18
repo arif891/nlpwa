@@ -2,6 +2,7 @@
 export const CACHE_NAMES = {
   OFFLINE: 'offline',
   RUNTIME: 'runtime',
+  META:    'nlpwa-meta',
 };
 
 /** Path inside the offline cache where the snapshot is stored */
@@ -20,6 +21,11 @@ export const MESSAGE_TYPES = {
   CLEANUP_RUNTIME:     'CLEANUP_RUNTIME',     // client → SW: request runtime cache cleanup
   RUNTIME_CLEANED:     'RUNTIME_CLEANED',     // SW → client: reply with cleanup results
   UPDATE_FAILED:       'UPDATE_FAILED',       // SW → client: update staging or hash verification failed
+  GET_VERSION:         'GET_VERSION',         // client → SW: request current active and staged version
+  VERSION_INFO:        'VERSION_INFO',        // SW → client: reply with version info
+  GET_STATUS:          'GET_STATUS',          // client → SW: request update status
+  STATUS_INFO:         'STATUS_INFO',         // SW → client: reply with update status
+  STAGING_PROGRESS:    'STAGING_PROGRESS',    // SW → client: progress during update staging
 };
 
 /** Runtime cache cleanup strategies */

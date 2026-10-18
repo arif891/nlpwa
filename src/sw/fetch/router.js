@@ -72,6 +72,62 @@ export function isManifestFile(requestUrl, config = getConfig()) {
 }
 
 /**
+ * Match a request URL against configured routes.
+ * Handles origin matching, base stripping, full URL match patterns, and globs.
+ *
+ * @param {URL} requestUrl
+ * @param {Array<Object>} routes
+ * @param {Object} [config]
+ * @returns {Object|null} matched route object or null
+ */
+export function matchRoute(requestUrl, routes = [], config = {}) {
+  const isSameOrigin = typeof self !== 'undefined' && self.location
+    ? requestUrl.origin === self.location.origin
+    : true;
+
+  let appPathname = requestUrl.pathname;
+  if (config.base && appPathname.startsWith(config.base)) {
+    appPathname = appPathname.slice(config.base.length);
+    if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
+  }
+
+  for (const route of routes) {
+    let routeOrigin = route.origin;
+    let matchPattern = route.match;
+
+    // Support full URL patterns directly in match: "https://cdn.jsdelivr.net/npm/**"
+    if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+      try {
+        routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+      } catch {
+        // fallback
+      }
+    }
+
+    // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
+    // match against that. Otherwise default to same-origin only.
+    if (routeOrigin) {
+      if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
+        continue;
+      }
+    } else if (!isSameOrigin) {
+      // Unspecified origin matches ONLY same-origin requests
+      continue;
+    }
+
+    if (
+      matchGlob(matchPattern, requestUrl.href) ||
+      matchGlob(matchPattern, requestUrl.pathname) ||
+      matchGlob(matchPattern, appPathname)
+    ) {
+      return route;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Resolve the strategy function for a given Request by matching it against
  * config.routes (top-to-bottom, first match wins).
  * Falls back to config.defaultStrategy if no route matches.
@@ -123,46 +179,12 @@ export function resolveStrategy(request) {
     return handler;
   }
 
-  let appPathname = requestUrl.pathname;
-  if (config.base && appPathname.startsWith(config.base)) {
-    appPathname = appPathname.slice(config.base.length);
-    if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
-  }
-
-  for (const route of routes) {
-    let routeOrigin = route.origin;
-    let matchPattern = route.match;
-
-    // Support full URL patterns directly in match: "https://cdn.jsdelivr.net/npm/**"
-    if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
-      try {
-        routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
-      } catch {
-        // fallback
-      }
-    }
-
-    // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
-    // match against that. Otherwise default to same-origin only.
-    if (routeOrigin) {
-      if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
-        continue;
-      }
-    } else if (!isSameOrigin) {
-      // Unspecified origin matches ONLY same-origin requests
-      continue;
-    }
-
-    if (
-      matchGlob(matchPattern, requestUrl.href) ||
-      matchGlob(matchPattern, requestUrl.pathname) ||
-      matchGlob(matchPattern, appPathname)
-    ) {
-      const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
-      const handler = (req, event) => fn(req, event, route);
-      handler.strategy = route.strategy;
-      return handler;
-    }
+  const matchedRoute = matchRoute(requestUrl, routes, config);
+  if (matchedRoute) {
+    const fn = STRATEGY_FN[matchedRoute.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
+    const handler = (req, event) => fn(req, event, matchedRoute);
+    handler.strategy = matchedRoute.strategy;
+    return handler;
   }
 
   // Cross-origin requests without an explicit origin route pass through without caching

@@ -120,6 +120,7 @@ Override the default cache storage names.
 caches: {
   offline: 'my-app-offline',   // default: 'offline'
   runtime: 'my-app-runtime',   // default: 'runtime'
+  meta:    'my-app-meta',      // default: 'nlpwa-meta'
 }
 ```
 
@@ -285,6 +286,15 @@ Can also be set globally in `config.js` to apply to all routes by default.
 { match: '/api/**', strategy: 'network-only', throwOnFailure: true }
 ```
 
+#### `navigationFallback` / `offlineFallback` · `string` · default: `'/index.html'`
+
+Fallback HTML document served for navigation requests (`mode: 'navigate'`) when offline or when a navigation misses in the cache. Can be configured per-route or globally in top-level config. Especially useful for multi-page applications (MPAs) or sub-apps with separate offline shells (e.g., an `/admin/` portal falling back to `/admin/index.html` instead of the root `/index.html`).
+
+```js
+// Per-route navigation fallback:
+{ match: '/admin/**', strategy: 'network-first', navigationFallback: '/admin/index.html' }
+```
+
 #### `strategy` — Fetch strategy
 
 | Value | Description |
@@ -296,6 +306,26 @@ Can also be set globally in `config.js` to apply to all routes by default.
 | `'cache-only'` | Cache only, 503 on miss (or throws if `throwOnFailure: true`). Best for: offline fallback |
 
 See [STRATEGIES.md](STRATEGIES.md) for full strategy behaviour.
+
+---
+
+### `navigationFallback` / `offlineFallback` · `string` · default: `'/index.html'`
+
+Global default fallback document served for unhandled offline page navigations.
+
+```js
+navigationFallback: '/index.html'
+```
+
+---
+
+### `updateTimeoutMs` · `number` · default: `15000` (version check) / `30000` (manifest check)
+
+Timeout in milliseconds for network requests to update check endpoints (`/api/update/version.json` and `/api/update/info.json`). Can also be set via `updateAPI.timeoutMs`. Useful for tuning timeout sensitivity on slow edge networks or intermittent mobile connections.
+
+```js
+updateTimeoutMs: 10000 // 10-second timeout
+```
 
 ---
 
@@ -351,6 +381,53 @@ Controls whether opaque cross-origin responses (`type === 'opaque'`, `status ===
 
 ```js
 cacheOpaque: false // or true on specific CDN routes
+```
+
+---
+
+### `logLevel` · `'silent' | 'error' | 'warn' | 'info' | 'debug'` · default: `'info'`
+
+Controls the verbosity of `[NLPWA]` messages emitted by the Service Worker and shared libraries:
+
+- `'silent'`: Suppresses all console output.
+- `'error'`: Logs only fatal and unrecoverable errors.
+- `'warn'`: Logs warnings, hash mismatches, and staging retry attempts.
+- `'info'` (default): Logs version switches, cache staging results, and cleanup milestones.
+- `'debug'`: Logs verbose operational details including per-file staging progress and lock acquisitions.
+
+```js
+logLevel: 'info'
+```
+
+---
+
+### `offlineFallback` & `navigationFallback` · `string` · default: `'/index.html'`
+
+Fallback URL returned for navigation requests when the user is offline and no cached copy of the requested page is available.
+Can be defined globally in `config.js` or per-route in `routes`:
+
+```js
+// Global fallback
+offlineFallback: '/offline.html'
+
+// Or per-route fallback
+routes: [
+  { match: '/dashboard/**', strategy: 'network-first', offlineFallback: '/dashboard-offline.html' },
+]
+```
+
+*(Note: `navigationFallback` is supported as an alias for backwards compatibility).*
+
+---
+
+### `networkTimeoutMs` · `number` · default: `undefined`
+
+Timeout in milliseconds for `network-first` requests.
+If the network response is not received within this window and a cached response exists, the cached version is served immediately while the background network fetch completes to update the cache.
+
+```js
+// Serve cached page if network takes longer than 2.5s
+{ match: '/pages/**', strategy: 'network-first', networkTimeoutMs: 2500 }
 ```
 
 ---

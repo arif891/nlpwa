@@ -33,5 +33,7 @@ declare module 'virtual:nlpwa-version' {
   export const APP_VERSION: string;
   /** The base semver version from config */
   export const BASE_VERSION: string;
+  /** Composite content hash of tracked files and configuration */
+  export const CONTENT_HASH: string;
   export default APP_VERSION;
 }

@@ -20,6 +20,8 @@ import { resolvePathWithBase } from '../../shared/url.js';
  * Fallback (no manifest, e.g. `nlpwa update` was never run): precache from
  * config.precache without hashes. The first update check then builds the
  * hashed snapshot.
+ *
+ * @returns {Promise<Object|undefined>}
  */
 export async function precacheFiles() {
   let manifest = null;

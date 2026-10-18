@@ -3,10 +3,10 @@
  *
  * Edit this file to configure offline caching and route fetch strategies.
  * The NLPWA build tool (nlpwa update / rollup plugin) reads this file,
- * auto-increments the app version, and emits runtime config.json and update APIs.
+ * derives the app version from manifest content hashes, and emits runtime config.json and update APIs.
  */
 export default {
-  // App version (auto-incremented on build/update)
+  // Base app version (used as prefix for content-derived version: <version>-<12-char hash>)
   version: '1.0.0',
 
   // Path to runtime config file (served by web server, stored in offline cache)

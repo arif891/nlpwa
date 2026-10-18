@@ -33,13 +33,19 @@ test('stage: builds a separate cache and leaves the active version untouched unt
   assert.equal((await loadCachedSnapshot()).version, '1.0.0');
   assert.equal(await (await (await caches.open(activeV1)).match(req('/app.js'))).text(), 'app v1');
 
-  // commit flips everything together and removes the old cache
+  // commit flips everything together and retains the previous cache for open tabs
   assert.equal(await commitStaged(), true);
   const active = await getActive();
   assert.equal(active.version, '1.0.1');
   assert.equal(await (await (await caches.open(active.cache)).match(req('/app.js'))).text(), 'app v2');
   assert.equal(await getStaged(), null);
-  assert.equal((await caches.keys()).includes(activeV1), false, 'old cache removed');
+  assert.equal((await caches.keys()).includes(activeV1), true, 'immediate previous cache retained for open tabs');
+
+  // A subsequent version commit evicts activeV1
+  server.set('1.0.2', { ...v1, '/app.js': 'app v3' });
+  await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
+  await commitStaged();
+  assert.equal((await caches.keys()).includes(activeV1), false, 'oldest cache removed after subsequent commit');
 });
 
 test('stage: unchanged files are copied locally, only changed files hit the network', async () => {

@@ -76,13 +76,15 @@
      * Service Worker version — set MANUALLY by the developer.
      *
      * Bump this when you make structural changes to the SW itself:
-     * routes, strategies, or precache list.
+     * routing logic, cache names, or fetch strategy implementations.
      *
-     * Changing this triggers the browser's byte-level SW update, and
-     * tells NLPWA to wipe old caches and do a clean install.
+     * Changing this triggers the browser's byte-level SW update. Upon activation,
+     * NLPWA performs a force-refetch of all precache files into a separate staging cache
+     * (bypassing local copies) and clears the runtime cache on commit, while active tabs
+     * keep serving safely from the active cache until commit.
      *
-     * Note: The APP version is NOT configured here — it is auto-incremented
-     * by the build tool and lives in config.json and update API endpoints.
+     * Note: The APP version is NOT configured here — it is derived deterministically
+     * from the manifest content hash (or set in config.json) and served via the update API endpoints.
      *
      * Example: '1', '2', 'v3'
      */

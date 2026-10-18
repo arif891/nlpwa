@@ -8,7 +8,7 @@ NLPWA is a Service Worker framework with a decoupled architecture:
 | Service Worker thread | `out/sw.js` | Intercepts fetches, manages caches, applies delta updates |
 | Runtime Configuration | `config.js` → `config.json` | Dynamic route rules & precache list; stored in `offline` cache |
 | Main thread (browser) | `out/client.js` (IIFE) / `out/client.esm.js` (ES module) | Registers the SW, listens for updates, shows update UI |
-| Build Tool / CLI | `bin/nlpwa.js` / Rollup | Auto-increments patch version, tracks offline files & config, emits update API |
+| Build Tool / CLI | `bin/nlpwa.js` / Rollup | Derives content-hash version, tracks offline files & config, emits update API |
 
 The Service Worker thread and client communicate via `postMessage`.
 Runtime configuration is completely decoupled from `sw.js` and loaded dynamically from the `offline` cache.
@@ -152,6 +152,7 @@ checkForUpdate()
   │    ├─ copy unchanged files locally from active cache (zero network bytes)
   │    ├─ fetch added + modified files with { cache: 'no-store' }
   │    ├─ verify SHA-256 against manifest hashes (config.verifyHashes)
+  │    │    └─ Note: same-origin hashes guard against network corruption, captive portals, and partial deploys (not compromised origin)
   │    ├─ if any file fails: remains incomplete, resumes on next check (exponential backoff after 5 attempts)
   │    ├─ write snapshot to staged cache once all files verified (marks staging complete)
   │    └─ record staged pointer in nlpwa-meta (/_nlpwa/staged.json)
@@ -225,7 +226,7 @@ The SW is single-threaded, but `checkForUpdate()` is async. A boolean lock (`_up
 
 | Decision | Choice | Why |
 |---|---|---|
-| SW vs. App Versioning | Separated (SW manual, App build-managed) | App updates don't cause browser byte-level SW reinstalls |
+| SW vs. App Versioning | Separated (SW manual, App content-hash derived) | App updates don't cause browser byte-level SW reinstalls. Identical rebuilds produce identical hashes, eliminating watch loops and false update alerts |
 | Dynamic Config | `config.js` → `config.json` in `offline` cache | Route and strategy changes update OTA without touching SW code |
 | File Tracking Scope | Offline files (`config.precache`) + `config.json` only | Runtime assets are cached lazily; keeps manifest tiny & focused |
 | Two-Tier Update API | `/version.json` (check) + `/info.json` (manifest) | Polling costs ~20 bytes instead of pulling full file trees |

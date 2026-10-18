@@ -28,7 +28,7 @@ Developers define routes, precached shell files, and update settings in `config.
 
 ```js
 export default {
-  // Application version (auto-incremented on build/update)
+  // Application base version (used as prefix for content-derived version, e.g. 1.0.0-<hash>)
   version: '1.0.0',
 
   // Two-tier update endpoints
@@ -139,6 +139,9 @@ How each downloaded update file is checked against the hash in the update manife
 - `'strict'` - a mismatch (or an HTML error page served with status 200) fails that file. The update is not applied until every file verifies, and it is retried on the next check. If consecutive retries repeatedly fail on the same file due to hash mismatches, a persistent failure warning is logged and broadcast to clients via `UPDATE_FAILED`. The running version is untouched.
 - `'warn'` - mismatches are logged but the file is stored. Use this only if a proxy or CDN rewrites your files after the build, which makes the build-time hash impossible to match.
 - `false` - no verification.
+
+> [!NOTE]
+> Manifest hashes are SHA-256 digests served from the same origin (`info.json`). They verify content integrity against network transport corruption, captive portals returning 200 HTML for missing files, proxy caching glitches, and partial deployments—not a compromise of the web server origin itself.
 
 ```js
 verifyHashes: 'strict'

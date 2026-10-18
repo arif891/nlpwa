@@ -54,7 +54,7 @@ Fetched **only** if Tier 1 reports a strictly newer version. Contains the comple
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `version` | `string` | ✅ | Semantic version of the deployment (auto-incremented by build tool) |
+| `version` | `string` | ✅ | Semantic version with content digest (derived deterministically from manifest hash, e.g. `1.0.0-a1b2c3d4e5f6`) |
 | `files` | `array` | ✅ | List of tracked offline files and their hashes |
 | `files[].path` | `string` | ✅ | URL pathname starting with `/` |
 | `files[].hash` | `string` | ✅ | Stable content hash (SHA-256 hex string or its first 8+ hex chars; the built-in tools emit 32) |
@@ -184,6 +184,7 @@ Open separate cache: offline@1.4.2-<unique-id>
    - Compute SHA-256 of downloaded body.
    - Match against manifest hash (config.verifyHashes: 'strict' | 'warn' | false).
    - Strict mode rejects mismatches (and HTTP 200 HTML error pages).
+   - *Security Scope*: Same-origin hashes protect against network transport corruption, captive portal intercepts, and partial deployments—not against a compromised web origin.
 5. Error recovery & Atomicity:
    - If any file fails to fetch or verify, the update is never finalized or committed.
    - Verified files are kept in the staging cache so subsequent checks resume.

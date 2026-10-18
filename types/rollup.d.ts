@@ -3,8 +3,10 @@ import type { Plugin } from 'rollup';
 export interface RollupPluginOptions {
   /** Path to config.js or config.json (auto-detected if omitted) */
   config?: string;
-  /** Auto-increment patch version (default: true) */
+  /** Derive app version from manifest content hash (default: false for autoIncrement, i.e. content-hash is used). Set true to bump semver patch. */
   autoIncrement?: boolean;
+  /** Sync updated version back into source config.js file (default: false) */
+  syncSource?: boolean;
   /** Explicit app version override */
   version?: string;
   /** Emit manifest & update API on build (default: true) */

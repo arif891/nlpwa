@@ -5,7 +5,7 @@
  * Commands:
  *   nlpwa init    Scaffold or drop NLPWA files (sw.js, client.js, config.js)
  *                 into any target project directory.
- *   nlpwa update  Reads config.js, auto-increments app patch version,
+ *   nlpwa update  Reads config.js, derives app version from manifest content hash,
  *                 generates runtime config.json, hashes ONLY tracked offline files,
  *                 and emits update API endpoints (/api/update/version & info).
  *
@@ -110,7 +110,7 @@ function printHelp() {
 ${c.bold}COMMANDS${c.reset}
   ${c.green}init${c.reset}     Scaffolds or copies sw.js, client.js, and config.js
            into your target project directory for immediate drop-in use.
-  ${c.green}update${c.reset}   Reads config.js, auto-increments app patch version,
+  ${c.green}update${c.reset}   Reads config.js, derives content-hash app version,
            generates config.json, hashes ONLY tracked offline files,
            and emits update API endpoints (/api/update/version & info).
   ${c.green}build${c.reset}    Alias for "update" — builds manifest and update endpoints.

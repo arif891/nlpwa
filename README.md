@@ -28,7 +28,7 @@ Native mobile apps (iOS & Android) feel reliable because they follow a strict, a
 1. **Background Staging:** Updates download quietly over the air (OTA) in the background without interrupting the active screen or dropping unsaved user work.
 2. **Atomic Version Swapping:** When the user restarts or navigates, the app switches versions as a single atomic unit. You are never left in a broken "Frankenstein" state where new HTML requests old JavaScript chunks that have vanished from the server (the notorious PWA chunk mismatch 404).
 3. **Delta Syncing:** Only files that actually changed are transferred over the wire.
-4. **Integrity Verification:** Every downloaded file is verified with cryptographic checksums before it is allowed to go live.
+4. **Integrity Verification:** Every downloaded file is verified with SHA-256 hashes against the manifest before it is allowed to go live. (Because manifest hashes are served from the same origin, this protects against network transport corruption, captive portal intercepts returning 200 HTML for missing assets, and partial deployments—not against a compromised web server).
 
 Standard Service Worker setups often fail this test: calling `self.skipWaiting()` either causes abrupt mid-session reloads or leaves active tabs serving half-v1 and half-v2 assets. **NLPWA reproduces the native mobile app update lifecycle on the web.**
 
@@ -91,7 +91,7 @@ Developers edit `config.js` directly:
 
 ```js
 export default {
-  // App version (auto-incremented by `nlpwa update`)
+  // Base app version (prefixed to content-derived version: <version>-<12-char hash>)
   version: '1.0.0',
 
   // Two-tier update endpoints
@@ -153,17 +153,22 @@ initSW({
 
 ### 4. Build and Update with CLI
 
-Run the build tool to auto-increment the patch version, compile `config.js` into `config.json`, hash offline files, and emit the update API endpoints:
+Run the build tool to derive the content-hash app version, compile `config.js` into `config.json`, hash offline files, and emit the update API endpoints:
 
 ```bash
-# Auto-increments patch version (1.0.0 → 1.0.1) and outputs to ./dist
+# Computes deterministic content hash (e.g. 1.0.0-a1b2c3d4e5f6) and outputs to ./dist
 npx nlpwa update --dir ./dist
 ```
 
 This generates:
 - `dist/config.json` (runtime config for the SW offline cache)
-- `dist/api/update/version.json` (`{ "version": "1.0.1" }`)
-- `dist/api/update/info.json` (`{ "version": "1.0.1", "files": [...] }`)
+- `dist/api/update/version.json` (`{ "version": "1.0.0-a1b2c3d4e5f6" }`)
+- `dist/api/update/info.json` (`{ "version": "1.0.0-a1b2c3d4e5f6", "files": [...] }`)
+
+**Key Versioning Properties:**
+- **Deterministic & Idempotent**: Rebuilding identical code yields the exact same version string. CI pipelines and dev rebuilds will never prompt users with spurious "update ready" banners.
+- **Rollback Friendly**: Reverting code restores the previous version string, allowing clients to roll back cleanly.
+- **Clean Git Trees**: Source `config.js` is **never mutated** on build, avoiding noisy git diffs and bundler watch loops.
 
 *(Note: If custom endpoint paths do not end with `.json`, e.g. `/api/update/version`, the CLI automatically generates directory `index.json` files).*
 
@@ -174,9 +179,11 @@ Manifest hashes are the first 32 hex characters of each file's SHA-256 digest.
 | Command / Flag | Default | Description |
 |---|---|---|
 | `npx nlpwa init [--dir <path>]` | `./` | Copies `sw.js`, `client.js`, and `config.json` to target directory |
-| `npx nlpwa update [--dir <path>]` | `./dist` or `./` | Increments patch version, builds `config.json`, hashes offline files, and emits update API |
+| `npx nlpwa update [--dir <path>]` | `./dist` or `./` | Derives version from manifest content hash, builds `config.json`, hashes offline files, and emits update API |
 | `--config <path>` | auto-detect | Path to custom config file (e.g. `./src/config.js`) |
-| `--version <semver>` | auto-increment | Explicit version override (e.g. `2.0.0`) |
+| `--version <string>` | hash-derived | Explicit version override (e.g. `2.0.0`) |
+| `--bump-patch` | `false` | Explicitly increment semver patch version (`1.0.0` → `1.0.1`) instead of content hash |
+| `--sync-source` | `false` | Write updated version back into source `config.js` file (opt-in) |
 | `--pretty` | `false` | Pretty-print output JSON files with 2-space indentation (compact by default) |
 
 ### 5. Bundler Integration (Vite / Rollup)

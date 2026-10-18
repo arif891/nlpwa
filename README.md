@@ -46,6 +46,15 @@ Standard Service Worker setups often fail this test: calling `self.skipWaiting()
 | **Update Delivery & Frequency** | **Browser Script Checks.** Driven primarily by browser byte-checks on `sw.js` (on navigation or 24-hour intervals) or manual `registration.update()` calls. | **Two-Tier App Protocol.** In addition to browser SW checks, client apps can check for app updates on tab focus, interval, or custom UI via a lightweight Tier 1 JSON check before fetching full manifests. |
 | **Integration & Batteries** | **Modular Toolkit.** Gives you low-level building blocks, but requires writing worker glue code, build integrations, postMessage channels, and custom reload UI prompts. | **Turnkey App Framework.** Pre-bundled SW engine, CLI (`nlpwa init` / `nlpwa update`), Rollup/Vite plugins, cross-tab update coordination, form-edit protection prompts, and quota management out of the box. |
 
+### When Workbox is the Better Choice
+
+While NLPWA is tailored for end-to-end PWA application lifecycles with atomic OTA delta updates, Workbox remains the industry standard when you need:
+- **Custom Service Worker Architecture**: You write bespoke worker routing logic, stream transformations, or assemble custom pipelines using low-level modules (`workbox-routing`, `workbox-strategies`, `workbox-range-requests`).
+- **Complex Offline Sync & Mutations**: You need specialized offline mutation queuing, background sync replays, and IndexedDB-backed transaction stores (`workbox-background-sync`).
+- **Broad Framework Ecosystem**: Deep, off-the-shelf integrations with Next.js PWA plugins (`next-pwa` / `@ducanh2912/next-pwa`), Nuxt PWA, or legacy Webpack build chains (`workbox-webpack-plugin`).
+- **Granular Plugin Lifecycle Hooks**: You require fine-grained request/response lifecycle plugins (`cacheWillUpdate`, `requestWillFetch`, `cachedResponseWillBeUsed`) to rewrite headers, transform bodies, or handle custom redirects.
+- **Per-Route Runtime Expiration Rules**: Configuring max-age and max-entries declaratively inside individual route declarations without coordinating explicit cache cleanup calls (`workbox-expiration`).
+
 ---
 
 ## File Roles: What Do I Edit vs. What Do I Copy / Generate?
@@ -288,6 +297,7 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 |---|---|---|---|
 | `onUpdateReady` | `Function` | — | Called with `{ version }` when update is staged |
 | `onNoUpdate` | `Function` | — | Called with `{ version }` when app is confirmed up to date |
+| `onUpdateFailed` | `Function` | — | Called with `{ version, failed, failedDetails, error, retryCount, nextRetryAt, persistent, hasHashMismatch }` when update staging fails or hash verification fails |
 | `onUpdateApplied` | `Function` | — | Called with `{ version }` when update is committed across any tab |
 | `onUpdatePrompt` | `Function` | — | Called when auto-reload is deferred because user is editing inputs or shouldDeferReload returns true |
 | `shouldDeferReload` | `Function` | — | Custom predicate `({ version, reason }) => boolean` to defer reload (e.g. unsaved state, uploads in progress) |
@@ -383,9 +393,19 @@ document.addEventListener('nlpwa:no-update', (e) => {
   console.log('Already on latest version:', e.detail.version);
 });
 
+// Fired when update staging fails (e.g. download network error or hash verification mismatch)
+document.addEventListener('nlpwa:update-failed', (e) => {
+  console.error('Update failed:', e.detail.error, e.detail.failed);
+});
+
 // Fired when an update switch has been committed (in this tab or another tab)
 document.addEventListener('nlpwa:update-applied', (e) => {
   console.log('Update switched to active version:', e.detail.version);
+});
+
+// Fired when auto-reload is deferred because user is editing inputs or shouldDeferReload returned true
+document.addEventListener('nlpwa:update-prompt', (e) => {
+  console.log('Reload deferred:', e.detail.reason, e.detail.version);
 });
 ```
 

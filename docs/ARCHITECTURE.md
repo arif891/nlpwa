@@ -211,7 +211,7 @@ Eviction runs on **both** caches after every successful update application.
 NLPWA includes an intelligent cleanup manager for the dynamic `runtime` cache:
 - **Storage Quota Detection**: Reads `navigator.storage.estimate()` to inspect storage usage and quota limits.
 - **Cache Inspection**: `getCacheInfo()` queries the SW to return total entries, estimated bytes, and quota metrics.
-- **Eviction Strategies**: Supports `lru` (least-recently-used via `X-NLPWA-Cached-At`), `fifo` (first-in-first-out), and `largest` (evicts largest items first via `X-NLPWA-Content-Length`).
+- **Eviction Strategies**: Supports `largest` (evicts largest files first via `X-NLPWA-Content-Length`), `lru` (least-recently-used via `X-NLPWA-Cached-At`), `max-age` (evicts expired entries), `quota` (evicts until storage is under quota threshold), `pattern` (glob match eviction), and `all` (full wipe).
 - **Flexible Limits**: Supports limits by item count (`maxEntries`), total size (`maxTotalMB`, `maxTotalBytes`), or individual item bounds (`minItemBytes`, `maxItemBytes`, string units like `'50MB'`).
 
 ---

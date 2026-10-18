@@ -438,6 +438,9 @@ test('client update-ui: onUpdateFailed catches UPDATE_FAILED event and triggers 
     },
   };
 
+  if (!globalThis.navigator) {
+    globalThis.navigator = {};
+  }
   const origSWDesc = Object.getOwnPropertyDescriptor(globalThis.navigator, 'serviceWorker');
   Object.defineProperty(globalThis.navigator, 'serviceWorker', {
     value: fakeSW,
@@ -488,7 +491,7 @@ test('client update-ui: onUpdateFailed catches UPDATE_FAILED event and triggers 
   if (origSWDesc) {
     Object.defineProperty(globalThis.navigator, 'serviceWorker', origSWDesc);
   } else {
-    delete globalThis.navigator.serviceWorker;
+    delete globalThis.navigator?.serviceWorker;
   }
   globalThis.document = origDoc;
   globalThis.CustomEvent = origCustomEvent;

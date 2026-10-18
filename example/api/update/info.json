@@ -3,43 +3,53 @@
   "files": [
     {
       "path": "/config.json",
-      "hash": "366a272cb63dc8172655eb389d13da78"
+      "hash": "366a272cb63dc8172655eb389d13da78",
+      "size": 831
     },
     {
       "path": "/",
-      "hash": "0d5935fe2be52a31faa15f52f5508363"
+      "hash": "0d5935fe2be52a31faa15f52f5508363",
+      "size": 9199
     },
     {
       "path": "/index.html",
-      "hash": "0d5935fe2be52a31faa15f52f5508363"
+      "hash": "0d5935fe2be52a31faa15f52f5508363",
+      "size": 9199
     },
     {
       "path": "/styles.css",
-      "hash": "e5c59c09897e27eba8dca381592fbb7d"
+      "hash": "e5c59c09897e27eba8dca381592fbb7d",
+      "size": 13806
     },
     {
       "path": "/app.js",
-      "hash": "6460abb65e9604f5e55061429217cd54"
+      "hash": "6460abb65e9604f5e55061429217cd54",
+      "size": 8892
     },
     {
       "path": "/client.js",
-      "hash": "af2ca13aa7fa256ec807de69ca26b1f6"
+      "hash": "40ed1e9eaf25e6366e36b93e5c0563af",
+      "size": 7262
     },
     {
       "path": "/manifest.webmanifest",
-      "hash": "73b071cbbd6ac2563741297aaf141fd1"
+      "hash": "73b071cbbd6ac2563741297aaf141fd1",
+      "size": 445
     },
     {
       "path": "/offline-data.json",
-      "hash": "74511ca1125b84521ce3afd030016e4d"
+      "hash": "74511ca1125b84521ce3afd030016e4d",
+      "size": 217
     },
     {
       "path": "/assets/offline-badge.svg",
-      "hash": "2d0f83384d69ac502cea7f9b5aa68ff0"
+      "hash": "2d0f83384d69ac502cea7f9b5aa68ff0",
+      "size": 898
     },
     {
       "path": "/assets/theme.json",
-      "hash": "edda2af4adca694fc24dd4f75e4c6977"
+      "hash": "edda2af4adca694fc24dd4f75e4c6977",
+      "size": 292
     }
   ]
 }

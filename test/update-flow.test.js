@@ -384,3 +384,45 @@ test('router: built-in non-overridable rule serves precached/manifest files from
   assert.equal((await res).headers.get('X-Cache-Status'), 'offline-cache');
 });
 
+test('update: rollback to active version while an update is staged discards the staged update', async () => {
+  const v1 = { '/config.json': cfg(), '/app.js': 'app v1' };
+  const v2 = { '/config.json': cfg(), '/app.js': 'app v2' };
+  const server = makeServer('1.0.0', v1);
+  const messages = fakeSelf();
+  setupEnv(server.fetch);
+
+  // 1. Initial install at v1.0.0
+  await precacheFiles();
+  assert.equal((await getActive()).version, '1.0.0');
+
+  // 2. Deploy v2 to server, check for update to stage it
+  server.set('1.0.1', v2);
+  const updateResult = await checkForUpdate();
+  assert.equal(updateResult.updated, true);
+  assert.equal(updateResult.version, '1.0.1');
+
+  const staged = await getStaged();
+  assert.ok(staged, 'Update must be staged');
+  assert.equal(staged.version, '1.0.1');
+  assert.equal(staged.complete, true);
+  const stagedCacheName = staged.cache;
+  assert.ok((await caches.keys()).includes(stagedCacheName), 'Staged cache must exist in storage');
+
+  // 3. Server rolls back to v1.0.0 before user navigates
+  server.set('1.0.0', v1);
+  messages.length = 0;
+
+  const rollbackCheck = await checkForUpdate();
+  assert.equal(rollbackCheck.updated, false);
+  assert.equal(rollbackCheck.rolledBack, true);
+  assert.ok(messages.some((m) => m.type === 'NO_UPDATE'));
+
+  // Staged update must be discarded and its cache deleted
+  assert.equal(await getStaged(), null, 'Staged record must be cleared upon rollback');
+  assert.equal((await caches.keys()).includes(stagedCacheName), false, 'Staged cache must be deleted from storage');
+
+  // 4. Next navigation must NOT apply the discarded v2; it stays on v1.0.0
+  await navigate('/');
+  assert.equal((await getActive()).version, '1.0.0');
+});
+

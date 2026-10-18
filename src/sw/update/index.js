@@ -1,5 +1,5 @@
 import { getConfig } from '../config/index.js';
-import { getStaged, tryAcquire, release } from '../cache/store.js';
+import { getStaged, clearStaged, tryAcquire, release } from '../cache/store.js';
 import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
@@ -76,10 +76,21 @@ async function runUpdateCheck({ force = false } = {}) {
   const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
   const isCurrent = (version) => !isFresh && !swVersionChanged && version === active.version;
 
+  const discardStaged = async () => {
+    if (staged) {
+      console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
+      await clearStaged();
+      if (staged.cache) {
+        await caches.delete(staged.cache).catch(() => {});
+      }
+    }
+  };
+
   if (serverVersion && isCurrent(serverVersion)) {
+    await discardStaged();
     console.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
-    return { updated: false };
+    return { updated: false, rolledBack: Boolean(staged) };
   }
 
   // ── Tier 2: full manifest ────────────────────────────────────────────────
@@ -92,9 +103,10 @@ async function runUpdateCheck({ force = false } = {}) {
   }
 
   if (isCurrent(serverManifest.version)) {
+    await discardStaged();
     console.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
-    return { updated: false };
+    return { updated: false, rolledBack: Boolean(staged) };
   }
 
   console.log(isFresh

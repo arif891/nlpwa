@@ -2,6 +2,9 @@ import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
 import { openActive } from '../cache/store.js';
 import { setActiveSnapshotPaths } from '../update/manifest.js';
+import { resolvePathWithBase } from '../../shared/url.js';
+
+export { resolvePathWithBase };
 
 /** Singleton config instance, set by initConfig() */
 let _config = null;
@@ -108,11 +111,7 @@ export async function loadConfigFromCache() {
   const promise = (async () => {
     const config = _config || initConfig();
     const baseName = config.caches?.offline || 'offline';
-    let configPath = config.configPath || '/config.json';
-    if (config.base && configPath.startsWith('/')) {
-      const cleanBase = config.base.endsWith('/') ? config.base.slice(0, -1) : config.base;
-      configPath = `${cleanBase}${configPath}`;
-    }
+    const configPath = resolvePathWithBase(config.configPath || '/config.json', config.base);
 
     try {
       const cache = await openActive(baseName);
@@ -165,20 +164,8 @@ export function getUpdateEndpoints() {
     if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
   }
 
-  const resolveEndpoint = (ep) => {
-    if (!ep || /^[a-z][a-z0-9+.-]*:/i.test(ep) || ep.startsWith('//')) return ep;
-    if (config.base) {
-      const cleanBase = config.base.endsWith('/') ? config.base.slice(0, -1) : config.base;
-      if (ep.startsWith('/')) {
-        return `${cleanBase}${ep}`;
-      }
-      return `${cleanBase}/${ep}`;
-    }
-    return ep;
-  };
-
   return {
-    versionEndpoint: resolveEndpoint(versionEndpoint),
-    infoEndpoint: resolveEndpoint(infoEndpoint),
+    versionEndpoint: resolvePathWithBase(versionEndpoint, config.base),
+    infoEndpoint: resolvePathWithBase(infoEndpoint, config.base),
   };
 }

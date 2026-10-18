@@ -3,6 +3,7 @@ import { tryAcquire, release, openActive } from './store.js';
 import { fetchServerInfo, loadCachedSnapshot } from '../update/manifest.js';
 import { stageUpdate } from '../update/stage.js';
 import { commitStaged } from '../update/commit.js';
+import { resolvePathWithBase } from '../../shared/url.js';
 
 /**
  * Install-time caching, called from the SW `install` event.
@@ -54,16 +55,21 @@ export async function precacheFiles() {
 
 async function precacheWithoutManifest() {
   const config = getConfig();
-  const configPath = config.configPath || '/config.json';
+  const rawConfigPath = config.configPath || '/config.json';
+  const configPath = resolvePathWithBase(rawConfigPath, config.base);
   
   const offlineCache = await openActive(config.caches.offline);
 
   try {
     const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
     if (configRes.ok) {
-      const cloned = configRes.clone();
+      const cloned1 = configRes.clone();
+      const cloned2 = configPath !== rawConfigPath ? configRes.clone() : null;
       const data = await configRes.json();
-      await offlineCache.put(configPath, cloned);
+      await offlineCache.put(configPath, cloned1);
+      if (cloned2) {
+        await offlineCache.put(rawConfigPath, cloned2);
+      }
       updateActiveConfig(data);
     } else {
       console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
@@ -77,7 +83,15 @@ async function precacheWithoutManifest() {
   const precache = (getConfig().precache || []).filter((u) => typeof u === 'string' && !u.includes('*') && !u.includes('?'));
   // cache: 'reload' skips the HTTP cache so stale bytes are never stored
   const results = await Promise.allSettled(
-    precache.map((url) => offlineCache.add(new Request(new URL(url, self.location.href), { cache: 'reload' })))
+    precache.map(async (url) => {
+      const resolved = resolvePathWithBase(url, config.base);
+      const req = new Request(new URL(resolved, self.location.href), { cache: 'reload' });
+      await offlineCache.add(req);
+      if (resolved !== url) {
+        const match = await offlineCache.match(req);
+        if (match) await offlineCache.put(url, match.clone());
+      }
+    })
   );
   const failed = [];
   results.forEach((result, i) => {

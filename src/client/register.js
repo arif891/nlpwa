@@ -177,14 +177,15 @@ export async function register(swUrl = '/sw.js', options = {}) {
   }
 
   // ── Periodic Background Sync (if supported by browser/PWA) ────────────────
-  if ('periodicSync' in registration) {
+  const enablePeriodicSync = options.periodicSync !== false;
+  if (enablePeriodicSync && 'periodicSync' in registration) {
     try {
       if (pollIntervalMs < 86400000) {
         console.warn('[NLPWA] Periodic Background Sync minInterval is set below 24h. Most browsers enforce a minimum interval of 12-24 hours for periodicSync.');
       }
-      await registration.periodicSync.register('nlpwa-update-check', {
+      registration.periodicSync.register('nlpwa-update-check', {
         minInterval: pollIntervalMs,
-      });
+      }).catch(() => {});
     } catch {
       // Periodic sync permission is granted by browser only for installed PWAs; ignore failure
     }

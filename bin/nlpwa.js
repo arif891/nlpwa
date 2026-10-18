@@ -3,7 +3,7 @@
  * nlpwa — CLI tool for the NLPWA framework
  *
  * Commands:
- *   nlpwa init    Scaffold or drop NLPWA files (sw.js, client.js, config.js)
+ *   nlpwa init    Scaffold or drop NLPWA files (sw.js, client.js, config.json)
  *                 into any target project directory.
  *   nlpwa update  Reads config.js, derives app version from manifest content hash,
  *                 generates runtime config.json, hashes ONLY tracked offline files,
@@ -108,7 +108,7 @@ function printHelp() {
   nlpwa <command> [options]
 
 ${c.bold}COMMANDS${c.reset}
-  ${c.green}init${c.reset}     Scaffolds or copies sw.js, client.js, and config.js
+  ${c.green}init${c.reset}     Scaffolds or copies sw.js, client.js, and config.json
            into your target project directory for immediate drop-in use.
   ${c.green}update${c.reset}   Reads config.js, derives content-hash app version,
            generates config.json, hashes ONLY tracked offline files,
@@ -188,7 +188,7 @@ ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
 
   ${c.bold}Next steps:${c.reset}
   1. Add the client script to your HTML:
-     ${c.cyan}<script type="module" src="/client.js"></script>${c.reset}
+     ${c.cyan}<script src="/client.js"></script>${c.reset}
 
   2. Configure routes & offline precache in ${c.bold}config.json${c.reset}
 

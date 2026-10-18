@@ -67,6 +67,12 @@ export const DEFAULTS = {
    */
   clearRuntimeOnUpdate: false,
 
+  /**
+   * Whether to cache opaque cross-origin responses in the runtime cache.
+   * Default: false (prevents ~7MB Chrome quota padding per entry and prevents caching CDN 404s/500s).
+   */
+  cacheOpaque: false,
+
   /** Cache storage names */
   caches: {
     offline: CACHE_NAMES.OFFLINE,

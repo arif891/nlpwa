@@ -322,7 +322,14 @@ export default {
   retainPreviousVersionCache: true, // keeps immediate prior version's cache in storage
 };
 ```
-When enabled, the SW preserves the previous offline cache. If an older open tab requests an older hashed chunk (`import('./chunk-hash1.js')`), `getFromOffline` seamlessly falls back to the retained cache and serves it without throwing a chunk mismatch error.
+When enabled, the SW preserves the immediate prior offline cache (`v(N-1)`).
+
+> [!NOTE]
+> **How Cache Retention Works & Why Hashed Filenames Matter:**
+> - `getFromOffline` only consults the retained previous cache on a **cache miss** in the active cache.
+> - If an asset uses an **unhashed filename** (e.g., `/app.js`), it hits in the active cache, so open tabs will receive the new version.
+> - When your bundler (Vite, Rollup, Webpack) emits **content-hashed dynamic chunks** (e.g., `/assets/chunk-[hash].js`), an older chunk requested by an open tab (`import('./chunk-v1.js')`) misses in the new active cache, safely falls back to the retained cache, and succeeds without throwing a 404.
+> - Retention keeps one previous generation (`v(N-1)`). After two consecutive updates, the oldest cache is purged. Using content-hashed filenames for dynamic imports is therefore the true, permanent fix for chunk 404s.
 
 ### 2. Auto-Reload Background Tabs on Switch
 Enable `reloadOnUpdateApplied: true` (or `autoReload: true`):

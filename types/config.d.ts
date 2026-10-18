@@ -28,6 +28,8 @@ export interface RouteConfig {
   maxAgeSeconds?: number;
   /** Alias for maxAge */
   ttl?: number | string;
+  /** Whether to cache opaque cross-origin responses (default: false to prevent ~7MB Chrome quota padding and caching 404s) */
+  cacheOpaque?: boolean;
 }
 
 export interface UpdateAPIConfigObject {
@@ -78,6 +80,8 @@ export interface NLPWAConfig {
   retainPreviousVersionCache?: boolean;
   /** Clear the entire runtime cache whenever a new app version is committed */
   clearRuntimeOnUpdate?: boolean;
+  /** Whether to cache opaque cross-origin responses in runtime cache (default: false) */
+  cacheOpaque?: boolean;
   /** Whether fetch failures should throw/reject instead of returning a synthetic 503 response */
   throwOnFailure?: boolean;
   /** Alias for throwOnFailure */

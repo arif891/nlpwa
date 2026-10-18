@@ -3,9 +3,11 @@ import type { Plugin } from 'rollup';
 export interface RollupPluginOptions {
   /** Path to config.js or config.json (auto-detected if omitted) */
   config?: string;
-  /** Derive app version from manifest content hash (default: false for autoIncrement, i.e. content-hash is used). Set true to bump semver patch. */
+  /** Auto-increment semver patch version on build (e.g. 1.0.0 -> 1.0.1). Default: false */
   autoIncrement?: boolean;
-  /** Sync updated version back into source config.js file (default: false) */
+  /** Derive app version suffix from manifest content hash (e.g. 1.0.0-a1b2c3d4e5f6). Default: false */
+  deriveVersion?: boolean;
+  /** Sync updated version back into source config file (recommended for config.json). Default: false */
   syncSource?: boolean;
   /** Explicit app version override */
   version?: string;

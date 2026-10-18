@@ -162,7 +162,7 @@ export async function loadConfig(configPath) {
  * @param {string} newVersion
  */
 export function syncSourceConfigVersion(configPath, newVersion) {
-  if (!configPath || !existsSync(configPath)) return;
+  if (!configPath || !existsSync(configPath) || !newVersion) return;
 
   try {
     const content = readFileSync(configPath, 'utf8');
@@ -171,8 +171,13 @@ export function syncSourceConfigVersion(configPath, newVersion) {
       parsed.version = newVersion;
       writeFileSync(configPath, JSON.stringify(parsed, null, 2), 'utf8');
     } else {
-      // Anchored to property line to avoid matching in comments or docstrings
-      const updated = content.replace(/^([ \t]*['"]?version['"]?\s*:\s*['"])([^'"]+)(['"])/m, `$1${newVersion}$3`);
+      // Match top-level version property only:
+      // 1. Indented by 1-4 spaces or 1 tab (direct child of config object), not deeply nested
+      // 2. Value must NOT start with '/' or 'http' (prevents overwriting updateAPI.version or other endpoint URLs)
+      const updated = content.replace(
+        /^([ \t]{1,4}['"]?version['"]?\s*:\s*['"])(?!\/|https?:\/\/)([^'"]+)(['"])/m,
+        `$1${newVersion}$3`
+      );
       if (updated !== content) {
         writeFileSync(configPath, updated, 'utf8');
       }

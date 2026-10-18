@@ -312,15 +312,34 @@ base: '/my-app/'
 
 ---
 
-### `retainPreviousVersionCache` · `boolean` · default: `false`
+### `retainPreviousVersionCache` · `boolean` · default: `true`
 
-Controls whether the immediate prior version's offline cache is preserved when an update commits.
+Controls whether the immediate prior version's (`v(N-1)`) offline cache is preserved when an update commits.
 
-- `false` (default): Immediately prunes the old offline cache on commit to conserve storage quota.
-- `true`: Keeps the immediate prior version's cache in storage alongside the new version. `getFromOffline` automatically falls back to the retained cache if an asset misses in the active cache. Recommended for multi-tab applications and SPAs so open background tabs don't experience 404s when lazy-loading older chunk files (`import('./chunk-v1.js')`) before they navigate or reload.
+- `false`: Immediately prunes the old offline cache on commit to conserve storage quota.
+- `true` (default): Keeps the immediate prior version's cache in storage alongside the new version. `getFromOffline` falls back to the retained cache if an asset misses in the active cache.
+
+> [!IMPORTANT]
+> **Hashed Filenames Required for Chunk 404 Prevention:**
+> The previous cache is **only consulted on a cache miss** in the active cache.
+> With unhashed filenames (e.g. `/app.js`), open tabs receive the new version immediately because the URL matches in the active cache.
+> Furthermore, only one previous generation (`v(N-1)`) is retained; after two updates, older caches are purged. Emitting **content-hashed dynamic chunk filenames** (`chunk-[hash].js`) via your bundler (Vite, Rollup, Webpack) is the essential foundation for preventing chunk 404s.
 
 ```js
 retainPreviousVersionCache: true
+```
+
+---
+
+### `cacheOpaque` · `boolean` · default: `false`
+
+Controls whether opaque cross-origin responses (`type === 'opaque'`, `status === 0` from `no-cors` requests like cross-origin CDNs, web fonts, or unauthenticated scripts) are cached in the runtime cache.
+
+- `false` (default): Opaque responses pass through without being written to CacheStorage. This prevents Chromium browsers from inflating quota by **~7 MB per opaque entry** (padding against size-leak side-channel attacks) and avoids caching undetected CDN 404/500 error pages.
+- `true`: Allows caching opaque responses. Can be configured globally in config or selectively per route via route options (`{ match: 'https://cdn.example.com/**', strategy: 'cache-first', options: { cacheOpaque: true } }`).
+
+```js
+cacheOpaque: false // or true on specific CDN routes
 ```
 
 ---

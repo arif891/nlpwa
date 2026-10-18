@@ -158,6 +158,19 @@ test('build-utils: syncSourceConfigVersion does not overwrite version in comment
   assert.ok(updated.includes(`version: '1.0.1'`));
 });
 
+test('build-utils: syncSourceConfigVersion does not overwrite updateAPI.version when appearing above top-level version', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-sync-api-'));
+  const configPath = join(root, 'config.js');
+  const initialContent = `export default {\n  updateAPI: {\n    version: '/api/update/version.json',\n    info: '/api/update/info.json',\n  },\n  version: '1.0.0',\n};\n`;
+  writeFileSync(configPath, initialContent);
+
+  syncSourceConfigVersion(configPath, '1.0.1');
+
+  const updated = readFileSync(configPath, 'utf8');
+  assert.ok(updated.includes(`version: '/api/update/version.json'`), 'preserved updateAPI.version endpoint intact');
+  assert.ok(updated.includes(`version: '1.0.1'`), 'updated top-level app version');
+});
+
 test('putInRuntime: handles 204 No Content without throwing and injects metadata', async () => {
   setupEnv(() => new Response(null, { status: 204, statusText: 'No Content' }));
   const request = req('/api/track');
@@ -348,6 +361,43 @@ test('client update-ui: onUpdateFailed catches UPDATE_FAILED event and triggers 
   }
   globalThis.document = origDoc;
   globalThis.CustomEvent = origCustomEvent;
+});
+
+test('strategies: safePutInRuntime skips opaque responses by default to prevent 7MB Chrome quota inflation', async () => {
+  const fakeOpaque = new Response('mock content');
+  Object.defineProperty(fakeOpaque, 'type', { value: 'opaque' });
+
+  const caches = setupEnv(async () => fakeOpaque);
+  const { cacheFirst } = await import('../src/sw/fetch/strategies.js');
+
+  const request = req('https://cdn.example.com/asset.js');
+  const response = await cacheFirst(request);
+  assert.equal(response.type, 'opaque');
+
+  // Runtime cache must NOT store opaque response by default
+  const runtime = await caches.open('runtime');
+  const cached = await runtime.match(request);
+  assert.equal(cached, undefined, 'opaque response was skipped from runtime cache');
+});
+
+test('strategies: safePutInRuntime caches opaque response when cacheOpaque: true is explicitly configured', async () => {
+  const fakeOpaque = new Response('mock content');
+  Object.defineProperty(fakeOpaque, 'type', { value: 'opaque' });
+
+  const caches = setupEnv(async () => fakeOpaque);
+  const { cacheFirst } = await import('../src/sw/fetch/strategies.js');
+
+  const request = req('https://cdn.example.com/asset.js');
+  const response = await cacheFirst(request, null, { cacheOpaque: true });
+  assert.equal(response.type, 'opaque');
+
+  // Allow async safePutInRuntime to settle
+  await new Promise((r) => setTimeout(r, 10));
+
+  // Runtime cache stores it when opted in
+  const runtime = await caches.open('runtime');
+  const cached = await runtime.match(request);
+  assert.ok(cached, 'opaque response was stored when cacheOpaque: true');
 });
 
 

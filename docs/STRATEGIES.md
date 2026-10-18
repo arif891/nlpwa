@@ -283,8 +283,17 @@ You can define cross-origin routes in either style:
 { origin: '*', match: '/fonts/**', strategy: 'cache-first' }
 ```
 
-### Opaque Responses & WASM Binaries
+### Opaque Responses & CDN Assets
 - When assets are loaded via `<script>` tags, Web Workers, or `importScripts` without CORS headers, the browser generates an **opaque response** (`status: 0`, `type: 'opaque'`).
-- NLPWA safely stores opaque responses in the `runtime` cache, allowing heavy `.wasm` and `.mjs` worker scripts to load instantaneously offline without throwing Quota or Range errors.
+- In Chromium browsers, every cached opaque response is subject to a quota padding of **~7 MB** (to mitigate side-channel size leaks), and HTTP 404/500 errors cannot be distinguished from successful responses.
+- To protect storage quota and prevent caching CDN errors, NLPWA **skips caching opaque responses by default**.
+- If you specifically need to cache cross-origin CDN assets without CORS (such as unauthenticated `.wasm` binaries or scripts), explicitly opt in on that route via `options: { cacheOpaque: true }`:
+  ```javascript
+  {
+    match: 'https://cdn.jsdelivr.net/**',
+    strategy: 'cache-first',
+    options: { cacheOpaque: true },
+  }
+  ```
 - Any request not matching an explicit cross-origin route automatically passes through via `networkOnly` without caching.
 

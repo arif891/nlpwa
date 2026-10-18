@@ -64,7 +64,7 @@ export function nlpwaPlugin(options = {}) {
         if (!targetVersion) {
           await resolveTargetVersion();
         }
-        return `export const APP_VERSION = ${JSON.stringify(targetVersion)};\nexport default APP_VERSION;\n`;
+        return `export const APP_VERSION = ${JSON.stringify(targetVersion)};\nexport const BASE_VERSION = ${JSON.stringify(targetVersion)};\nexport default APP_VERSION;\n`;
       }
     },
 
@@ -83,14 +83,18 @@ export function nlpwaPlugin(options = {}) {
       // 1. Track offline cached files, expanding any precache globs
       const { files, expandedPrecache } = collectTrackedFiles(rawConfig, distDir);
 
-      // 2. Resolve version (manifest-hash derived by default)
+      // 2. Resolve version
       let appVersion;
       if (options.version) {
         appVersion = options.version;
       } else if (options.autoIncrement === true) {
         appVersion = targetVersion;
-      } else {
+      } else if (options.deriveVersion === true || rawConfig.version === 'auto') {
         appVersion = deriveAppVersion(rawConfig, files);
+      } else {
+        // Default: use targetVersion from config so APP_VERSION in the virtual module
+        // matches the emitted version in version.json and info.json exactly.
+        appVersion = targetVersion;
       }
 
       // Sync version back to source config if explicitly requested or if autoIncrement is enabled

@@ -19,9 +19,27 @@ import { getConfig } from '../config/index.js';
  * @param {Response} response
  * @param {FetchEvent} [event]
  */
-function safePutInRuntime(request, response, event) {
-  if (!response || (!response.ok && response.type !== 'opaque') || response.status === 206) return Promise.resolve();
+function safePutInRuntime(request, response, event, options = {}) {
+  if (!response || response.status === 206) return Promise.resolve();
   if (request.headers && typeof request.headers.has === 'function' && request.headers.has('range')) return Promise.resolve();
+
+  // Opaque responses:
+  // In Chromium, caching an opaque response (type === 'opaque', status === 0) incurs ~7 MB
+  // quota padding to prevent side-channel size attacks, and 404/500 errors cannot be detected.
+  // We skip caching opaque responses by default unless explicitly opted in via cacheOpaque: true.
+  if (response.type === 'opaque') {
+    const allowOpaque = Boolean(
+      options?.cacheOpaque ??
+      options?.opaque ??
+      getConfig().cacheOpaque ??
+      false
+    );
+    if (!allowOpaque) {
+      return Promise.resolve();
+    }
+  } else if (!response.ok) {
+    return Promise.resolve();
+  }
 
   try {
     const clone = response.clone();
@@ -143,7 +161,7 @@ export async function cacheFirst(request, event, options = {}) {
     // Cached copy has expired: attempt to refresh from network
     try {
       const response = await fetch(request);
-      safePutInRuntime(request, response, event);
+      safePutInRuntime(request, response, event, options);
       return tagResponse(response, CACHE_STATUS.NETWORK);
     } catch {
       // Network failed while refreshing expired asset: serve stale cached copy
@@ -153,7 +171,7 @@ export async function cacheFirst(request, event, options = {}) {
 
   try {
     const response = await fetch(request);
-    safePutInRuntime(request, response, event);
+    safePutInRuntime(request, response, event, options);
     return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
     // Navigation fallback for SPAs or offline pages
@@ -239,7 +257,7 @@ export async function networkFirst(request, event, options = {}) {
           // Let the slow request finish in the background so the cache is
           // refreshed for next time.
           const refresh = networkPromise
-            .then((res) => safePutInRuntime(request, res, event))
+            .then((res) => safePutInRuntime(request, res, event, options))
             .catch(() => {});
           if (event && typeof event.waitUntil === 'function') event.waitUntil(refresh);
           return cached;
@@ -252,7 +270,7 @@ export async function networkFirst(request, event, options = {}) {
       response = await networkPromise;
     }
 
-    safePutInRuntime(request, response, event);
+    safePutInRuntime(request, response, event, options);
     return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
     const cached = await lookupCache();
@@ -336,7 +354,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
   const revalidate = (async () => {
     const response = await fetch(request);
-    await safePutInRuntime(request, response, event);
+    await safePutInRuntime(request, response, event, options);
     return response;
   })();
 

@@ -1,5 +1,6 @@
 /node_modules
-/package-lock.json
 /out
 *.log
 .DS_Store
+/test-results
+/playwright-report

@@ -1,9 +1,9 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.0",
   "files": [
     {
       "path": "/config.json",
-      "hash": "beefd0ec9de7de439a5825add3210d73"
+      "hash": "366a272cb63dc8172655eb389d13da78"
     },
     {
       "path": "/",
@@ -23,7 +23,7 @@
     },
     {
       "path": "/client.js",
-      "hash": "dc14e612c072ae0f38348920d9dc448b"
+      "hash": "3d6dfa885cdc91c517295c23c7348d13"
     },
     {
       "path": "/manifest.webmanifest",

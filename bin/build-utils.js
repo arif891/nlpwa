@@ -26,7 +26,7 @@ export function incrementPatch(version) {
   return `${parts[0] ?? 0}.${parts[1] ?? 0}.${(parts[2] ?? 0) + 1}`;
 }
 
-function canonicalizeConfig(obj) {
+function canonicalizeConfig(obj, depth = 0) {
   if (obj === null || typeof obj !== 'object') {
     if (typeof obj === 'function') return obj.toString();
     return obj;
@@ -35,12 +35,14 @@ function canonicalizeConfig(obj) {
     return obj.toString();
   }
   if (Array.isArray(obj)) {
-    return obj.map(canonicalizeConfig);
+    return obj.map((item) => canonicalizeConfig(item, depth + 1));
   }
   const sorted = {};
-  const keys = Object.keys(obj).filter((k) => k !== 'version').sort();
+  const keys = Object.keys(obj)
+    .filter((k) => depth > 0 || k !== 'version')
+    .sort();
   for (const k of keys) {
-    sorted[k] = canonicalizeConfig(obj[k]);
+    sorted[k] = canonicalizeConfig(obj[k], depth + 1);
   }
   return sorted;
 }

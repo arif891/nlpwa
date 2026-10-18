@@ -188,7 +188,7 @@ ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
 
   ${c.bold}Next steps:${c.reset}
   1. Add the client script to your HTML:
-     ${c.cyan}<script type="module" src="/client.js"></script>${c.reset}
+     ${c.cyan}<script src="/client.js"></script>${c.reset}
 
   2. Configure routes & offline precache in ${c.bold}config.json${c.reset}
 

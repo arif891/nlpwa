@@ -123,6 +123,12 @@ export function resolveStrategy(request) {
     return handler;
   }
 
+  let appPathname = requestUrl.pathname;
+  if (config.base && appPathname.startsWith(config.base)) {
+    appPathname = appPathname.slice(config.base.length);
+    if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
+  }
+
   for (const route of routes) {
     let routeOrigin = route.origin;
     let matchPattern = route.match;
@@ -147,7 +153,11 @@ export function resolveStrategy(request) {
       continue;
     }
 
-    if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
+    if (
+      matchGlob(matchPattern, requestUrl.href) ||
+      matchGlob(matchPattern, requestUrl.pathname) ||
+      matchGlob(matchPattern, appPathname)
+    ) {
       const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
       const handler = (req, event) => fn(req, event, route);
       handler.strategy = route.strategy;

@@ -3,7 +3,7 @@ import { evictFromRuntime } from '../cache/runtime.js';
 import { evictByRoute } from '../cache/evict.js';
 import {
   getActive, getActiveName, setActive, getStaged, clearStaged,
-  cleanupCaches, tryAcquire, release,
+  cleanupCaches, tryAcquire, release, withLock,
 } from '../cache/store.js';
 import { getSnapshotPath } from './manifest.js';
 
@@ -75,12 +75,7 @@ export async function commitStaged() {
  * navigation must not be held up by a download, it just tries again next time.
  */
 export async function commitIfReady() {
-  if (!tryAcquire()) return false;
-  try {
-    return await commitStaged();
-  } finally {
-    release();
-  }
+  return withLock(() => commitStaged(), false);
 }
 
 /** Delete offline caches left behind by interrupted or superseded updates. */

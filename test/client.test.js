@@ -27,6 +27,31 @@ test('isUserEditing: correctly identifies when user has focused input/editing fi
     globalThis.document = { activeElement: { tagName: 'INPUT', type: 'button' } };
     assert.equal(isUserEditing(), false);
 
+    globalThis.document = { activeElement: { tagName: 'INPUT', type: 'checkbox' } };
+    assert.equal(isUserEditing(), false);
+
+    globalThis.document = { activeElement: { tagName: 'INPUT', type: 'radio' } };
+    assert.equal(isUserEditing(), false);
+
+    globalThis.document = { activeElement: { tagName: 'INPUT', type: 'range' } };
+    assert.equal(isUserEditing(), false);
+
+    globalThis.document = { activeElement: { tagName: 'INPUT', type: 'color' } };
+    assert.equal(isUserEditing(), false);
+
+    globalThis.document = { activeElement: { tagName: 'INPUT', type: 'file' } };
+    assert.equal(isUserEditing(), false);
+
+    // Disabled or readOnly inputs
+    globalThis.document = { activeElement: { tagName: 'INPUT', type: 'text', disabled: true } };
+    assert.equal(isUserEditing(), false);
+
+    globalThis.document = { activeElement: { tagName: 'INPUT', type: 'text', readOnly: true } };
+    assert.equal(isUserEditing(), false);
+
+    globalThis.document = { activeElement: { tagName: 'TEXTAREA', readOnly: true } };
+    assert.equal(isUserEditing(), false);
+
     // 4. text inputs, textareas, selects, and contentEditable
     globalThis.document = { activeElement: { tagName: 'INPUT', type: 'text' } };
     assert.equal(isUserEditing(), true);

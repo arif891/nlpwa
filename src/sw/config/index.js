@@ -9,6 +9,16 @@ export { resolvePathWithBase };
 /** Singleton config instance, set by initConfig() */
 let _config = null;
 
+function normalizeRoutes(routes) {
+  if (!Array.isArray(routes)) return routes;
+  return routes.map((r) => {
+    if (r && typeof r === 'object' && r.options && typeof r.options === 'object') {
+      return { ...r.options, ...r };
+    }
+    return r;
+  });
+}
+
 /**
  * Initialize the NLPWA config by merging user config with defaults.
  * Should be called once at the top of the SW entry point.
@@ -20,6 +30,7 @@ export function initConfig(userConfig = {}) {
   const merged = {
     ...DEFAULTS,
     ...userConfig,
+    routes: normalizeRoutes(userConfig.routes ?? DEFAULTS.routes),
     // Deep merge nested objects
     caches: {
       ...DEFAULTS.caches,
@@ -76,7 +87,7 @@ export function updateActiveConfig(runtimeConfig = {}) {
     snapshotCachePath: _config.snapshotCachePath,
 
     // Runtime routes and precache take priority if provided
-    routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
+    routes: Array.isArray(runtimeConfig.routes) ? normalizeRoutes(runtimeConfig.routes) : _config.routes,
     precache: Array.isArray(runtimeConfig.precache) ? runtimeConfig.precache : _config.precache,
     updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
   };

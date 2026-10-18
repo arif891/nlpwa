@@ -1,5 +1,6 @@
 import { getConfig } from '../config/index.js';
 import { openActive, getActive, getActiveName, resetMeta } from './store.js';
+import { resolvePathWithBase } from '../../shared/url.js';
 
 // ── Offline cache helpers ────────────────────────────────────────────────────
 
@@ -146,20 +147,6 @@ export async function putInRuntime(request, response) {
         const cl = headers.get('Content-Length');
         if (cl) {
           headers.set('X-NLPWA-Content-Length', cl);
-        } else {
-          try {
-            const buf = await response.clone().arrayBuffer();
-            headers.set('X-NLPWA-Content-Length', String(buf.byteLength));
-            responseToStore = new Response(buf, {
-              status: response.status,
-              statusText: response.statusText,
-              headers,
-            });
-            await cache.put(request, responseToStore);
-            return;
-          } catch {
-            // fallback
-          }
         }
       }
       responseToStore = new Response(responseToStore.body, {
@@ -183,9 +170,17 @@ export async function putInRuntime(request, response) {
  */
 export async function evictFromRuntime(paths) {
   if (!paths.length) return;
-  const { caches: cacheNames } = getConfig();
+  const { caches: cacheNames, base } = getConfig();
   const cache = await caches.open(cacheNames.runtime);
-  await Promise.all(paths.map(path => cache.delete(path)));
+  await Promise.all(
+    paths.flatMap((path) => {
+      const ops = [cache.delete(path)];
+      if (base) {
+        ops.push(cache.delete(resolvePathWithBase(path, base)));
+      }
+      return ops;
+    })
+  );
 }
 
 /**

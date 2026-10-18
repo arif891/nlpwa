@@ -345,6 +345,8 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const cached = (await getFromRuntime(request, matchOptions)) ?? (await getFromOffline(request, matchOptions));
 
+  const maxAgeMs = resolveMaxAgeMs(options);
+
   // Single network request, shared by the background refresh and the
   // cache-miss path. Wrap in async IIFE so synchronous exceptions in fetch are caught.
   const revalidate = (async () => {
@@ -354,10 +356,22 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   })();
 
   if (cached) {
-    // Serve stale immediately; keep the SW alive for the background refresh.
-    const settled = revalidate.catch(() => {/* offline during revalidation is fine */});
-    if (event && typeof event.waitUntil === 'function') event.waitUntil(settled);
-    return tagResponse(cached, CACHE_STATUS.STALE);
+    const expired = maxAgeMs ? isResponseExpired(cached, maxAgeMs) : false;
+    if (!expired) {
+      // Serve stale immediately; keep the SW alive for the background refresh.
+      const settled = revalidate.catch(() => {/* offline during revalidation is fine */});
+      if (event && typeof event.waitUntil === 'function') event.waitUntil(settled);
+      return tagResponse(cached, CACHE_STATUS.STALE);
+    }
+
+    // Cached copy has expired: wait for revalidation (network-first semantics),
+    // falling back to the expired cached entry if network fails (offline).
+    try {
+      const response = await revalidate;
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch {
+      return tagResponse(cached, CACHE_STATUS.STALE);
+    }
   }
 
   // No cache — wait for network, fall back to offline handling if network fails

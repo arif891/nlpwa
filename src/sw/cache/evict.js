@@ -1,6 +1,7 @@
 import { getConfig } from '../config/index.js';
 import { matchGlob } from '../../shared/glob.js';
 import { CACHING_CAPABLE_STRATEGIES } from '../../shared/constants.js';
+import { resolvePathWithBase } from '../../shared/url.js';
 import { openActive } from './store.js';
 import { isManifestFile } from '../fetch/router.js';
 
@@ -14,7 +15,8 @@ import { isManifestFile } from '../fetch/router.js';
  * @returns {boolean}
  */
 export function isCacheableUrl(url) {
-  const { routes, defaultStrategy } = getConfig();
+  const config = getConfig();
+  const { routes, defaultStrategy } = config;
 
   let requestUrl;
   try {
@@ -24,13 +26,19 @@ export function isCacheableUrl(url) {
   }
 
   // Precached / manifest app shell files are always cacheable
-  if (isManifestFile(requestUrl)) {
+  if (isManifestFile(requestUrl, config)) {
     return true;
   }
 
   const isSameOrigin = typeof self !== 'undefined' && self.location
     ? requestUrl.origin === self.location.origin
     : true;
+
+  let appPathname = requestUrl.pathname;
+  if (config.base && appPathname.startsWith(config.base)) {
+    appPathname = appPathname.slice(config.base.length);
+    if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
+  }
 
   for (const route of routes) {
     let routeOrigin = route.origin;
@@ -53,7 +61,11 @@ export function isCacheableUrl(url) {
       continue;
     }
 
-    if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
+    if (
+      matchGlob(matchPattern, requestUrl.href) ||
+      matchGlob(matchPattern, requestUrl.pathname) ||
+      matchGlob(matchPattern, appPathname)
+    ) {
       return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
     }
   }
@@ -101,9 +113,11 @@ async function evictNonCacheable(cache, cacheName, protectedPaths) {
  * have been removed or changed to network-only in the latest config.
  */
 export async function evictByRoute() {
-  const { caches: cacheNames, snapshotCachePath, configPath } = getConfig();
+  const { caches: cacheNames, snapshotCachePath, configPath, base } = getConfig();
+  const rawConfigPath = configPath || '/config.json';
+  const baseConfigPath = resolvePathWithBase(rawConfigPath, base);
   const protectedPaths = new Set(
-    [snapshotCachePath, configPath || '/config.json'].filter(Boolean)
+    [snapshotCachePath, rawConfigPath, baseConfigPath].filter(Boolean)
   );
 
   const [offlineCache, runtimeCache] = await Promise.all([

@@ -347,7 +347,7 @@ retainPreviousVersionCache: true
 Controls whether opaque cross-origin responses (`type === 'opaque'`, `status === 0` from `no-cors` requests like cross-origin CDNs, web fonts, or unauthenticated scripts) are cached in the runtime cache.
 
 - `false` (default): Opaque responses pass through without being written to CacheStorage. This prevents Chromium browsers from inflating quota by **~7 MB per opaque entry** (padding against size-leak side-channel attacks) and avoids caching undetected CDN 404/500 error pages.
-- `true`: Allows caching opaque responses. Can be configured globally in config or selectively per route via route options (`{ match: 'https://cdn.example.com/**', strategy: 'cache-first', options: { cacheOpaque: true } }`).
+- `true`: Allows caching opaque responses. Can be configured globally in config or selectively per route (`{ match: 'https://cdn.example.com/**', strategy: 'cache-first', cacheOpaque: true }`).
 
 ```js
 cacheOpaque: false // or true on specific CDN routes

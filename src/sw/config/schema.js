@@ -12,6 +12,7 @@ const ALLOWED_ROUTE_KEYS = new Set([
   'throwOnFailure',
   'maxAge',
   'cacheOpaque',
+  'options',
 ]);
 
 const ALLOWED_CONFIG_KEYS = new Set([
@@ -104,6 +105,13 @@ export function validateConfig(config) {
       for (const key of Object.keys(route)) {
         if (!ALLOWED_ROUTE_KEYS.has(key)) {
           errors.push(`config.routes[${i}] has unrecognized option "${key}". Only canonical route options are supported.`);
+        }
+      }
+      if (route.options && typeof route.options === 'object' && !Array.isArray(route.options)) {
+        for (const optKey of Object.keys(route.options)) {
+          if (!ALLOWED_ROUTE_KEYS.has(optKey) || optKey === 'options') {
+            errors.push(`config.routes[${i}].options has unrecognized option "${optKey}".`);
+          }
         }
       }
       if (typeof route.match !== 'string') {

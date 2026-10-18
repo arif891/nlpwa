@@ -51,5 +51,5 @@ All notable changes to `nlpwa` will be documented in this file.
 
 #### Tooling, CI & Documentation
 - **Build Drift Resolution**: Updated `npm run build` to build production minified bundles matching tracked `example/` assets, avoiding 3.5k lines of unminified diff on build. Added `npm run build:dev` for unminified debugging.
-- **GitHub Actions CI Workflow**: Added `.github/workflows/ci.yml` running across Node 18, 20, and 22 with unit tests, production build drift checks (`check:drift`), and Playwright E2E tests.
+- **GitHub Actions CI Workflow**: Added `.github/workflows/ci.yml` running on Node 22 (supporting Node >=20) with unit tests, production build drift checks (`check:drift`), and Playwright E2E tests.
 - **API & Event Documentation**: Documented `onUpdateFailed` in options table, added `nlpwa:update-failed` and `nlpwa:update-prompt` event examples to `README.md`, removed stale `fifo` mention from `docs/ARCHITECTURE.md`, and added an objective "When Workbox is the Better Choice" section.

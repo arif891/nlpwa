@@ -116,9 +116,6 @@ export async function loadCachedSnapshot() {
  */
 export async function writeSnapshot(cache, snapshotData) {
   const snapshot = { swVersion: getConfig().version, ...snapshotData };
-  if (Array.isArray(snapshotData?.files)) {
-    _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
-  }
   await cache.put(getSnapshotPath(), new Response(JSON.stringify(snapshot), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -129,4 +126,7 @@ export async function writeSnapshot(cache, snapshotData) {
 export async function saveCachedSnapshot(snapshotData) {
   const cache = await openActive(getConfig().caches.offline);
   await writeSnapshot(cache, snapshotData);
+  if (Array.isArray(snapshotData?.files)) {
+    _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
+  }
 }

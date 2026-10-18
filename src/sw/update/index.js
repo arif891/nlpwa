@@ -1,5 +1,5 @@
 import { getConfig } from '../config/index.js';
-import { getStaged, clearStaged, tryAcquire, release } from '../cache/store.js';
+import { getStaged, clearStaged, tryAcquire, release, withLock } from '../cache/store.js';
 import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
@@ -70,17 +70,13 @@ async function runUpdateCheck({ force = false } = {}) {
 
   const discardStaged = async () => {
     if (staged) {
-      if (tryAcquire()) {
-        try {
-          console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
-          await clearStaged();
-          if (staged.cache) {
-            await caches.delete(staged.cache).catch(() => {});
-          }
-        } finally {
-          release();
+      await withLock(async () => {
+        console.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
+        await clearStaged();
+        if (staged.cache) {
+          await caches.delete(staged.cache).catch(() => {});
         }
-      }
+      });
     }
   };
 
@@ -113,11 +109,7 @@ async function runUpdateCheck({ force = false } = {}) {
 
   // ── Stage (active version keeps serving) ─────────────────────────────────
   // Narrow lock: acquire only around staging cache writes and commit
-  if (!tryAcquire()) {
-    console.log('[NLPWA] Staging already in progress, skipping.');
-    return { updated: false };
-  }
-  try {
+  return withLock(async () => {
     const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
 
     if (result.status === 'incomplete') {
@@ -154,7 +146,8 @@ async function runUpdateCheck({ force = false } = {}) {
       staged: true,
     });
     return { updated: true, version: serverManifest.version, staged: true };
-  } finally {
-    release();
-  }
+  }, () => {
+    console.log('[NLPWA] Staging already in progress, skipping.');
+    return { updated: false };
+  });
 }

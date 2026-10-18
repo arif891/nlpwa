@@ -68,6 +68,28 @@ test('nlpwaPlugin: virtual:nlpwa-version and writeBundle share exact version', a
   assert.equal(savedSource.version, '2.4.2');
 });
 
+test('nlpwaPlugin: virtual:nlpwa-version exports BASE_VERSION and APP_VERSION when deriveVersion: true', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-plugin-base-'));
+  const configPath = join(root, 'config.json');
+  writeFileSync(configPath, JSON.stringify({ version: '1.0.0', precache: [] }));
+
+  const plugin = nlpwaPlugin({
+    config: configPath,
+    distDir: join(root, 'dist'),
+  });
+
+  await plugin.buildStart();
+  const virtualMod = await plugin.load('\0virtual:nlpwa-version');
+  assert.match(virtualMod, /APP_VERSION = "1\.0\.0"/);
+  assert.match(virtualMod, /BASE_VERSION = "1\.0\.0"/);
+
+  await plugin.writeBundle({ dir: join(root, 'dist') });
+
+  const manifest = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
+  assert.match(manifest.version, /^1\.0\.0-[0-9a-f]{12}$/);
+});
+
+
 test('nlpwaPlugin: custom configPath is emitted to correct subpath and tracked', async () => {
   const root = mkdtempSync(join(tmpdir(), 'nlpwa-plugin-custom-'));
   const configPath = join(root, 'config.json');
@@ -533,5 +555,96 @@ test('strategies: safePutInRuntime caches opaque response when cacheOpaque: true
   const cached = await runtime.match(request);
   assert.ok(cached, 'opaque response was stored when cacheOpaque: true');
 });
+
+test('store: withLock uses Web Locks API when available and handles contention', async () => {
+  const { withLock, resetStoreMemo } = await import('../src/sw/cache/store.js');
+  resetStoreMemo();
+
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let requestedName = null;
+  let lockAcquired = false;
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {
+      locks: {
+        async request(name, options, callback) {
+          requestedName = name;
+          if (options.ifAvailable && lockAcquired) {
+            return callback(null);
+          }
+          lockAcquired = true;
+          try {
+            return await callback({ name });
+          } finally {
+            lockAcquired = false;
+          }
+        },
+      },
+    },
+    configurable: true,
+    writable: true,
+  });
+
+  try {
+    // 1. Success execution under Web Locks
+    const result = await withLock(async () => 'executed', 'fallback');
+    assert.equal(result, 'executed');
+    assert.equal(requestedName, 'nlpwa-operation-lock');
+
+    // 2. Contention handling: when lock is held, returns fallback
+    lockAcquired = true;
+    const busyResult = await withLock(async () => 'should not run', 'fallback-val');
+    assert.equal(busyResult, 'fallback-val');
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+    resetStoreMemo();
+  }
+});
+
+test('config normalization: normalizes route.options onto route object for backwards compatibility', async () => {
+  const { initConfig, getConfig } = await import('../src/sw/config/index.js');
+  initConfig({
+    version: '1.0.0',
+    routes: [
+      {
+        match: 'https://cdn.jsdelivr.net/**',
+        strategy: 'cache-first',
+        options: {
+          cacheOpaque: true,
+          maxAge: '1d',
+        },
+      },
+    ],
+  });
+
+  const routes = getConfig().routes;
+  assert.equal(routes.length, 1);
+  assert.equal(routes[0].cacheOpaque, true);
+  assert.equal(routes[0].maxAge, '1d');
+});
+
+test('runtime: putInRuntime avoids buffering body in memory when Content-Length is missing', async () => {
+  const { putInRuntime } = await import('../src/sw/cache/runtime.js');
+  const caches = setupEnv(() => new Response('ok'));
+
+  const streamBody = 'chunked dynamic payload';
+  // Response with no Content-Length
+  const streamRes = new Response(streamBody);
+  assert.equal(streamRes.headers.get('Content-Length'), null);
+
+  await putInRuntime(req('/api/stream'), streamRes);
+
+  const runtime = await caches.open('runtime');
+  const cached = await runtime.match(req('/api/stream'));
+  assert.ok(cached);
+  assert.equal(await cached.text(), streamBody);
+  // Content length is not eagerly set on the stored response
+  assert.equal(cached.headers.get('X-NLPWA-Content-Length'), null);
+});
+
 
 

@@ -6,8 +6,10 @@ import { checkForUpdate } from '../src/sw/update/index.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
 import { handleFetch } from '../src/sw/fetch/index.js';
 import { getActive, getStaged } from '../src/sw/cache/store.js';
-import { getFromOffline } from '../src/sw/cache/runtime.js';
+import { getFromOffline, getFromRuntime, putInRuntime, evictFromRuntime } from '../src/sw/cache/runtime.js';
 import { resolvePathWithBase } from '../src/shared/url.js';
+import { resolveStrategy } from '../src/sw/fetch/router.js';
+import { isCacheableUrl, evictByRoute } from '../src/sw/cache/evict.js';
 
 // Node's Request refuses mode 'navigate', so present a normal request as one
 const asNavigation = (r) => new Proxy(r, {
@@ -195,3 +197,44 @@ test('update: two-tier check and staging under base: "/my-app/" prefixes all end
   const appRes = await getFromOffline('https://example.com/my-app/app.js');
   assert.equal(await appRes.text(), 'console.log("v2 updated code");');
 });
+
+test('subpath base: route matching strips base prefix so app-relative routes match', () => {
+  fakeSelf();
+  setupEnv(() => new Response('ok'), {
+    base: '/my-app/',
+    version: '1.0.0',
+    routes: [
+      { match: '/assets/**', strategy: 'cache-first' },
+      { match: '/api/**', strategy: 'network-first' },
+    ],
+  });
+
+  const assetHandler = resolveStrategy(req('https://example.com/my-app/assets/logo.png'));
+  assert.equal(assetHandler.strategy, 'cache-first');
+
+  const apiHandler = resolveStrategy(req('https://example.com/my-app/api/user'));
+  assert.equal(apiHandler.strategy, 'network-first');
+
+  assert.equal(isCacheableUrl('https://example.com/my-app/assets/logo.png'), true);
+});
+
+test('subpath base: evictFromRuntime deletes both raw path and base-prefixed path', async () => {
+  fakeSelf();
+  const caches = setupEnv(() => new Response('ok'), {
+    base: '/my-app/',
+    version: '1.0.0',
+  });
+
+  const runtime = await caches.open('runtime');
+  await runtime.put('https://example.com/my-app/assets/bundle.js', new Response('content 1'));
+  await runtime.put('/assets/bundle.js', new Response('content 2'));
+
+  assert.ok(await runtime.match('/my-app/assets/bundle.js'));
+  assert.ok(await runtime.match('/assets/bundle.js'));
+
+  await evictFromRuntime(['/assets/bundle.js']);
+
+  assert.equal(await runtime.match('/my-app/assets/bundle.js'), undefined);
+  assert.equal(await runtime.match('/assets/bundle.js'), undefined);
+});
+

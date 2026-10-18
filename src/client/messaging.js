@@ -9,7 +9,7 @@ import { MESSAGE_TYPES } from '../shared/constants.js';
 export async function sendToSW(message) {
   if (!('serviceWorker' in navigator)) return;
   const registration = await navigator.serviceWorker.ready;
-  const sw = navigator.serviceWorker.controller || registration.active;
+  const sw = navigator.serviceWorker.controller || registration?.active;
   sw?.postMessage(message);
 }
 

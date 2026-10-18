@@ -107,11 +107,12 @@ install event
 
 ```
 activate event
-  └─ self.clients.claim()
-  └─ sweepOrphanCaches()      ← cleans up unreferenced staging caches
-  └─ loadConfigFromCache()    ← ensures in-memory routes are ready
-  └─ startUpdatePolling()     ← sets interval timer
-  └─ checkForUpdate()         ← runs initial two-tier check
+  ├─ event.waitUntil(...)         ← fast local operations only (<3ms, zero network I/O)
+  │    ├─ self.clients.claim()
+  │    ├─ sweepOrphanCaches()     ← cleans up unreferenced staging caches
+  │    └─ loadConfigFromCache()   ← ensures in-memory routes are ready
+  │
+  └─ checkForUpdate()             ← runs in background without blocking activate or fetch events
 ```
 
 ### 3. Fetch Interception

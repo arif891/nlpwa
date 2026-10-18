@@ -88,6 +88,8 @@ export interface RegisterOptions {
   reloadOnUpdateApplied?: boolean;
   /** Check for update when tab regains focus (default: true) */
   checkOnFocus?: boolean;
+  /** Check for update on initial registration via non-blocking message (default: true) */
+  checkOnRegister?: boolean;
   /** Min ms between focus-triggered checks (default: 1 hour) */
   focusThrottleMs?: number;
   /** Client-side poll interval in ms (default: 1 hour) */

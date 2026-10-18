@@ -39,13 +39,16 @@ export function initSW(userConfig = {}) {
   // ── activate ───────────────────────────────────────────────────────────────
   self.addEventListener('activate', (event) => {
     console.log(`[NLPWA] Activated SW v${config.version}`);
+    // Only await fast, local operations in waitUntil so fetch events are never blocked
     event.waitUntil(
-      self.clients.claim().then(async () => {
+      (async () => {
+        await self.clients.claim();
         await sweepOrphanCaches().catch(() => {});
-        await loadConfigFromCache();
-        return checkForUpdate();
-      })
+        await loadConfigFromCache().catch(() => {});
+      })()
     );
+    // Run update check in the background without blocking activation or holding fetch events
+    checkForUpdate().catch((err) => console.warn('[NLPWA] Background update check failed:', err.message));
   });
 
   // ── fetch ──────────────────────────────────────────────────────────────────

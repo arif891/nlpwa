@@ -314,7 +314,8 @@ Updates are checked through complementary triggers:
 
 | Trigger | Who | Frequency |
 |---|---|---|
-| Activation | SW | Once whenever the SW activates (app install / reload) |
+| Activation (Background) | SW | Unblocked background check when SW activates (never blocks page fetch) |
+| Client Registration | Client | Automatically on registration via non-blocking `CHECK_UPDATE` message |
 | Active Tab Interval | Client | Every `options.pollIntervalMs` (default: 1 hr) while tab is open |
 | Tab focus / visibility | Client | Throttled by `options.focusThrottleMs` (default: 1 hr) |
 | Periodic Background Sync | Browser | Periodically (12-24 hrs) when supported by browser for installed PWAs |

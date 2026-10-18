@@ -53,6 +53,7 @@ export function isUserEditing() {
  * @param {boolean}  [options.autoReload]            automatically reload on update (default: false)
  * @param {boolean}  [options.reloadOnUpdateApplied] automatically reload when another tab applies update
  * @param {boolean}  [options.checkOnFocus]          check for update when tab regains focus (default: true)
+ * @param {boolean}  [options.checkOnRegister]       check for update on initial registration (default: true)
  * @param {number}   [options.focusThrottleMs]       min ms between focus-triggered checks (default: 1 hour)
  * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
  */
@@ -145,7 +146,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
   // ── Focus-triggered update check ──────────────────────────────────────────
   const focusCheck = options.checkOnFocus !== false;
   let onVisibilityChange = null;
-  if (focusCheck) {
+  if (focusCheck && typeof document !== 'undefined') {
     const throttleMs = options.focusThrottleMs ?? 60 * 60 * 1000; // 1 hour
     let lastCheckAt = 0;
 
@@ -167,7 +168,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
   let intervalTimer = null;
   if (pollIntervalMs > 0) {
     intervalTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
         requestUpdateCheck();
       }
     }, pollIntervalMs);
@@ -187,13 +188,41 @@ export async function register(swUrl = '/sw.js', options = {}) {
     }
   }
 
+  // ── Initial update check on registration ──────────────────────────────────
+  // Check for updates as soon as the active service worker is ready.
+  // Using postMessage triggers the check via the SW's message event,
+  // where event.waitUntil() keeps the worker alive without blocking fetch events.
+  const checkOnRegister = options.checkOnRegister !== false;
+  let initialCheckControllerListener = null;
+  if (checkOnRegister) {
+    let initialCheckDone = false;
+    const triggerInitialCheck = () => {
+      if (initialCheckDone) return;
+      initialCheckDone = true;
+      requestUpdateCheck().catch(() => {});
+    };
+
+    if (navigator.serviceWorker.controller) {
+      triggerInitialCheck();
+    } else {
+      initialCheckControllerListener = triggerInitialCheck;
+      navigator.serviceWorker.addEventListener?.('controllerchange', initialCheckControllerListener, { once: true });
+      navigator.serviceWorker.ready?.then(triggerInitialCheck).catch(() => {});
+    }
+  }
+
   const unsubscribe = () => {
     unsubscribeUpdate();
     if (unsubscribeApplied) unsubscribeApplied();
     if (unsubscribeNoUpdate) unsubscribeNoUpdate();
     if (unsubscribeUpdateFailed) unsubscribeUpdateFailed();
     if (intervalTimer) clearInterval(intervalTimer);
-    if (onVisibilityChange) document.removeEventListener('visibilitychange', onVisibilityChange);
+    if (onVisibilityChange && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    }
+    if (initialCheckControllerListener) {
+      navigator.serviceWorker.removeEventListener?.('controllerchange', initialCheckControllerListener);
+    }
   };
 
   return { registration, unsubscribe };

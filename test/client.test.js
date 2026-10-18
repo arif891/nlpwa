@@ -145,3 +145,87 @@ test('register: autoReload is suppressed when user is editing, offering prompt i
     }
   }
 });
+
+test('register: checkOnRegister sends CHECK_UPDATE to SW without blocking', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  try {
+    const sentMessages = [];
+    const mockController = {
+      postMessage(msg) {
+        sentMessages.push(msg);
+      },
+    };
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockController,
+          ready: Promise.resolve({ active: mockController }),
+          async register() {
+            return { scope: '/' };
+          },
+          addEventListener() {},
+          removeEventListener() {},
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const handle = await register('/sw.js', { pollIntervalMs: 0 });
+    // Allow microtasks to resolve ready promise
+    await new Promise((r) => setTimeout(r, 10));
+
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].type, MESSAGE_TYPES.CHECK_UPDATE);
+
+    handle?.unsubscribe();
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});
+
+test('register: checkOnRegister: false suppresses initial check', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  try {
+    const sentMessages = [];
+    const mockController = {
+      postMessage(msg) {
+        sentMessages.push(msg);
+      },
+    };
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockController,
+          ready: Promise.resolve({ active: mockController }),
+          async register() {
+            return { scope: '/' };
+          },
+          addEventListener() {},
+          removeEventListener() {},
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const handle = await register('/sw.js', { checkOnRegister: false, pollIntervalMs: 0 });
+    await new Promise((r) => setTimeout(r, 10));
+
+    assert.equal(sentMessages.length, 0);
+
+    handle?.unsubscribe();
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});

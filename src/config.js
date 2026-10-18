@@ -26,13 +26,14 @@ export default {
     '/styles/main.css',
   ],
 
-  // Per-route fetch strategies (glob pattern matching evaluated top-to-bottom)
+  // Per-route fetch strategies for dynamic endpoints and runtime assets.
+  // Note: Precached app shell files (listed above) are ALWAYS served cache-first
+  // from the active offline cache via a built-in, non-overridable rule.
   routes: [
     { match: '/api/**',    strategy: 'network-only' },
     { match: '/assets/**', strategy: 'cache-first' },
-    { match: '**',         strategy: 'network-first' },
   ],
 
-  // Fallback strategy for unmatched routes
+  // Fallback strategy for unmatched dynamic routes
   defaultStrategy: 'network-first',
 };

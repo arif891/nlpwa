@@ -13,12 +13,36 @@ export async function getFromOffline(request, matchOptions) {
   const { caches: cacheNames, retainPreviousVersionCache } = getConfig();
   const cache = await openActive(cacheNames.offline);
   let hit = await cache.match(request, matchOptions);
+
+  if (!hit) {
+    let pathname = null;
+    try {
+      pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+    } catch {}
+    if (pathname === '/') {
+      hit = await cache.match('/index.html', matchOptions);
+    } else if (pathname === '/index.html') {
+      hit = await cache.match('/', matchOptions);
+    }
+  }
+
   if (!hit && retainPreviousVersionCache) {
     const active = await getActive();
     if (active?.previousCache) {
       try {
         const prev = await caches.open(active.previousCache);
         hit = await prev.match(request, matchOptions);
+        if (!hit) {
+          let pathname = null;
+          try {
+            pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+          } catch {}
+          if (pathname === '/') {
+            hit = await prev.match('/index.html', matchOptions);
+          } else if (pathname === '/index.html') {
+            hit = await prev.match('/', matchOptions);
+          }
+        }
       } catch {
         // previous cache may have been removed
       }

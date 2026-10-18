@@ -120,13 +120,17 @@ export default {
     { match: 'https://cdn.jsdelivr.net/npm/**', strategy: 'cache-first' },
     { match: '/pages/**',     strategy: 'network-first', networkTimeoutMs: 3000 },
     { match: '/_feeds/**',    strategy: 'stale-while-revalidate' },
-    { match: '**',            strategy: 'network-first'          },
   ],
+  // Fallback strategy for unmatched dynamic requests
+  defaultStrategy: 'network-first',
 };
 ```
 
 > [!TIP]
 > **Keep `precache` limited to the essential app shell**: During update staging, `fetchVerified` clones and buffers each downloaded resource in memory as an `ArrayBuffer` to verify its SHA-256 hash before storing it in `CacheStorage`. For core app shell assets (HTML, JS, CSS, icons), this is fast and lightweight. Avoid putting large multi-megabyte files (videos, heavy 3D assets or datasets) in `precache` as hashing will temporarily double peak memory usage; cache large assets via runtime routing strategies instead.
+
+> [!NOTE]
+> **Built-In Shell Atomicity Rule**: All precached and manifest files (your HTML shell, JS bundles, CSS, and icons) are **automatically served cache-first from the active offline cache** via a built-in, non-overridable routing rule. Even if your route config includes broad dynamic rules (e.g. `defaultStrategy: 'network-first'`), the app shell is never fetched raw from the network while an update is being staged. This guarantees that running tabs never serve mixed old/new files and that updates commit atomically.
 
 ### 3. Initialize the Service Worker (`sw.js`)
 

@@ -1,6 +1,7 @@
 import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
 import { openActive } from '../cache/store.js';
+import { setActiveSnapshotPaths } from '../update/manifest.js';
 
 /** Singleton config instance, set by initConfig() */
 let _config = null;
@@ -118,6 +119,19 @@ export async function loadConfigFromCache() {
       const runtimeJson = await response.json();
       updateActiveConfig(runtimeJson);
       console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+
+      try {
+        const snapRes = await cache.match('/_nlpwa/snapshot.json');
+        if (snapRes) {
+          const snapData = await snapRes.json();
+          if (Array.isArray(snapData?.files)) {
+            setActiveSnapshotPaths(snapData.files.map((f) => f.path));
+          }
+        }
+      } catch {
+        // snapshot may not exist yet
+      }
+
       return runtimeJson;
     } catch (err) {
       console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);

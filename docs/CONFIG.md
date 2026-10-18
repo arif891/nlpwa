@@ -207,9 +207,11 @@ routes: [
   { match: '/pages/**',       strategy: 'network-first'          },
   { match: '/_feeds/**',      strategy: 'stale-while-revalidate' },
   { match: '/offline.html',   strategy: 'cache-only'             },
-  { match: '**',              strategy: 'network-first'          },  // catch-all
 ]
 ```
+
+> [!NOTE]
+> **Built-In Shell Atomicity Rule**: All precached and manifest files (your HTML shell, JS bundles, CSS, and icons) are **automatically served cache-first from the active offline cache** via an internal, non-overridable rule evaluated before `routes`. Even if your configuration uses `defaultStrategy: 'network-first'`, the app shell is never fetched raw from the network while an update is being staged. This guarantees that running tabs never serve mixed old/new files and that updates commit atomically.
 
 #### `match` — Glob pattern
 

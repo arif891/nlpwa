@@ -100,16 +100,22 @@ test('update: a navigation request switches to the staged version before it is s
   server.set('1.0.1', { ...v1, '/app.js': 'app v2' });
   await checkForUpdate();
 
-  // sub-resource requests do not trigger the switch
+  // Precached files are served from the active cache (v1) preventing mixed old/new files while online.
   const sub = await (async () => {
     let p; handleFetch({ request: req('/app.js'), respondWith: (x) => { p = x; }, waitUntil() {} }); return p;
   })();
-  assert.equal(await (await sub).text(), 'app v2', 'network-first still reaches the network');
+  assert.equal(await (await sub).text(), 'app v1', 'precached files are served from active cache, not bypassed to network');
   assert.equal((await getActive()).version, '1.0.0');
 
   await (await navigate('/'));
   assert.equal((await getActive()).version, '1.0.1');
   assert.equal(await getStaged(), null);
+
+  // After navigation commits the staged update, /app.js serves v2 from the new active cache
+  const subAfter = await (async () => {
+    let p; handleFetch({ request: req('/app.js'), respondWith: (x) => { p = x; }, waitUntil() {} }); return p;
+  })();
+  assert.equal(await (await subAfter).text(), 'app v2', 'switched to staged v2 upon navigation commit');
 });
 
 test('update: a navigation never waits for or collides with a running update', async () => {
@@ -378,5 +384,28 @@ test('install event: failed precache rejects event.waitUntil and skips calling s
   );
 
   assert.equal(skipWaitingCalled, false, 'skipWaiting was NOT called after install failure');
+});
+
+test('router: built-in non-overridable rule serves precached/manifest files from active cache even if route says network-first or network-only', async () => {
+  const routes = [
+    { match: '/app.js', strategy: 'network-only' },
+    { match: '**', strategy: 'network-first' },
+  ];
+  const customConfig = { routes, precache: ['/app.js', '/index.html'] };
+  const v = { '/config.json': JSON.stringify(customConfig), '/app.js': 'offline app v1' };
+  const server = makeServer('1.0.0', v);
+  fakeSelf();
+  setupEnv(server.fetch, customConfig);
+  await precacheFiles();
+
+  // Server updates to v2 online
+  server.set('1.0.0', { ...v, '/app.js': 'server app v2' });
+
+  // Precached file /app.js must be served from active cache (offline app v1)
+  const res = await (async () => {
+    let p; handleFetch({ request: req('/app.js'), respondWith: (x) => { p = x; }, waitUntil() {} }); return p;
+  })();
+  assert.equal(await (await res).text(), 'offline app v1');
+  assert.equal((await res).headers.get('X-Cache-Status'), 'offline-cache');
 });
 

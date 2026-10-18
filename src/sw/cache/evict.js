@@ -2,15 +2,13 @@ import { getConfig } from '../config/index.js';
 import { matchGlob } from '../../shared/glob.js';
 import { CACHING_CAPABLE_STRATEGIES } from '../../shared/constants.js';
 import { openActive } from './store.js';
+import { isManifestFile } from '../fetch/router.js';
 
 /**
  * Determine if a URL should remain in any cache.
  *
- * A URL is "cacheable" if the first matching route in config.routes uses
- * a caching-capable strategy (cache-first, network-first, stale-while-revalidate,
- * or cache-only). network-only routes are not cacheable.
- *
- * If no route matches, the defaultStrategy is used as the fallback.
+ * A URL is "cacheable" if it is a precached/manifest app shell file,
+ * or if the first matching route in config.routes uses a caching-capable strategy.
  *
  * @param {string} url  full URL string
  * @returns {boolean}
@@ -23,6 +21,11 @@ export function isCacheableUrl(url) {
     requestUrl = new URL(url);
   } catch {
     return false;
+  }
+
+  // Precached / manifest app shell files are always cacheable
+  if (isManifestFile(requestUrl)) {
+    return true;
   }
 
   const isSameOrigin = typeof self !== 'undefined' && self.location

@@ -80,6 +80,16 @@ export function getSnapshotPath() {
   return config.snapshotCachePath || config.manifestCachePath || '/_nlpwa/snapshot.json';
 }
 
+let _activeSnapshotPaths = null;
+
+export function getActiveSnapshotPaths() {
+  return _activeSnapshotPaths;
+}
+
+export function setActiveSnapshotPaths(paths) {
+  _activeSnapshotPaths = paths ? (paths instanceof Set ? paths : new Set(paths)) : null;
+}
+
 /**
  * Load the snapshot (hash map of what is currently live) from the ACTIVE
  * offline cache. Returns null on a fresh install.
@@ -89,8 +99,15 @@ export function getSnapshotPath() {
 export async function loadCachedSnapshot() {
   const cache = await openActive(getConfig().caches.offline);
   const response = await cache.match(getSnapshotPath());
-  if (!response) return null;
-  return response.json();
+  if (!response) {
+    _activeSnapshotPaths = null;
+    return null;
+  }
+  const data = await response.json();
+  if (Array.isArray(data?.files)) {
+    _activeSnapshotPaths = new Set(data.files.map((f) => f.path));
+  }
+  return data;
 }
 
 export const loadCachedManifest = loadCachedSnapshot;
@@ -104,6 +121,9 @@ export const loadCachedManifest = loadCachedSnapshot;
  */
 export async function writeSnapshot(cache, snapshotData) {
   const snapshot = { swVersion: getConfig().version, ...snapshotData };
+  if (Array.isArray(snapshotData?.files)) {
+    _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
+  }
   await cache.put(getSnapshotPath(), new Response(JSON.stringify(snapshot), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },

@@ -227,6 +227,13 @@ commitStaged():
   6. Prune old offline@... caches.
 ```
 
+### Step 7 — Invariant: Built-In Active Cache Rule
+
+To guarantee strict update atomicity while an update is staged in the background, the Service Worker router enforces a **built-in, non-overridable rule** evaluated before user `routes`:
+- All precached and manifest files are **always served cache-first from the active offline cache**.
+- Even if developer routes include broad catch-alls (e.g. `defaultStrategy: 'network-first'` or dynamic page routes), online requests for app shell files never bypass the staged cache.
+- Running tabs continue to serve the coherent active version without receiving partial or mismatched files from the network until `commitStaged()` commits the new version on the next navigation or when the user clicks "Update".
+
 ---
 
 ## Multi-Version Jumps

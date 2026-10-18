@@ -19,10 +19,6 @@
     {
       "match": "/assets/**",
       "strategy": "cache-first"
-    },
-    {
-      "match": "**",
-      "strategy": "network-first"
     }
   ],
   "defaultStrategy": "network-first"

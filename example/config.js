@@ -22,7 +22,6 @@ export default {
     { match: '/api/profile.json', strategy: 'network-first' },
     { match: '/assets/**', strategy: 'cache-first' },
     { match: '/offline-data.json', strategy: 'cache-only' },
-    { match: '**', strategy: 'network-first' },
   ],
   defaultStrategy: 'network-first',
 };

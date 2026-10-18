@@ -18,10 +18,67 @@ const STRATEGY_FN = {
   [STRATEGIES.CACHE_ONLY]:             cacheOnly,
 };
 
+import { getActiveSnapshotPaths } from '../update/manifest.js';
+
+/**
+ * Check whether a request URL corresponds to a precached app shell or manifest file.
+ *
+ * @param {URL} requestUrl
+ * @param {Object} [config]
+ * @returns {boolean}
+ */
+export function isManifestFile(requestUrl, config = getConfig()) {
+  if (!config) return false;
+
+  const isSameOrigin = typeof self !== 'undefined' && self.location
+    ? requestUrl.origin === self.location.origin
+    : true;
+
+  if (!isSameOrigin) return false;
+
+  let pathname = requestUrl.pathname;
+  if (config.base && pathname.startsWith(config.base)) {
+    pathname = pathname.slice(config.base.length);
+    if (!pathname.startsWith('/')) pathname = '/' + pathname;
+  }
+
+  // 1. Runtime config file is always an app shell asset
+  const configPath = config.configPath || '/config.json';
+  if (pathname === configPath) return true;
+
+  // 2. Precache files and glob patterns
+  const precache = config.precache || [];
+  for (const item of precache) {
+    if (typeof item !== 'string') continue;
+    if (item === pathname || matchGlob(item, pathname)) {
+      return true;
+    }
+    // Handle root / index.html alias
+    if (
+      (pathname === '/' && (item === '/index.html' || item === 'index.html')) ||
+      (pathname === '/index.html' && item === '/')
+    ) {
+      return true;
+    }
+  }
+
+  // 3. Active snapshot files (if hydrated in memory)
+  const snapshotFiles = getActiveSnapshotPaths();
+  if (snapshotFiles && snapshotFiles.has(pathname)) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Resolve the strategy function for a given Request by matching it against
  * config.routes (top-to-bottom, first match wins).
  * Falls back to config.defaultStrategy if no route matches.
+ *
+ * Built-in non-overridable rule: Manifest and precached app shell files are
+ * ALWAYS served cache-first from the active offline cache to protect update
+ * atomicity and prevent online requests from bypassing the staged cache.
  *
  * @param {Request} request
  * @returns {Function}  one of the five strategy functions
@@ -49,6 +106,13 @@ export function resolveStrategy(request) {
     requestUrl.searchParams.has('import')
   ) {
     return (req, event) => networkOnly(req, event);
+  }
+
+  // Built-in non-overridable rule: Precached / manifest files are ALWAYS served
+  // from the active offline cache (cache-first). This guarantees that online
+  // requests never bypass the staged cache or produce mixed old/new files.
+  if (isManifestFile(requestUrl, getConfig())) {
+    return (req, event) => cacheFirst(req, event);
   }
 
   for (const route of routes) {

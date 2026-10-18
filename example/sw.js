@@ -364,6 +364,135 @@
     );
   }
 
+  /**
+   * Fetch lightweight app version from the server (Tier 1 check).
+   *
+   * @returns {Promise<{ version: string }>}
+   */
+  async function fetchServerVersion() {
+    const { versionEndpoint } = getUpdateEndpoints();
+
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(15000)
+      : undefined;
+
+    const response = await fetch(versionEndpoint, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`[NLPWA] Version check failed: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (typeof data.version !== 'string' || !data.version) {
+      throw new Error('[NLPWA] Version check response missing valid "version"');
+    }
+
+    return data;
+  }
+
+  /**
+   * Fetch the latest file tree update info from the server (Tier 2 fetch).
+   * Always bypasses browser cache (cache: 'no-store') to get the true current state.
+   *
+   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }>}
+   */
+  async function fetchServerInfo() {
+    const { infoEndpoint } = getUpdateEndpoints();
+
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(30000)
+      : undefined;
+
+    const response = await fetch(infoEndpoint, {
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' },
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`[NLPWA] Update info fetch failed: HTTP ${response.status} ${response.statusText}`);
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (err) {
+      throw new Error(`[NLPWA] Update info response is not valid JSON (is the endpoint returning HTML?): ${err.message}`);
+    }
+
+    // Validate the expected shape before passing to computeDiff / applyDiff
+    if (typeof data.version !== 'string' || !data.version) {
+      throw new Error('[NLPWA] Update info missing or invalid "version" field (expected a non-empty string)');
+    }
+    if (!Array.isArray(data.files)) {
+      throw new Error('[NLPWA] Update info missing "files" array');
+    }
+
+    return data;
+  }
+
+  const fetchServerManifest = fetchServerInfo;
+
+  /** Path of the snapshot entry inside an offline cache. */
+  function getSnapshotPath() {
+    const config = getConfig();
+    return config.snapshotCachePath || config.manifestCachePath || '/_nlpwa/snapshot.json';
+  }
+
+  let _activeSnapshotPaths = null;
+
+  function getActiveSnapshotPaths() {
+    return _activeSnapshotPaths;
+  }
+
+  function setActiveSnapshotPaths(paths) {
+    _activeSnapshotPaths = paths ? (paths instanceof Set ? paths : new Set(paths)) : null;
+  }
+
+  /**
+   * Load the snapshot (hash map of what is currently live) from the ACTIVE
+   * offline cache. Returns null on a fresh install.
+   *
+   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }|null>}
+   */
+  async function loadCachedSnapshot() {
+    const cache = await openActive(getConfig().caches.offline);
+    const response = await cache.match(getSnapshotPath());
+    if (!response) {
+      _activeSnapshotPaths = null;
+      return null;
+    }
+    const data = await response.json();
+    if (Array.isArray(data?.files)) {
+      _activeSnapshotPaths = new Set(data.files.map((f) => f.path));
+    }
+    return data;
+  }
+
+  const loadCachedManifest = loadCachedSnapshot;
+
+  /**
+   * Write a snapshot into a given offline cache. For a staged update this is the
+   * LAST write: a cache that contains its snapshot is a complete one.
+   *
+   * @param {Cache} cache
+   * @param {Object} snapshotData
+   */
+  async function writeSnapshot(cache, snapshotData) {
+    const snapshot = { swVersion: getConfig().version, ...snapshotData };
+    if (Array.isArray(snapshotData?.files)) {
+      _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
+    }
+    await cache.put(getSnapshotPath(), new Response(JSON.stringify(snapshot), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  }
+
   /** Singleton config instance, set by initConfig() */
   let _config = null;
 
@@ -480,6 +609,19 @@
         const runtimeJson = await response.json();
         updateActiveConfig(runtimeJson);
         console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+
+        try {
+          const snapRes = await cache.match('/_nlpwa/snapshot.json');
+          if (snapRes) {
+            const snapData = await snapRes.json();
+            if (Array.isArray(snapData?.files)) {
+              setActiveSnapshotPaths(snapData.files.map((f) => f.path));
+            }
+          }
+        } catch {
+          // snapshot may not exist yet
+        }
+
         return runtimeJson;
       } catch (err) {
         console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
@@ -534,115 +676,6 @@
       versionEndpoint: resolveEndpoint(versionEndpoint),
       infoEndpoint: resolveEndpoint(infoEndpoint),
     };
-  }
-
-  /**
-   * Fetch lightweight app version from the server (Tier 1 check).
-   *
-   * @returns {Promise<{ version: string }>}
-   */
-  async function fetchServerVersion() {
-    const { versionEndpoint } = getUpdateEndpoints();
-
-    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(15000)
-      : undefined;
-
-    const response = await fetch(versionEndpoint, {
-      cache: 'no-store',
-      headers: { 'Accept': 'application/json' },
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`[NLPWA] Version check failed: HTTP ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    if (typeof data.version !== 'string' || !data.version) {
-      throw new Error('[NLPWA] Version check response missing valid "version"');
-    }
-
-    return data;
-  }
-
-  /**
-   * Fetch the latest file tree update info from the server (Tier 2 fetch).
-   * Always bypasses browser cache (cache: 'no-store') to get the true current state.
-   *
-   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }>}
-   */
-  async function fetchServerInfo() {
-    const { infoEndpoint } = getUpdateEndpoints();
-
-    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(30000)
-      : undefined;
-
-    const response = await fetch(infoEndpoint, {
-      cache: 'no-store',
-      headers: { 'Accept': 'application/json' },
-      signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`[NLPWA] Update info fetch failed: HTTP ${response.status} ${response.statusText}`);
-    }
-
-    let data;
-    try {
-      data = await response.json();
-    } catch (err) {
-      throw new Error(`[NLPWA] Update info response is not valid JSON (is the endpoint returning HTML?): ${err.message}`);
-    }
-
-    // Validate the expected shape before passing to computeDiff / applyDiff
-    if (typeof data.version !== 'string' || !data.version) {
-      throw new Error('[NLPWA] Update info missing or invalid "version" field (expected a non-empty string)');
-    }
-    if (!Array.isArray(data.files)) {
-      throw new Error('[NLPWA] Update info missing "files" array');
-    }
-
-    return data;
-  }
-
-  const fetchServerManifest = fetchServerInfo;
-
-  /** Path of the snapshot entry inside an offline cache. */
-  function getSnapshotPath() {
-    const config = getConfig();
-    return config.snapshotCachePath || config.manifestCachePath || '/_nlpwa/snapshot.json';
-  }
-
-  /**
-   * Load the snapshot (hash map of what is currently live) from the ACTIVE
-   * offline cache. Returns null on a fresh install.
-   *
-   * @returns {Promise<{ version: string, files: Array<{ path: string, hash: string }> }|null>}
-   */
-  async function loadCachedSnapshot() {
-    const cache = await openActive(getConfig().caches.offline);
-    const response = await cache.match(getSnapshotPath());
-    if (!response) return null;
-    return response.json();
-  }
-
-  const loadCachedManifest = loadCachedSnapshot;
-
-  /**
-   * Write a snapshot into a given offline cache. For a staged update this is the
-   * LAST write: a cache that contains its snapshot is a complete one.
-   *
-   * @param {Cache} cache
-   * @param {Object} snapshotData
-   */
-  async function writeSnapshot(cache, snapshotData) {
-    const snapshot = { swVersion: getConfig().version, ...snapshotData };
-    await cache.put(getSnapshotPath(), new Response(JSON.stringify(snapshot), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }));
   }
 
   /**
@@ -937,12 +970,36 @@
     const { caches: cacheNames, retainPreviousVersionCache } = getConfig();
     const cache = await openActive(cacheNames.offline);
     let hit = await cache.match(request, matchOptions);
+
+    if (!hit) {
+      let pathname = null;
+      try {
+        pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+      } catch {}
+      if (pathname === '/') {
+        hit = await cache.match('/index.html', matchOptions);
+      } else if (pathname === '/index.html') {
+        hit = await cache.match('/', matchOptions);
+      }
+    }
+
     if (!hit && retainPreviousVersionCache) {
       const active = await getActive();
       if (active?.previousCache) {
         try {
           const prev = await caches.open(active.previousCache);
           hit = await prev.match(request, matchOptions);
+          if (!hit) {
+            let pathname = null;
+            try {
+              pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+            } catch {}
+            if (pathname === '/') {
+              hit = await prev.match('/index.html', matchOptions);
+            } else if (pathname === '/index.html') {
+              hit = await prev.match('/', matchOptions);
+            }
+          }
         } catch {
           // previous cache may have been removed
         }
@@ -1111,291 +1168,85 @@
   }
 
   /**
-   * Determine if a URL should remain in any cache.
+   * Cache status values added to responses via the X-Cache-Status header.
    *
-   * A URL is "cacheable" if the first matching route in config.routes uses
-   * a caching-capable strategy (cache-first, network-first, stale-while-revalidate,
-   * or cache-only). network-only routes are not cacheable.
+   * Clients can read this header from any intercepted response to determine
+   * where the response actually came from:
    *
-   * If no route matches, the defaultStrategy is used as the fallback.
-   *
-   * @param {string} url  full URL string
-   * @returns {boolean}
+   *   fetch('/app.js').then(r => console.log(r.headers.get('X-Cache-Status')));
+   *   // → 'offline-cache' | 'runtime-cache' | 'network' | 'stale' | 'offline-fallback'
    */
-  function isCacheableUrl(url) {
-    const { routes, defaultStrategy } = getConfig();
+  const CACHE_STATUS = {
+    /** Response was fetched fresh from the network */
+    NETWORK:          'network',
 
-    let requestUrl;
-    try {
-      requestUrl = new URL(url);
-    } catch {
-      return false;
-    }
+    /** Response came from the offline (precache / app shell) store */
+    OFFLINE_CACHE:    'offline-cache',
 
-    const isSameOrigin = typeof self !== 'undefined' && self.location
-      ? requestUrl.origin === self.location.origin
-      : true;
+    /** Response came from the runtime (lazy) cache */
+    RUNTIME_CACHE:    'runtime-cache',
 
-    for (const route of routes) {
-      let routeOrigin = route.origin;
-      let matchPattern = route.match;
+    /** Stale-while-revalidate: served from cache while network update runs in background */
+    STALE:            'stale',
 
-      if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
-        try {
-          routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
-        } catch {
-          // fallback
-        }
-      }
+    /** Synthetic 503: no network and no cached version available */
+    OFFLINE_FALLBACK: 'offline-fallback',
 
-      if (routeOrigin) {
-        if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
-          continue;
-        }
-      } else if (!isSameOrigin) {
-        // Unspecified origin matches ONLY same-origin requests
-        continue;
-      }
+    /** Request bypassed the Service Worker cache */
+    BYPASS:           'bypass',
+  };
 
-      if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
-        return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
-      }
-    }
-
-    // Cross-origin requests without an explicit origin route pass through without caching
-    if (!isSameOrigin) {
-      return false;
-    }
-
-    // No route matched — fall back to defaultStrategy
-    return CACHING_CAPABLE_STRATEGIES.has(defaultStrategy);
-  }
+  /** Name of the response header injected by the SW */
+  const CACHE_STATUS_HEADER = 'X-Cache-Status';
 
   /**
-   * Evict all entries from an opened Cache whose URLs are no longer cacheable
-   * according to the current route config.
+   * Wrap a Response with an X-Cache-Status header indicating its origin.
    *
-   * @param {Cache}  cache
-   * @param {string} cacheName  for logging
-   * @param {Set<string>} protectedPaths  internal entries that must never be evicted
-   *                                      (snapshot and runtime config.json)
+   * Notes:
+   *   - Response headers are immutable, so a new Response is constructed.
+   *   - Opaque responses (cross-origin, no CORS) cannot have their body read,
+   *     so they are returned as-is with no header added.
+   *   - The original response is consumed — do not use it after calling this.
+   *
+   * @param {Response} response
+   * @param {string}   status    one of CACHE_STATUS values
+   * @returns {Response}
    */
-  async function evictNonCacheable(cache, cacheName, protectedPaths) {
-    const keys = await cache.keys();
+  function tagResponse(response, status) {
+    if (!response) return response;
 
-    await Promise.all(
-      keys.map(async (request) => {
-        const { pathname } = new URL(request.url);
-
-        // Never evict internal entries: the snapshot and the runtime config
-        if (protectedPaths.has(pathname)) return;
-
-        if (!isCacheableUrl(request.url)) {
-          await cache.delete(request);
-          console.log(`[NLPWA] Evicted (route no longer cacheable) [${cacheName}]: ${pathname}`);
-        }
-      })
-    );
-  }
-
-  /**
-   * Run route-aware eviction on both offline and runtime caches.
-   *
-   * Called after every successful update to clean up entries whose routes
-   * have been removed or changed to network-only in the latest config.
-   */
-  async function evictByRoute() {
-    const { caches: cacheNames, manifestCachePath, snapshotCachePath, configPath } = getConfig();
-    const protectedPaths = new Set(
-      [manifestCachePath, snapshotCachePath, configPath || '/config.json'].filter(Boolean)
-    );
-
-    const [offlineCache, runtimeCache] = await Promise.all([
-      openActive(cacheNames.offline),
-      caches.open(cacheNames.runtime),
-    ]);
-
-    await Promise.all([
-      evictNonCacheable(offlineCache, cacheNames.offline, protectedPaths),
-      evictNonCacheable(runtimeCache, cacheNames.runtime, protectedPaths),
-    ]);
-  }
-
-  /**
-   * Make the staged update the live one. The switch itself is ONE write
-   * (setActive), so a crash leaves either the old or the new version, never a mix.
-   *
-   * Caller must hold the lock (see commitIfReady) unless it is the update check.
-   *
-   * @returns {Promise<boolean>} true if a staged update was committed
-   */
-  async function commitStaged() {
-    const config = getConfig();
-    const staged = await getStaged();
-    if (!staged?.complete) return false;
-
-    // A complete cache always contains its snapshot. If not, discard it.
-    const cache = await caches.open(staged.cache);
-    if (!(await cache.match(getSnapshotPath()))) {
-      console.warn('[NLPWA] Staged cache is missing its snapshot, discarding.');
-      await clearStaged();
-      await caches.delete(staged.cache);
-      return false;
+    // Opaque responses (opaque / opaqueredirect / status 0) cannot have their body
+    // read or reconstructed without throwing RangeError. Return them unchanged.
+    if (response.type === 'opaque' || response.type === 'opaqueredirect' || response.status === 0) {
+      return response;
     }
 
-    const previousActive = await getActive();
-    await setActive({
-      cache: staged.cache,
-      version: staged.version,
-      swVersion: staged.swVersion,
-      ...(config.retainPreviousVersionCache && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
+    const headers = new Headers(response.headers);
+    headers.set(CACHE_STATUS_HEADER, status);
+
+    const tagged = new Response(response.body, {
+      status:     response.status,
+      statusText: response.statusText,
+      headers,
     });
-    await clearStaged();
 
-    // Everything below is cleanup after the switch; the new version is already live.
-    await loadConfigFromCache();
-    const currentConfig = getConfig();
-    const shouldClearRuntime = Boolean(
-      staged.clearRuntime ||
-      config.clearRuntimeOnUpdate ||
-      currentConfig.clearRuntimeOnUpdate
-    );
-
-    if (shouldClearRuntime) {
-      await caches.delete(currentConfig.caches.runtime);
-    } else {
-      await evictFromRuntime(staged.evict ?? []);
-    }
-    await evictByRoute();
-
-    const keep = [staged.cache];
-    if (config.retainPreviousVersionCache && previousActive?.cache) {
-      keep.push(previousActive.cache);
-    }
-    await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep });
-
-    if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
-      self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
-        clients.forEach((c) => c.postMessage({ type: 'UPDATE_APPLIED', version: staged.version }));
-      }).catch(() => {});
-    }
-
-    console.log(`[NLPWA] Switched to v${staged.version}`);
-    return true;
-  }
-
-  /**
-   * Commit only if no update is currently being staged. Never waits: a page
-   * navigation must not be held up by a download, it just tries again next time.
-   */
-  async function commitIfReady() {
-    if (!tryAcquire()) return false;
-    try {
-      return await commitStaged();
-    } finally {
-      release();
-    }
-  }
-
-  /** Delete offline caches left behind by interrupted or superseded updates. */
-  async function sweepOrphanCaches() {
-    const config = getConfig();
-    const staged = await getStaged();
-    await cleanupCaches({
-      base: config.caches.offline,
-      runtime: config.caches.runtime,
-      keep: [await getActiveName(config.caches.offline), staged?.cache],
-    });
-  }
-
-  /**
-   * Install-time caching, called from the SW `install` event.
-   *
-   * Normal path: take the server manifest and run the same stage → verify →
-   * commit pipeline as an update. On a first install nothing is running yet, so
-   * the staged cache is switched in immediately. When upgrading from an older
-   * SW the app is already running, so the staged cache waits for the next
-   * navigation like any other update.
-   *
-   * Because the snapshot is written during install, the first update check sees
-   * an up-to-date app instead of re-downloading everything.
-   *
-   * Fallback (no manifest, e.g. `nlpwa update` was never run): precache from
-   * config.precache without hashes. The first update check then builds the
-   * hashed snapshot.
-   */
-  async function precacheFiles() {
-    if (!tryAcquire()) return;
-    try {
-      let manifest = null;
+    if (response.url) {
       try {
-        manifest = await fetchServerManifest();
-      } catch (err) {
-        console.warn(`[NLPWA] No update manifest at install (${err.message})`);
+        Object.defineProperty(tagged, 'url', { value: response.url });
+      } catch {
+        // ignore in environments that do not permit defining url
       }
-
-      const activeSnapshot = await loadCachedSnapshot();
-
-      if (manifest) {
-        const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
-        const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
-        if (result.status === 'incomplete' && !activeSnapshot) {
-          throw new Error(`[NLPWA] Precache incomplete on first install: ${result.failed.join(', ')} failed`);
-        }
-        if (result.status === 'ready' && !activeSnapshot) {
-          await commitStaged();
-        }
-        return result;
-      }
-
-      if (!activeSnapshot) {
-        return await precacheWithoutManifest();
-      }
-    } finally {
-      release();
-    }
-  }
-
-  async function precacheWithoutManifest() {
-    const config = getConfig();
-    const configPath = config.configPath || '/config.json';
-    
-    const offlineCache = await openActive(config.caches.offline);
-
-    try {
-      const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
-      if (configRes.ok) {
-        const cloned = configRes.clone();
-        const data = await configRes.json();
-        await offlineCache.put(configPath, cloned);
-        updateActiveConfig(data);
-      } else {
-        console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
-        await loadConfigFromCache();
-      }
-    } catch (err) {
-      console.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
-      await loadConfigFromCache();
     }
 
-    const precache = (getConfig().precache || []).filter((u) => typeof u === 'string' && !u.includes('*') && !u.includes('?'));
-    // cache: 'reload' skips the HTTP cache so stale bytes are never stored
-    const results = await Promise.allSettled(
-      precache.map((url) => offlineCache.add(new Request(new URL(url, self.location.href), { cache: 'reload' })))
-    );
-    const failed = [];
-    results.forEach((result, i) => {
-      if (result.status === 'rejected') {
-        console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
-        failed.push(precache[i]);
+    if (response.redirected) {
+      try {
+        Object.defineProperty(tagged, 'redirected', { value: response.redirected });
+      } catch {
+        // ignore
       }
-    });
-
-    if (failed.length > 0) {
-      throw new Error(`[NLPWA] Precache failed on first install: ${failed.join(', ')} failed`);
     }
 
-    return { status: 'ready', precached: precache.length };
+    return tagged;
   }
 
   /**
@@ -1755,88 +1606,6 @@
       remainingBytes: finalRemainingBytes,
       quota: updatedQuota,
     };
-  }
-
-  /**
-   * Cache status values added to responses via the X-Cache-Status header.
-   *
-   * Clients can read this header from any intercepted response to determine
-   * where the response actually came from:
-   *
-   *   fetch('/app.js').then(r => console.log(r.headers.get('X-Cache-Status')));
-   *   // → 'offline-cache' | 'runtime-cache' | 'network' | 'stale' | 'offline-fallback'
-   */
-  const CACHE_STATUS = {
-    /** Response was fetched fresh from the network */
-    NETWORK:          'network',
-
-    /** Response came from the offline (precache / app shell) store */
-    OFFLINE_CACHE:    'offline-cache',
-
-    /** Response came from the runtime (lazy) cache */
-    RUNTIME_CACHE:    'runtime-cache',
-
-    /** Stale-while-revalidate: served from cache while network update runs in background */
-    STALE:            'stale',
-
-    /** Synthetic 503: no network and no cached version available */
-    OFFLINE_FALLBACK: 'offline-fallback',
-
-    /** Request bypassed the Service Worker cache */
-    BYPASS:           'bypass',
-  };
-
-  /** Name of the response header injected by the SW */
-  const CACHE_STATUS_HEADER = 'X-Cache-Status';
-
-  /**
-   * Wrap a Response with an X-Cache-Status header indicating its origin.
-   *
-   * Notes:
-   *   - Response headers are immutable, so a new Response is constructed.
-   *   - Opaque responses (cross-origin, no CORS) cannot have their body read,
-   *     so they are returned as-is with no header added.
-   *   - The original response is consumed — do not use it after calling this.
-   *
-   * @param {Response} response
-   * @param {string}   status    one of CACHE_STATUS values
-   * @returns {Response}
-   */
-  function tagResponse(response, status) {
-    if (!response) return response;
-
-    // Opaque responses (opaque / opaqueredirect / status 0) cannot have their body
-    // read or reconstructed without throwing RangeError. Return them unchanged.
-    if (response.type === 'opaque' || response.type === 'opaqueredirect' || response.status === 0) {
-      return response;
-    }
-
-    const headers = new Headers(response.headers);
-    headers.set(CACHE_STATUS_HEADER, status);
-
-    const tagged = new Response(response.body, {
-      status:     response.status,
-      statusText: response.statusText,
-      headers,
-    });
-
-    if (response.url) {
-      try {
-        Object.defineProperty(tagged, 'url', { value: response.url });
-      } catch {
-        // ignore in environments that do not permit defining url
-      }
-    }
-
-    if (response.redirected) {
-      try {
-        Object.defineProperty(tagged, 'redirected', { value: response.redirected });
-      } catch {
-        // ignore
-      }
-    }
-
-    return tagged;
   }
 
   /**
@@ -2262,9 +2031,64 @@
   };
 
   /**
+   * Check whether a request URL corresponds to a precached app shell or manifest file.
+   *
+   * @param {URL} requestUrl
+   * @param {Object} [config]
+   * @returns {boolean}
+   */
+  function isManifestFile(requestUrl, config = getConfig()) {
+    if (!config) return false;
+
+    const isSameOrigin = typeof self !== 'undefined' && self.location
+      ? requestUrl.origin === self.location.origin
+      : true;
+
+    if (!isSameOrigin) return false;
+
+    let pathname = requestUrl.pathname;
+    if (config.base && pathname.startsWith(config.base)) {
+      pathname = pathname.slice(config.base.length);
+      if (!pathname.startsWith('/')) pathname = '/' + pathname;
+    }
+
+    // 1. Runtime config file is always an app shell asset
+    const configPath = config.configPath || '/config.json';
+    if (pathname === configPath) return true;
+
+    // 2. Precache files and glob patterns
+    const precache = config.precache || [];
+    for (const item of precache) {
+      if (typeof item !== 'string') continue;
+      if (item === pathname || matchGlob(item, pathname)) {
+        return true;
+      }
+      // Handle root / index.html alias
+      if (
+        (pathname === '/' && (item === '/index.html' || item === 'index.html')) ||
+        (pathname === '/index.html' && item === '/')
+      ) {
+        return true;
+      }
+    }
+
+    // 3. Active snapshot files (if hydrated in memory)
+    const snapshotFiles = getActiveSnapshotPaths();
+    if (snapshotFiles && snapshotFiles.has(pathname)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Resolve the strategy function for a given Request by matching it against
    * config.routes (top-to-bottom, first match wins).
    * Falls back to config.defaultStrategy if no route matches.
+   *
+   * Built-in non-overridable rule: Manifest and precached app shell files are
+   * ALWAYS served cache-first from the active offline cache to protect update
+   * atomicity and prevent online requests from bypassing the staged cache.
    *
    * @param {Request} request
    * @returns {Function}  one of the five strategy functions
@@ -2292,6 +2116,13 @@
       requestUrl.searchParams.has('import')
     ) {
       return (req, event) => networkOnly(req);
+    }
+
+    // Built-in non-overridable rule: Precached / manifest files are ALWAYS served
+    // from the active offline cache (cache-first). This guarantees that online
+    // requests never bypass the staged cache or produce mixed old/new files.
+    if (isManifestFile(requestUrl, getConfig())) {
+      return (req, event) => cacheFirst(req, event);
     }
 
     for (const route of routes) {
@@ -2331,6 +2162,296 @@
 
     const defaultFn = STRATEGY_FN[defaultStrategy] ?? networkFirst;
     return (req, event) => defaultFn(req, event);
+  }
+
+  /**
+   * Determine if a URL should remain in any cache.
+   *
+   * A URL is "cacheable" if it is a precached/manifest app shell file,
+   * or if the first matching route in config.routes uses a caching-capable strategy.
+   *
+   * @param {string} url  full URL string
+   * @returns {boolean}
+   */
+  function isCacheableUrl(url) {
+    const { routes, defaultStrategy } = getConfig();
+
+    let requestUrl;
+    try {
+      requestUrl = new URL(url);
+    } catch {
+      return false;
+    }
+
+    // Precached / manifest app shell files are always cacheable
+    if (isManifestFile(requestUrl)) {
+      return true;
+    }
+
+    const isSameOrigin = typeof self !== 'undefined' && self.location
+      ? requestUrl.origin === self.location.origin
+      : true;
+
+    for (const route of routes) {
+      let routeOrigin = route.origin;
+      let matchPattern = route.match;
+
+      if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
+        try {
+          routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
+        } catch {
+          // fallback
+        }
+      }
+
+      if (routeOrigin) {
+        if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
+          continue;
+        }
+      } else if (!isSameOrigin) {
+        // Unspecified origin matches ONLY same-origin requests
+        continue;
+      }
+
+      if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
+        return CACHING_CAPABLE_STRATEGIES.has(route.strategy);
+      }
+    }
+
+    // Cross-origin requests without an explicit origin route pass through without caching
+    if (!isSameOrigin) {
+      return false;
+    }
+
+    // No route matched — fall back to defaultStrategy
+    return CACHING_CAPABLE_STRATEGIES.has(defaultStrategy);
+  }
+
+  /**
+   * Evict all entries from an opened Cache whose URLs are no longer cacheable
+   * according to the current route config.
+   *
+   * @param {Cache}  cache
+   * @param {string} cacheName  for logging
+   * @param {Set<string>} protectedPaths  internal entries that must never be evicted
+   *                                      (snapshot and runtime config.json)
+   */
+  async function evictNonCacheable(cache, cacheName, protectedPaths) {
+    const keys = await cache.keys();
+
+    await Promise.all(
+      keys.map(async (request) => {
+        const { pathname } = new URL(request.url);
+
+        // Never evict internal entries: the snapshot and the runtime config
+        if (protectedPaths.has(pathname)) return;
+
+        if (!isCacheableUrl(request.url)) {
+          await cache.delete(request);
+          console.log(`[NLPWA] Evicted (route no longer cacheable) [${cacheName}]: ${pathname}`);
+        }
+      })
+    );
+  }
+
+  /**
+   * Run route-aware eviction on both offline and runtime caches.
+   *
+   * Called after every successful update to clean up entries whose routes
+   * have been removed or changed to network-only in the latest config.
+   */
+  async function evictByRoute() {
+    const { caches: cacheNames, manifestCachePath, snapshotCachePath, configPath } = getConfig();
+    const protectedPaths = new Set(
+      [manifestCachePath, snapshotCachePath, configPath || '/config.json'].filter(Boolean)
+    );
+
+    const [offlineCache, runtimeCache] = await Promise.all([
+      openActive(cacheNames.offline),
+      caches.open(cacheNames.runtime),
+    ]);
+
+    await Promise.all([
+      evictNonCacheable(offlineCache, cacheNames.offline, protectedPaths),
+      evictNonCacheable(runtimeCache, cacheNames.runtime, protectedPaths),
+    ]);
+  }
+
+  /**
+   * Make the staged update the live one. The switch itself is ONE write
+   * (setActive), so a crash leaves either the old or the new version, never a mix.
+   *
+   * Caller must hold the lock (see commitIfReady) unless it is the update check.
+   *
+   * @returns {Promise<boolean>} true if a staged update was committed
+   */
+  async function commitStaged() {
+    const config = getConfig();
+    const staged = await getStaged();
+    if (!staged?.complete) return false;
+
+    // A complete cache always contains its snapshot. If not, discard it.
+    const cache = await caches.open(staged.cache);
+    if (!(await cache.match(getSnapshotPath()))) {
+      console.warn('[NLPWA] Staged cache is missing its snapshot, discarding.');
+      await clearStaged();
+      await caches.delete(staged.cache);
+      return false;
+    }
+
+    const previousActive = await getActive();
+    await setActive({
+      cache: staged.cache,
+      version: staged.version,
+      swVersion: staged.swVersion,
+      ...(config.retainPreviousVersionCache && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
+    });
+    await clearStaged();
+
+    // Everything below is cleanup after the switch; the new version is already live.
+    await loadConfigFromCache();
+    const currentConfig = getConfig();
+    const shouldClearRuntime = Boolean(
+      staged.clearRuntime ||
+      config.clearRuntimeOnUpdate ||
+      currentConfig.clearRuntimeOnUpdate
+    );
+
+    if (shouldClearRuntime) {
+      await caches.delete(currentConfig.caches.runtime);
+    } else {
+      await evictFromRuntime(staged.evict ?? []);
+    }
+    await evictByRoute();
+
+    const keep = [staged.cache];
+    if (config.retainPreviousVersionCache && previousActive?.cache) {
+      keep.push(previousActive.cache);
+    }
+    await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep });
+
+    if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+      self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+        clients.forEach((c) => c.postMessage({ type: 'UPDATE_APPLIED', version: staged.version }));
+      }).catch(() => {});
+    }
+
+    console.log(`[NLPWA] Switched to v${staged.version}`);
+    return true;
+  }
+
+  /**
+   * Commit only if no update is currently being staged. Never waits: a page
+   * navigation must not be held up by a download, it just tries again next time.
+   */
+  async function commitIfReady() {
+    if (!tryAcquire()) return false;
+    try {
+      return await commitStaged();
+    } finally {
+      release();
+    }
+  }
+
+  /** Delete offline caches left behind by interrupted or superseded updates. */
+  async function sweepOrphanCaches() {
+    const config = getConfig();
+    const staged = await getStaged();
+    await cleanupCaches({
+      base: config.caches.offline,
+      runtime: config.caches.runtime,
+      keep: [await getActiveName(config.caches.offline), staged?.cache],
+    });
+  }
+
+  /**
+   * Install-time caching, called from the SW `install` event.
+   *
+   * Normal path: take the server manifest and run the same stage → verify →
+   * commit pipeline as an update. On a first install nothing is running yet, so
+   * the staged cache is switched in immediately. When upgrading from an older
+   * SW the app is already running, so the staged cache waits for the next
+   * navigation like any other update.
+   *
+   * Because the snapshot is written during install, the first update check sees
+   * an up-to-date app instead of re-downloading everything.
+   *
+   * Fallback (no manifest, e.g. `nlpwa update` was never run): precache from
+   * config.precache without hashes. The first update check then builds the
+   * hashed snapshot.
+   */
+  async function precacheFiles() {
+    if (!tryAcquire()) return;
+    try {
+      let manifest = null;
+      try {
+        manifest = await fetchServerManifest();
+      } catch (err) {
+        console.warn(`[NLPWA] No update manifest at install (${err.message})`);
+      }
+
+      const activeSnapshot = await loadCachedSnapshot();
+
+      if (manifest) {
+        const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
+        const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
+        if (result.status === 'incomplete' && !activeSnapshot) {
+          throw new Error(`[NLPWA] Precache incomplete on first install: ${result.failed.join(', ')} failed`);
+        }
+        if (result.status === 'ready' && !activeSnapshot) {
+          await commitStaged();
+        }
+        return result;
+      }
+
+      if (!activeSnapshot) {
+        return await precacheWithoutManifest();
+      }
+    } finally {
+      release();
+    }
+  }
+
+  async function precacheWithoutManifest() {
+    const config = getConfig();
+    const configPath = config.configPath || '/config.json';
+    
+    const offlineCache = await openActive(config.caches.offline);
+
+    try {
+      const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (configRes.ok) {
+        const cloned = configRes.clone();
+        const data = await configRes.json();
+        await offlineCache.put(configPath, cloned);
+        updateActiveConfig(data);
+      } else {
+        console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
+        await loadConfigFromCache();
+      }
+    } catch (err) {
+      console.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
+      await loadConfigFromCache();
+    }
+
+    const precache = (getConfig().precache || []).filter((u) => typeof u === 'string' && !u.includes('*') && !u.includes('?'));
+    // cache: 'reload' skips the HTTP cache so stale bytes are never stored
+    const results = await Promise.allSettled(
+      precache.map((url) => offlineCache.add(new Request(new URL(url, self.location.href), { cache: 'reload' })))
+    );
+    const failed = [];
+    results.forEach((result, i) => {
+      if (result.status === 'rejected') {
+        console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+        failed.push(precache[i]);
+      }
+    });
+
+    if (failed.length > 0) {
+      throw new Error(`[NLPWA] Precache failed on first install: ${failed.join(', ')} failed`);
+    }
+
+    return { status: 'ready', precached: precache.length };
   }
 
   /**

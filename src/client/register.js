@@ -3,6 +3,30 @@ import { requestUpdateCheck, onSWMessage } from './messaging.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
 
 /**
+ * Check if the user is currently editing an interactive element
+ * (input, textarea, select, or contenteditable) to avoid discarding unsaved inputs.
+ *
+ * @returns {boolean}
+ */
+export function isUserEditing() {
+  if (typeof document === 'undefined') return false;
+  const activeElem = document.activeElement;
+  if (!activeElem) return false;
+  const activeTag = activeElem.tagName?.toLowerCase();
+  if (activeTag === 'textarea' || activeTag === 'select' || activeElem.isContentEditable) {
+    return true;
+  }
+  if (activeTag === 'input') {
+    const type = activeElem.type?.toLowerCase();
+    if (type === 'button' || type === 'submit' || type === 'reset') {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
  * Register the NLPWA Service Worker and set up update handling.
  *
  * Usage (in your main client JS):
@@ -25,6 +49,7 @@ import { MESSAGE_TYPES } from '../shared/constants.js';
  * @param {Function} [options.onNoUpdate]            called when SW signals already up to date
  * @param {Function} [options.onUpdateFailed]        called when SW signals update failed or hash mismatch
  * @param {Function} [options.onUpdateApplied]       called when update is committed across any tab
+ * @param {Function} [options.onUpdatePrompt]        called when auto-reload is deferred due to active user editing
  * @param {boolean}  [options.autoReload]            automatically reload on update (default: false)
  * @param {boolean}  [options.reloadOnUpdateApplied] automatically reload when another tab applies update
  * @param {boolean}  [options.checkOnFocus]          check for update when tab regains focus (default: true)
@@ -57,22 +82,19 @@ export async function register(swUrl = '/sw.js', options = {}) {
       options.onUpdateReady(data);
     }
     if (options.autoReload) {
-      // Don't auto-reload if user is actively typing in an input to prevent data loss
-      const activeElem = typeof document !== 'undefined' ? document.activeElement : null;
-      const activeTag = activeElem?.tagName?.toLowerCase();
-      const isEditing = activeTag === 'input' || activeTag === 'textarea' || activeElem?.isContentEditable;
-      if (!isEditing) {
+      if (!isUserEditing()) {
         applyUpdate();
       } else {
-        console.warn('[NLPWA] Auto-reload deferred: active input focused.');
-        const onFinishEditing = () => {
-          activeElem?.removeEventListener('blur', onFinishEditing);
-          activeElem?.removeEventListener('change', onFinishEditing);
-          console.log('[NLPWA] Input focus cleared, applying deferred reload.');
-          applyUpdate();
-        };
-        activeElem?.addEventListener('blur', onFinishEditing, { once: true });
-        activeElem?.addEventListener('change', onFinishEditing, { once: true });
+        console.warn('[NLPWA] Auto-reload deferred: user is actively editing form inputs. Offering update prompt instead to protect unsaved edits.');
+        if (typeof options.onUpdatePrompt === 'function') {
+          options.onUpdatePrompt(data);
+        }
+        document.dispatchEvent(
+          new CustomEvent('nlpwa:update-prompt', {
+            bubbles: true,
+            detail: { version: data.version, reason: 'editing' },
+          })
+        );
       }
     }
   });
@@ -89,20 +111,21 @@ export async function register(swUrl = '/sw.js', options = {}) {
       options.onUpdateApplied(data);
     }
     if (options.reloadOnUpdateApplied || options.autoReload) {
-      const activeElem = typeof document !== 'undefined' ? document.activeElement : null;
-      const activeTag = activeElem?.tagName?.toLowerCase();
-      const isEditing = activeTag === 'input' || activeTag === 'textarea' || activeElem?.isContentEditable;
-      if (!isEditing) {
+      if (!isUserEditing()) {
         window.location.reload();
       } else {
-        console.warn('[NLPWA] Reload on update-applied deferred: active input focused.');
-        const onFinishEditing = () => {
-          activeElem?.removeEventListener('blur', onFinishEditing);
-          activeElem?.removeEventListener('change', onFinishEditing);
-          window.location.reload();
-        };
-        activeElem?.addEventListener('blur', onFinishEditing, { once: true });
-        activeElem?.addEventListener('change', onFinishEditing, { once: true });
+        console.warn('[NLPWA] Reload on update-applied deferred: user is actively editing form inputs. Offering update prompt instead to protect unsaved edits.');
+        if (typeof options.onUpdatePrompt === 'function') {
+          options.onUpdatePrompt({ version: data?.version, updateApplied: true });
+        } else if (typeof options.onUpdateReady === 'function') {
+          options.onUpdateReady({ version: data?.version, updateApplied: true });
+        }
+        document.dispatchEvent(
+          new CustomEvent('nlpwa:update-prompt', {
+            bubbles: true,
+            detail: { version: data?.version, updateApplied: true, reason: 'editing' },
+          })
+        );
       }
     }
   });

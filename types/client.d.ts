@@ -80,6 +80,8 @@ export interface RegisterOptions {
   onUpdateFailed?: (data: UpdateFailedData) => void;
   /** Called when an update is committed/applied (in this tab or another tab) */
   onUpdateApplied?: (data: UpdateAppliedData) => void;
+  /** Called when auto-reload is deferred because user is editing form inputs */
+  onUpdatePrompt?: (data: UpdateReadyData | { version?: string; updateApplied?: boolean }) => void;
   /** Automatically apply update and reload on update (default: false) */
   autoReload?: boolean;
   /** Automatically reload when another tab applies an update (default: false) */
@@ -167,6 +169,13 @@ export function cleanupRuntimeCache(
   options?: { timeoutMs?: number }
 ): Promise<CleanupRuntimeResult>;
 
+/**
+ * Check if the user is currently editing an active input, textarea, select, or contenteditable element.
+ *
+ * @returns true if an interactive editing element currently has focus
+ */
+export function isUserEditing(): boolean;
+
 export interface NLPWAClientAPI {
   register: typeof register;
   onUpdateReady: typeof onUpdateReady;
@@ -178,6 +187,7 @@ export interface NLPWAClientAPI {
   sendToSW: typeof sendToSW;
   getCacheInfo: typeof getCacheInfo;
   cleanupRuntimeCache: typeof cleanupRuntimeCache;
+  isUserEditing: typeof isUserEditing;
 }
 
 declare const client: NLPWAClientAPI;

@@ -282,8 +282,9 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 | `onUpdateReady` | `Function` | — | Called with `{ version, partial }` when update is staged |
 | `onNoUpdate` | `Function` | — | Called with `{ version }` when app is confirmed up to date |
 | `onUpdateApplied` | `Function` | — | Called with `{ version }` when update is committed across any tab |
-| `autoReload` | `boolean` | `false` | Automatically apply update and reload when staged (deferred if typing in inputs) |
-| `reloadOnUpdateApplied` | `boolean` | `false` | Automatically reload this tab if another tab commits an update (deferred if typing) |
+| `onUpdatePrompt` | `Function` | — | Called when auto-reload is deferred because user is editing inputs |
+| `autoReload` | `boolean` | `false` | Automatically apply update and reload when staged (deferred to prompt if editing inputs) |
+| `reloadOnUpdateApplied` | `boolean` | `false` | Automatically reload this tab if another tab commits an update (deferred to prompt if editing) |
 | `checkOnFocus` | `boolean` | `true` | Check for update when tab gains focus |
 | `focusThrottleMs` | `number` | `3600000` | Min ms between focus-triggered checks (1 hr) |
 | `pollIntervalMs` | `number` | `3600000` | Client interval (ms) to check updates while tab is active (1 hr) |
@@ -323,7 +324,7 @@ NLPWAClient.register('/sw.js', {
   reloadOnUpdateApplied: true, // reloads this tab when another tab updates
 });
 ```
-When Tab 1 commits an update, the SW broadcasts `UPDATE_APPLIED` to all windows. Open tabs automatically reload. If the user is actively typing in a form input, textarea, or contentEditable element, **the reload is safely deferred** until the user finishes editing (`blur` / `change`).
+When Tab 1 commits an update, the SW broadcasts `UPDATE_APPLIED` to all windows. Open tabs automatically reload. If the user is actively typing in a form input, textarea, or contentEditable element, **the reload is safely suppressed and an update prompt is offered instead** (`onUpdatePrompt` / `nlpwa:update-prompt` event) so unsaved form edits are never discarded.
 
 ### 3. SPA Router Integration
 In an SPA, you can apply updates smoothly during in-app page transitions:

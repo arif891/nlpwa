@@ -176,7 +176,7 @@ SW postMessage({ type: 'UPDATE_READY', version, partial })
   └─ onSWMessage handler in register.js
        ├─ options.onUpdateReady({ version, partial })  ← user callback
        ├─ document.dispatchEvent('nlpwa:update-ready')
-       └─ options.autoReload → deferred if user is editing inputs, else reload
+       └─ options.autoReload → deferred to prompt if user is editing inputs, else applyUpdate
 
 User clicks "Refresh" (or calls NLPWAClient.applyUpdate()):
   └─ NLPWAClient.applyUpdate()

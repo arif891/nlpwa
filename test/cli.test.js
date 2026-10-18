@@ -73,6 +73,28 @@ test('cli update: modifying a file updates version, reverting restores original 
   assert.equal(vReverted, vInitial, 'version reverted to exact original hash upon rollback');
 });
 
+test('cli update: changing config settings (throwOnFailure, timeouts, intervals) updates version hash', () => {
+  const root = makeProject();
+  runUpdate(root);
+  const vInitial = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8')).version;
+
+  // Change config fields without touching any tracked files
+  writeFileSync(
+    join(root, 'config.json'),
+    JSON.stringify({
+      version: '1.0.0',
+      precache: ['/index.html'],
+      throwOnFailure: true,
+      networkTimeoutMs: 5000,
+      updateCheckInterval: 1800000,
+    }),
+  );
+
+  runUpdate(root);
+  const vModified = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8')).version;
+  assert.notEqual(vInitial, vModified, 'version hash updated after changing config fields');
+});
+
 test('cli update: --bump-patch explicitly increments semver patch', () => {
   const root = makeProject();
   const res = runUpdate(root, ['--bump-patch']);

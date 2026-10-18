@@ -26,6 +26,25 @@ export function incrementPatch(version) {
   return `${parts[0] ?? 0}.${parts[1] ?? 0}.${(parts[2] ?? 0) + 1}`;
 }
 
+function canonicalizeConfig(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    if (typeof obj === 'function') return obj.toString();
+    return obj;
+  }
+  if (obj instanceof RegExp) {
+    return obj.toString();
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(canonicalizeConfig);
+  }
+  const sorted = {};
+  const keys = Object.keys(obj).filter((k) => k !== 'version').sort();
+  for (const k of keys) {
+    sorted[k] = canonicalizeConfig(obj[k]);
+  }
+  return sorted;
+}
+
 /**
  * Compute a deterministic composite hash for tracked offline files and configuration rules.
  * Excludes any existing version and the config.json file itself to prevent circular hash dependencies.
@@ -42,16 +61,8 @@ export function computeManifestHash(files = [], config = {}) {
     .filter((f) => f.path !== configPath)
     .sort((a, b) => a.path.localeCompare(b.path));
 
-  // 2. Extract configuration rules that impact caching/routing (excluding version)
-  const canonicalConfig = {
-    routes: config.routes ?? [],
-    precache: config.precache ?? [],
-    defaultStrategy: config.defaultStrategy ?? 'network-first',
-    base: config.base ?? '',
-    clearRuntimeOnUpdate: config.clearRuntimeOnUpdate ?? false,
-    retainPreviousVersionCache: config.retainPreviousVersionCache ?? false,
-    verifyHashes: config.verifyHashes ?? 'strict',
-  };
+  // 2. Canonicalize the entire config object excluding only the version field
+  const canonicalConfig = canonicalizeConfig(config);
 
   const hasher = createHash('sha256');
   for (const f of sortedFiles) {

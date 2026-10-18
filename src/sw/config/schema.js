@@ -47,6 +47,10 @@ export function validateConfig(config) {
     errors.push('config.caches.runtime must be a string');
   }
 
+  if (config.clearRuntimeOnUpdate !== undefined && typeof config.clearRuntimeOnUpdate !== 'boolean') {
+    errors.push('config.clearRuntimeOnUpdate must be a boolean');
+  }
+
   if (!Array.isArray(config.precache)) {
     errors.push('config.precache must be an array of URL strings');
   }

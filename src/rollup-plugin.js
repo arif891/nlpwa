@@ -5,6 +5,7 @@ import {
   loadConfig,
   syncSourceConfigVersion,
   incrementPatch,
+  hashFile,
   collectTrackedFiles,
   resolveUpdateEndpoints,
   getApiDiskPath,
@@ -93,15 +94,27 @@ export function nlpwaPlugin(options = {}) {
 
       mkdirSync(distDir, { recursive: true });
 
-      // 2. Emit config file in distDir (dynamically from runtimeConfig.configPath)
+      // 2. Track offline cached files, expanding any precache globs
+      const { files, expandedPrecache } = collectTrackedFiles(runtimeConfig, distDir);
+
+      // 3. Emit config file in distDir with expanded precache list
       const cleanConfigPath = runtimeConfig.configPath.replace(/^\/+/, '');
       const configJsonPath = resolve(distDir, cleanConfigPath);
       mkdirSync(dirname(configJsonPath), { recursive: true });
       const jsonIndent = options.pretty ? 2 : 0;
-      writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
+      const configToEmit = {
+        ...runtimeConfig,
+        precache: expandedPrecache,
+      };
+      writeFileSync(configJsonPath, JSON.stringify(configToEmit, null, jsonIndent), 'utf8');
 
-      // 3. Track ONLY offline cached files and the config file
-      const { files } = collectTrackedFiles(runtimeConfig, distDir);
+      // Update hash for config.json now that it is written
+      const configEntry = files.find(f => f.path === runtimeConfig.configPath);
+      if (configEntry) {
+        configEntry.hash = hashFile(configJsonPath);
+      } else {
+        files.unshift({ path: runtimeConfig.configPath, hash: hashFile(configJsonPath) });
+      }
 
       // 4. Emit update API outputs
       const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(runtimeConfig);

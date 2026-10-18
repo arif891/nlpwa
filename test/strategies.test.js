@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setupEnv, req, fakeEvent, sleep } from './helpers/fake-env.js';
-import { networkFirst, staleWhileRevalidate, cacheFirst, networkOnly } from '../src/sw/fetch/strategies.js';
+import {
+  networkFirst,
+  staleWhileRevalidate,
+  cacheFirst,
+  networkOnly,
+  parseDurationMs,
+} from '../src/sw/fetch/strategies.js';
 import { tagResponse } from '../src/sw/cache/tag.js';
 
 const text = (r) => r.text();
@@ -185,3 +191,63 @@ test('tagResponse: preserves response.url and response.redirected', () => {
   assert.equal(tagged.url, 'https://example.com/api/v1/resource');
   assert.equal(tagged.redirected, true);
 });
+
+test('parseDurationMs: parses friendly string durations and numbers', () => {
+  assert.equal(parseDurationMs('500ms'), 500);
+  assert.equal(parseDurationMs('30s'), 30000);
+  assert.equal(parseDurationMs('15m'), 900000);
+  assert.equal(parseDurationMs('2h'), 7200000);
+  assert.equal(parseDurationMs('7d'), 604800000);
+  assert.equal(parseDurationMs(5000), 5000);
+  assert.equal(parseDurationMs(null), null);
+  assert.equal(parseDurationMs('invalid'), null);
+});
+
+test('cacheFirst: serves unexpired runtime cache when within maxAge', async () => {
+  const caches = setupEnv(async () => new Response('fresh'));
+  const cachedRes = new Response('cached', {
+    headers: { 'X-NLPWA-Cached-At': String(Date.now() - 5000) },
+  });
+  await (await caches.open('runtime')).put(req('/assets/logo.png'), cachedRes);
+
+  const res = await cacheFirst(req('/assets/logo.png'), undefined, { maxAge: '1m' });
+  assert.equal(await res.text(), 'cached');
+  assert.equal(res.headers.get('X-Cache-Status'), 'runtime-cache');
+});
+
+test('cacheFirst: refreshes from network and updates cache when runtime cache exceeds maxAge', async () => {
+  let networkFetches = 0;
+  const caches = setupEnv(async () => {
+    networkFetches++;
+    return new Response('fresh');
+  });
+  // 2 hours old
+  const staleRes = new Response('stale', {
+    headers: { 'X-NLPWA-Cached-At': String(Date.now() - 7200000) },
+  });
+  await (await caches.open('runtime')).put(req('/assets/logo.png'), staleRes);
+
+  const event = fakeEvent();
+  const res = await cacheFirst(req('/assets/logo.png'), event, { maxAge: '1h' });
+  assert.equal(await res.text(), 'fresh');
+  assert.equal(res.headers.get('X-Cache-Status'), 'network');
+  assert.equal(networkFetches, 1);
+
+  await event.settle();
+  // Check updated cache
+  const updated = await (await caches.open('runtime')).match(req('/assets/logo.png'));
+  assert.equal(await updated.text(), 'fresh');
+});
+
+test('cacheFirst: expired maxAge falls back gracefully to stale cache when offline', async () => {
+  const caches = setupEnv(async () => { throw new TypeError('Failed to fetch'); });
+  const staleRes = new Response('stale-offline', {
+    headers: { 'X-NLPWA-Cached-At': String(Date.now() - 7200000) },
+  });
+  await (await caches.open('runtime')).put(req('/assets/logo.png'), staleRes);
+
+  const res = await cacheFirst(req('/assets/logo.png'), undefined, { maxAge: '1h' });
+  assert.equal(await res.text(), 'stale-offline');
+  assert.equal(res.headers.get('X-Cache-Status'), 'runtime-cache');
+});
+

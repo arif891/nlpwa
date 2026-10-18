@@ -63,17 +63,21 @@ Request → offline cache → runtime cache → network → store in runtime
 
 **Characteristics:**
 - Fastest possible response — zero network latency after first cache
-- Response is **never revalidated** until an NLPWA update check runs
-- Stale files are automatically replaced by the update system when hashes change
+- By default, responses are stored indefinitely unless updated by the manifest or evicted
+- **Route-level `maxAge` / TTL:** You can specify `maxAge: '7d'` (or `'24h'`, `'30m'`, ms number). When an entry exceeds `maxAge`, `cache-first` automatically revalidates by fetching fresh from the network and refreshing the runtime cache. If offline, it gracefully falls back to the cached copy.
 
-**Best for:** Files that are content-hashed and change only on a new deploy:
-- JavaScript bundles (`app.abc123.js`)
-- CSS files (`styles.def456.css`)
-- Images, fonts, icons
+**Best for:**
+- Content-hashed / fingerprinted assets (`app.abc123.js`, `styles.def456.css`)
+- Static media, fonts, icons
+- Dynamic assets with a defined TTL (`maxAge: '7d'`)
 
-**Route example:**
+**Route examples:**
 ```js
-{ match: '/assets/**', strategy: 'cache-first' }
+// Content-hashed assets (cache indefinitely)
+{ match: '/assets/**', strategy: 'cache-first' },
+
+// Unfingerprinted assets with 7-day TTL expiration
+{ match: '/images/**', strategy: 'cache-first', maxAge: '7d' }
 ```
 
 ---

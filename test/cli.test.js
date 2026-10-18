@@ -77,3 +77,37 @@ test('cli build: acts as alias for update', () => {
   const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
   assert.equal(version.version, '1.0.1');
 });
+
+test('cli update: expands glob patterns in precache across directories', () => {
+  const root = makeProject();
+  mkdirSync(join(root, 'dist/assets/icons'), { recursive: true });
+  writeFileSync(join(root, 'dist/assets/icons/icon-192.png'), 'png192');
+  writeFileSync(join(root, 'dist/assets/icons/icon-512.png'), 'png512');
+  writeFileSync(
+    join(root, 'config.json'),
+    JSON.stringify({
+      version: '1.0.0',
+      precache: ['/index.html', '/assets/icons/**'],
+    }),
+  );
+
+  const res = runUpdate(root);
+  assert.equal(res.status, 0, res.stderr);
+
+  const info = JSON.parse(readFileSync(join(root, 'dist/api/update/info.json'), 'utf8'));
+  const paths = info.files.map((f) => f.path).sort();
+  assert.deepEqual(paths, [
+    '/assets/icons/icon-192.png',
+    '/assets/icons/icon-512.png',
+    '/config.json',
+    '/index.html',
+  ]);
+
+  const configJson = JSON.parse(readFileSync(join(root, 'dist/config.json'), 'utf8'));
+  assert.deepEqual(configJson.precache.sort(), [
+    '/assets/icons/icon-192.png',
+    '/assets/icons/icon-512.png',
+    '/index.html',
+  ]);
+});
+

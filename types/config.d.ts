@@ -22,6 +22,12 @@ export interface RouteConfig {
   throwOnFailure?: boolean;
   /** Alias for throwOnFailure */
   throwOfflineError?: boolean;
+  /** Maximum age before runtime cache entry is considered stale (e.g. '7d', '24h', 3600000) */
+  maxAge?: number | string;
+  /** Maximum age in seconds before runtime cache entry is considered stale */
+  maxAgeSeconds?: number;
+  /** Alias for maxAge */
+  ttl?: number | string;
 }
 
 export interface UpdateAPIConfigObject {
@@ -72,6 +78,8 @@ export interface NLPWAConfig {
   base?: string;
   /** Retain immediate prior version cache on commit for multi-tab grace retention */
   retainPreviousVersionCache?: boolean;
+  /** Clear the entire runtime cache whenever a new app version is committed */
+  clearRuntimeOnUpdate?: boolean;
   /** Whether fetch failures should throw/reject instead of returning a synthetic 503 response */
   throwOnFailure?: boolean;
   /** Alias for throwOnFailure */

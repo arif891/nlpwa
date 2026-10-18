@@ -238,17 +238,29 @@ async function cmdUpdate(args) {
 
   mkdirSync(targetDir, { recursive: true });
 
-  // 1. Write runtime config into target directory
+  // 1. Collect tracked files and expand precache globs
+  const startMs = Date.now();
+  const { files, missing, expandedPrecache } = collectTrackedFiles(runtimeConfig, targetDir);
+
+  // 2. Write runtime config into target directory (with expanded precache paths)
   const cleanConfigPath = (runtimeConfig.configPath || '/config.json').replace(/^\/+/, '');
   const configJsonPath = resolve(targetDir, cleanConfigPath);
   mkdirSync(dirname(configJsonPath), { recursive: true });
   const jsonIndent = args.pretty ? 2 : 0;
-  writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
+  const configToEmit = {
+    ...runtimeConfig,
+    precache: expandedPrecache,
+  };
+  writeFileSync(configJsonPath, JSON.stringify(configToEmit, null, jsonIndent), 'utf8');
   console.log(`  ${c.green}+${c.reset} ${c.cyan}/${cleanConfigPath}${c.reset} (generated from config.js)`);
 
-  // 2. Track ONLY offline cached files and the config file
-  const startMs = Date.now();
-  const { files, missing } = collectTrackedFiles(runtimeConfig, targetDir);
+  // Update hash for config.json now that it is written
+  const configEntry = files.find(f => f.path === (runtimeConfig.configPath || '/config.json'));
+  if (configEntry) {
+    configEntry.hash = hashFile(configJsonPath);
+  } else {
+    files.unshift({ path: runtimeConfig.configPath || '/config.json', hash: hashFile(configJsonPath) });
+  }
 
   for (const { path: urlPath, hash } of files) {
     console.log(`  ${c.green}+${c.reset} ${c.dim}${urlPath.padEnd(25)}${c.reset} ${c.blue}${hash}${c.reset}`);

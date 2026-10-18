@@ -238,3 +238,33 @@ test('update: retry backoff activates after MAX_RETRY_ATTEMPTS, periodic skips, 
   const forced = await checkForUpdate({ force: true });
   assert.equal(forced.updated, true);
 });
+
+test('update: clearRuntimeOnUpdate clears runtime cache upon commit', async () => {
+  const server = makeServer('1.0.0', {
+    ...v1,
+    '/config.json': cfg({ clearRuntimeOnUpdate: true }),
+  });
+  fakeSelf();
+  const caches = setupEnv(server.fetch);
+  await precacheFiles();
+
+  // Populate runtime cache with a dynamic asset
+  const runtime = await caches.open('runtime');
+  await runtime.put('https://example.com/assets/logo.png', new Response('old-logo'));
+  assert.ok(await runtime.match('https://example.com/assets/logo.png'));
+
+  // Stage update to 1.0.1
+  server.set('1.0.1', {
+    ...v1,
+    '/app.js': 'app v2',
+    '/config.json': cfg({ clearRuntimeOnUpdate: true }),
+  });
+  await checkForUpdate();
+  await commitIfReady();
+
+  // Runtime cache should now be cleared
+  const runtimeAfter = await caches.open('runtime');
+  const matched = await runtimeAfter.match('https://example.com/assets/logo.png');
+  assert.equal(matched, undefined, 'runtime cache asset was wiped on commit');
+});
+

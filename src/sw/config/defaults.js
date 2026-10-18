@@ -65,6 +65,12 @@ export const DEFAULTS = {
    */
   retainPreviousVersionCache: false,
 
+  /**
+   * Clear the entire runtime cache whenever a new app version is committed.
+   * Default: false
+   */
+  clearRuntimeOnUpdate: false,
+
   /** Cache storage names */
   caches: {
     offline: CACHE_NAMES.OFFLINE,

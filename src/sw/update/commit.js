@@ -40,8 +40,15 @@ export async function commitStaged() {
 
   // Everything below is cleanup after the switch; the new version is already live.
   await loadConfigFromCache();
-  if (staged.clearRuntime) {
-    await caches.delete(config.caches.runtime);
+  const currentConfig = getConfig();
+  const shouldClearRuntime = Boolean(
+    staged.clearRuntime ||
+    config.clearRuntimeOnUpdate ||
+    currentConfig.clearRuntimeOnUpdate
+  );
+
+  if (shouldClearRuntime) {
+    await caches.delete(currentConfig.caches.runtime);
   } else {
     await evictFromRuntime(staged.evict ?? []);
   }

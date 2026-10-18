@@ -167,14 +167,16 @@ precache: [
   '/app.js',
   '/styles/main.css',
   '/manifest.webmanifest',
-  '/assets/icons/icon-192.png',
-  '/assets/icons/icon-512.png',
+  '/assets/icons/**',      // Glob patterns automatically expanded at build time
 ]
 ```
 
+**Glob Pattern Support:**
+You can specify glob patterns in `precache` (such as `'/assets/icons/**'` or `'/fonts/*.*'`). The build tools (`nlpwa update`, `nlpwa build`, and the Rollup/Vite plugin) automatically scan your output directory, expand all matching files, compute their SHA-256 hashes, and include them in the update manifest and generated `config.json`.
+
 **Guidelines:**
 - Include the entry point HTML (`/` or `/index.html`)
-- Include critical JS and CSS
+- Include critical JS, CSS, and icons/fonts
 - Do **not** include API responses or user-specific data
 - Large media files are better left to runtime caching
 
@@ -235,6 +237,18 @@ You can define cross-origin routes in either of two ways:
 
 Cross-origin responses—including opaque responses (`status: 0`) from `<script>` or WebAssembly workers—are safely stored in the `runtime` cache and served offline.
 
+#### `maxAge` / `ttl` · `string | number` · default: `undefined`
+
+Maximum time a dynamic runtime cache entry remains valid before being considered stale. Supports human-friendly strings like `'7d'`, `'24h'`, `'30m'`, `'60s'`, `'500ms'`, or milliseconds as a number (also accepts `maxAgeSeconds: 3600`).
+
+- When a request matches an entry in the runtime cache whose age exceeds `maxAge`, `cache-first` automatically fetches a fresh version from the network, updates the runtime cache, and serves the new copy.
+- If the device is offline or the network request fails, it gracefully falls back to the stale cached response rather than breaking the application.
+
+```js
+// Cache images aggressively but revalidate after 7 days
+{ match: '/assets/**', strategy: 'cache-first', maxAge: '7d' }
+```
+
 #### `throwOnFailure` · `boolean` · default: `false`
 
 Controls whether network and cache lookup failures throw an error instead of returning a synthetic `503 Service Unavailable` response.
@@ -260,6 +274,19 @@ Can also be set globally in `config.js` to apply to all routes by default.
 | `'cache-only'` | Cache only, 503 on miss (or throws if `throwOnFailure: true`). Best for: offline fallback |
 
 See [STRATEGIES.md](STRATEGIES.md) for full strategy behaviour.
+
+---
+
+### `clearRuntimeOnUpdate` · `boolean` · default: `false`
+
+Controls whether the entire `runtime` cache is deleted when a new version update commits.
+
+- `false` (default): Preserves runtime cached assets across version updates, evicting only files that were modified or removed in the update manifest.
+- `true`: Completely clears the runtime cache upon committing a new version. Recommended as a safety net if your application serves unfingerprinted static assets via `cache-first` outside of `precache`, ensuring no stale runtime assets linger after a deployment.
+
+```js
+clearRuntimeOnUpdate: true
+```
 
 ---
 

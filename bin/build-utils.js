@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /**
@@ -143,35 +143,115 @@ export function getApiDiskPath(baseDir, endpoint) {
   return resolve(baseDir, clean, 'index.json');
 }
 
+function globToRegex(pattern) {
+  const regexStr = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\/\*\*\//g, '\x00GLOBSTARSLASH\x00')
+    .replace(/\*\*/g, '\x00GLOBSTAR\x00')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\x00GLOBSTARSLASH\x00/g, '/(?:.*/)?')
+    .replace(/\x00GLOBSTAR\x00/g, '.*');
+  return new RegExp('^' + regexStr + '$');
+}
+
+function matchGlob(pattern, path) {
+  return globToRegex(pattern).test(path);
+}
+
+function walkFiles(dir) {
+  const files = [];
+  if (!existsSync(dir)) return files;
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...walkFiles(full));
+      } else if (entry.isFile()) {
+        files.push(full);
+      }
+    }
+  } catch {
+    // ignore unreadable directories
+  }
+  return files;
+}
+
 /**
  * Collect and hash all tracked offline files for a given target directory.
+ * Supports glob patterns in precache (e.g. '/assets/icons/**', '/img/*.png').
  *
  * @param {Object} runtimeConfig
  * @param {string} targetDir
- * @returns {{ files: Array<{ path: string, hash: string }>, missing: Array<{ path: string, diskPath: string }> }}
+ * @returns {{
+ *   files: Array<{ path: string, hash: string }>,
+ *   missing: Array<{ path: string, diskPath: string }>,
+ *   expandedPrecache: string[]
+ * }}
  */
 export function collectTrackedFiles(runtimeConfig, targetDir) {
+  const configPath = runtimeConfig.configPath || '/config.json';
   const trackedUrlPaths = Array.from(new Set([
-    runtimeConfig.configPath || '/config.json',
+    configPath,
     ...(runtimeConfig.precache || []),
   ]));
 
-  const files = [];
+  const filesMap = new Map();
   const missing = [];
+  let allDiskFiles = null;
 
   for (const urlPath of trackedUrlPaths) {
-    let relPath = urlPath.startsWith('/') ? urlPath.slice(1) : urlPath;
-    if (relPath === '' || relPath.endsWith('/')) {
-      relPath += 'index.html';
-    }
+    if (typeof urlPath !== 'string') continue;
+    const isGlob = urlPath.includes('*') || urlPath.includes('?');
 
-    const diskPath = resolve(targetDir, relPath);
-    if (existsSync(diskPath)) {
-      files.push({ path: urlPath, hash: hashFile(diskPath) });
+    if (isGlob) {
+      if (allDiskFiles === null) {
+        allDiskFiles = walkFiles(targetDir);
+      }
+      const normPattern = urlPath.startsWith('/') ? urlPath : '/' + urlPath;
+      let matchedCount = 0;
+
+      for (const diskFile of allDiskFiles) {
+        const rel = relative(targetDir, diskFile).split(sep).join('/');
+        const fileUrlPath = '/' + rel;
+
+        if (matchGlob(normPattern, fileUrlPath)) {
+          matchedCount++;
+          if (!filesMap.has(fileUrlPath)) {
+            filesMap.set(fileUrlPath, {
+              path: fileUrlPath,
+              hash: hashFile(diskFile),
+            });
+          }
+        }
+      }
+
+      if (matchedCount === 0) {
+        missing.push({
+          path: urlPath,
+          diskPath: resolve(targetDir, urlPath.replace(/^\/+/, '')),
+        });
+      }
     } else {
-      missing.push({ path: urlPath, diskPath });
+      let relPath = urlPath.startsWith('/') ? urlPath.slice(1) : urlPath;
+      if (relPath === '' || relPath.endsWith('/')) {
+        relPath += 'index.html';
+      }
+
+      const diskPath = resolve(targetDir, relPath);
+      if (existsSync(diskPath)) {
+        filesMap.set(urlPath, { path: urlPath, hash: hashFile(diskPath) });
+      } else {
+        missing.push({ path: urlPath, diskPath });
+      }
     }
   }
 
-  return { files, missing };
+  const files = Array.from(filesMap.values());
+  const expandedPrecache = files
+    .map((f) => f.path)
+    .filter((p) => p !== configPath);
+
+  return { files, missing, expandedPrecache };
 }

@@ -30,7 +30,6 @@ function safePutInRuntime(request, response, event, options = {}) {
   if (response.type === 'opaque') {
     const allowOpaque = Boolean(
       options?.cacheOpaque ??
-      options?.opaque ??
       getConfig().cacheOpaque ??
       false
     );
@@ -63,7 +62,6 @@ function safePutInRuntime(request, response, event, options = {}) {
 function getShouldThrow(options) {
   return Boolean(
     options?.throwOnFailure ??
-    options?.throwOfflineError ??
     getConfig().throwOnFailure ??
     false
   );
@@ -101,10 +99,7 @@ export function parseDurationMs(val) {
  * Resolve max age in milliseconds from route options or global config.
  */
 function resolveMaxAgeMs(options) {
-  if (options?.maxAgeMs != null) return parseDurationMs(options.maxAgeMs);
-  if (options?.maxAgeSeconds != null) return options.maxAgeSeconds * 1000;
   if (options?.maxAge != null) return parseDurationMs(options.maxAge);
-  if (options?.ttl != null) return parseDurationMs(options.ttl);
   return null;
 }
 

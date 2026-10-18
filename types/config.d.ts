@@ -20,31 +20,18 @@ export interface RouteConfig {
   ignoreSearch?: boolean;
   /** Whether failures should throw/reject instead of returning a synthetic 503 response */
   throwOnFailure?: boolean;
-  /** Alias for throwOnFailure */
-  throwOfflineError?: boolean;
   /** Maximum age before runtime cache entry is considered stale (e.g. '7d', '24h', 3600000) */
   maxAge?: number | string;
-  /** Maximum age in seconds before runtime cache entry is considered stale */
-  maxAgeSeconds?: number;
-  /** Alias for maxAge */
-  ttl?: number | string;
   /** Whether to cache opaque cross-origin responses (default: false to prevent ~7MB Chrome quota padding and caching 404s) */
   cacheOpaque?: boolean;
 }
 
-export interface UpdateAPIConfigObject {
+export interface UpdateAPIConfig {
   /** Lightweight check returning { version: string } */
-  version?: string;
+  version: string;
   /** Full manifest check returning { version: string, files: Array<{ path: string, hash: string }> } */
-  info?: string;
+  info: string;
 }
-
-export interface UpdateAPIEndpointEntry {
-  type: 'version' | 'info';
-  endpoint: string;
-}
-
-export type UpdateAPIConfig = UpdateAPIConfigObject | UpdateAPIEndpointEntry[];
 
 export interface NLPWAConfig {
   /** Service Worker / App version */
@@ -90,8 +77,6 @@ export interface NLPWAConfig {
   devBypass?: boolean;
   /** Whether fetch failures should throw/reject instead of returning a synthetic 503 response */
   throwOnFailure?: boolean;
-  /** Alias for throwOnFailure */
-  throwOfflineError?: boolean;
 }
 
 declare const defaultConfig: NLPWAConfig;

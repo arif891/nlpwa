@@ -20,15 +20,20 @@ export function validateConfig(config) {
     errors.push('config.configPath must be a string (e.g. "/config.json")');
   }
 
-  // Validate updateAPI
-  if (!config.updateAPI) {
-    errors.push('config.updateAPI must be defined with { version, info }');
-  } else if (Array.isArray(config.updateAPI)) {
-    if (config.updateAPI.length === 0) {
-      errors.push('config.updateAPI array must not be empty');
+  // Validate updateAPI (object with { version, info } only)
+  if (!config.updateAPI || typeof config.updateAPI !== 'object' || Array.isArray(config.updateAPI)) {
+    errors.push('config.updateAPI must be an object with { version, info } endpoints');
+  } else {
+    if (typeof config.updateAPI.version !== 'string' || !config.updateAPI.version) {
+      errors.push('config.updateAPI.version must be a non-empty string endpoint (e.g. "/api/update/version.json")');
     }
-  } else if (typeof config.updateAPI !== 'object') {
-    errors.push('config.updateAPI must be an object with { version, info } or an array');
+    if (typeof config.updateAPI.info !== 'string' || !config.updateAPI.info) {
+      errors.push('config.updateAPI.info must be a non-empty string endpoint (e.g. "/api/update/info.json")');
+    }
+  }
+
+  if (config.throwOfflineError !== undefined) {
+    errors.push('config.throwOfflineError is deprecated. Use canonical "throwOnFailure" instead.');
   }
 
   if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
@@ -67,6 +72,15 @@ export function validateConfig(config) {
           `config.routes[${i}].strategy "${route.strategy}" is invalid. ` +
           `Valid: ${[...VALID_STRATEGIES].join(', ')}`
         );
+      }
+      if (route.throwOfflineError !== undefined) {
+        errors.push(`config.routes[${i}]: "throwOfflineError" is deprecated. Use canonical "throwOnFailure" instead.`);
+      }
+      if (route.maxAgeSeconds !== undefined || route.maxAgeMs !== undefined || route.ttl !== undefined) {
+        errors.push(`config.routes[${i}]: "maxAgeSeconds", "maxAgeMs", and "ttl" are deprecated. Use canonical "maxAge" (duration string or ms) instead.`);
+      }
+      if (route.opaque !== undefined) {
+        errors.push(`config.routes[${i}]: "opaque" is deprecated. Use canonical "cacheOpaque" instead.`);
       }
     });
   }

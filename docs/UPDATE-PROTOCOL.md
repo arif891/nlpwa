@@ -203,7 +203,7 @@ Open separate cache: offline@1.4.2-<unique-id>
 ```
 // On staging success:
 clients.matchAll({ type: 'window' })
-  → postMessage({ type: 'UPDATE_READY', version: '1.4.2', partial: false })
+  → postMessage({ type: 'UPDATE_READY', version: '1.4.2' })
 
 // On staging failure or hash mismatch:
 clients.matchAll({ type: 'window' })
@@ -270,7 +270,7 @@ Failures during staging never corrupt the running application:
 
 | Type | Payload | Meaning |
 |---|---|---|
-| `UPDATE_READY` | `{ type, version, partial }` | Staged update is complete; client should prompt user |
+| `UPDATE_READY` | `{ type, version }` | Staged update is complete; client should prompt user |
 | `UPDATE_APPLIED` | `{ type, applied }` | Staged update has been switched to active; client may reload |
 | `NO_UPDATE` | `{ type, version }` | Version check ran; client is already up to date |
 
@@ -288,8 +288,8 @@ Failures during staging never corrupt the running application:
 import { register, applyUpdate } from '/client.js';
 
 register('/sw.js', {
-  onUpdateReady: ({ version, partial }) => {
-    console.log('Update ready:', version, 'Partial:', partial);
+  onUpdateReady: ({ version }) => {
+    console.log('Update ready:', version);
     showUpdateBanner();
   },
   onUpdateFailed: ({ version, failed, error, persistent, hasHashMismatch }) => {

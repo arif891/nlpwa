@@ -218,7 +218,7 @@ export default defineConfig({
 <script src="/client.js"></script>
 <script>
   NLPWAClient.register('/sw.js', {
-    onUpdateReady: ({ version, partial }) => {
+    onUpdateReady: ({ version }) => {
       document.getElementById('update-banner').hidden = false;
     },
   });
@@ -266,7 +266,7 @@ An update is built in a brand-new `offline@…` cache while the active one keeps
      checked against the manifest (config.verifyHashes)
    - files that verified earlier are reused when a failed update is retried
 6. Write the snapshot last (marks the staged cache complete)
-7. postMessage UPDATE_READY ({ version, partial }) → client shows update prompt
+7. postMessage UPDATE_READY ({ version }) → client shows update prompt
 8. On the next page navigation (or NLPWAClient.applyUpdate()):
    switch the active pointer in nlpwa-meta, reload config.json, evict changed
    entries from runtime cache, route-aware eviction, delete old offline cache
@@ -286,7 +286,7 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `onUpdateReady` | `Function` | — | Called with `{ version, partial }` when update is staged |
+| `onUpdateReady` | `Function` | — | Called with `{ version }` when update is staged |
 | `onNoUpdate` | `Function` | — | Called with `{ version }` when app is confirmed up to date |
 | `onUpdateApplied` | `Function` | — | Called with `{ version }` when update is committed across any tab |
 | `onUpdatePrompt` | `Function` | — | Called when auto-reload is deferred because user is editing inputs |
@@ -372,7 +372,7 @@ router.beforeEach(async (to, from) => {
 ```js
 // Fired when an update is staged and ready to apply
 document.addEventListener('nlpwa:update-ready', (e) => {
-  console.log('New version:', e.detail.version, 'Partial:', e.detail.partial);
+  console.log('New version:', e.detail.version);
 });
 
 // Fired when the app is confirmed up to date

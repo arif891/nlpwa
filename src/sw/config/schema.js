@@ -2,6 +2,41 @@ import { STRATEGIES } from '../../shared/constants.js';
 
 const VALID_STRATEGIES = new Set(Object.values(STRATEGIES));
 
+const ALLOWED_ROUTE_KEYS = new Set([
+  'match',
+  'strategy',
+  'origin',
+  'networkTimeoutMs',
+  'navigationFallback',
+  'ignoreSearch',
+  'throwOnFailure',
+  'maxAge',
+  'cacheOpaque',
+]);
+
+const ALLOWED_CONFIG_KEYS = new Set([
+  'version',
+  'appVersion',
+  'configPath',
+  'updateAPI',
+  'verifyHashes',
+  'maxVerifyBytes',
+  'caches',
+  'snapshotCachePath',
+  'precache',
+  'routes',
+  'defaultStrategy',
+  'networkTimeoutMs',
+  'navigationFallback',
+  'base',
+  'retainPreviousVersionCache',
+  'clearRuntimeOnUpdate',
+  'cacheOpaque',
+  'throwOnFailure',
+  'dev',
+  'devBypass',
+]);
+
 /**
  * Validate a merged config object.
  * Returns an array of error strings (empty = valid).
@@ -32,8 +67,10 @@ export function validateConfig(config) {
     }
   }
 
-  if (config.throwOfflineError !== undefined) {
-    errors.push('config.throwOfflineError is deprecated. Use canonical "throwOnFailure" instead.');
+  for (const key of Object.keys(config)) {
+    if (!ALLOWED_CONFIG_KEYS.has(key)) {
+      errors.push(`config.${key} is not a recognized configuration option.`);
+    }
   }
 
   if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
@@ -64,6 +101,11 @@ export function validateConfig(config) {
     errors.push('config.routes must be an array');
   } else {
     config.routes.forEach((route, i) => {
+      for (const key of Object.keys(route)) {
+        if (!ALLOWED_ROUTE_KEYS.has(key)) {
+          errors.push(`config.routes[${i}] has unrecognized option "${key}". Only canonical route options are supported.`);
+        }
+      }
       if (typeof route.match !== 'string') {
         errors.push(`config.routes[${i}].match must be a string (glob pattern)`);
       }
@@ -72,15 +114,6 @@ export function validateConfig(config) {
           `config.routes[${i}].strategy "${route.strategy}" is invalid. ` +
           `Valid: ${[...VALID_STRATEGIES].join(', ')}`
         );
-      }
-      if (route.throwOfflineError !== undefined) {
-        errors.push(`config.routes[${i}]: "throwOfflineError" is deprecated. Use canonical "throwOnFailure" instead.`);
-      }
-      if (route.maxAgeSeconds !== undefined || route.maxAgeMs !== undefined || route.ttl !== undefined) {
-        errors.push(`config.routes[${i}]: "maxAgeSeconds", "maxAgeMs", and "ttl" are deprecated. Use canonical "maxAge" (duration string or ms) instead.`);
-      }
-      if (route.opaque !== undefined) {
-        errors.push(`config.routes[${i}]: "opaque" is deprecated. Use canonical "cacheOpaque" instead.`);
       }
     });
   }

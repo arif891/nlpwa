@@ -61,11 +61,16 @@ export default {
 
 ## Configuration Options
 
-### `version` · `string`
+### `version` · `string` · default: `'auto'`
 The deployed version of your web application.
-- Uses semantic versioning (`major.minor.patch`).
-- Auto-incremented by the build tool (`nlpwa update`) when building/deploying.
-- The Service Worker compares this version during update checks.
+
+- **Deterministic Hash Derivation (Default):** When you run `nlpwa update` or the Rollup/Vite plugin, NLPWA computes a composite SHA-256 hash of all tracked files and configuration rules:
+  - If `version: '1.0.0'` is set in `config.js`, the emitted version is formatted as `1.0.0-<hash>` (e.g. `1.0.0-a1b2c3d4e5f6`).
+  - If `version: 'auto'` or omitted, the version is the pure content hash (e.g. `a1b2c3d4e5f6`).
+- **Idempotent & CI-Safe:** Rebuilding identical code in CI or local development produces the exact same hash, preventing clients from receiving spurious "Update ready" banners when nothing changed.
+- **Rollback-Safe:** Reverting a Git commit to an earlier release regenerates that release's exact hash, allowing clients to roll back automatically.
+- **Zero Source File Rewriting:** Your source `config.js` is treated as read-only, avoiding dirty Git working trees and infinite rebuild loops in `rollup --watch`.
+- **Manual Semver Mode (Opt-in):** If you prefer classical patch increments, pass `--bump-patch` to `nlpwa update` (or `autoIncrement: true` in the plugin). To sync the bumped version back to your source file, add `--sync-source`.
 
 ---
 

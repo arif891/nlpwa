@@ -29,16 +29,57 @@ function runUpdate(root, extra = []) {
   );
 }
 
-test('cli update: emits the next version and the default .json endpoints', () => {
+test('cli update: emits manifest-hash derived version and preserves source config', () => {
   const root = makeProject();
   const res = runUpdate(root);
   assert.equal(res.status, 0, res.stderr);
 
   const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
   const info = JSON.parse(readFileSync(join(root, 'dist/api/update/info.json'), 'utf8'));
-  assert.equal(version.version, '1.0.1');
-  assert.equal(info.version, '1.0.1');
+  assert.match(version.version, /^1\.0\.0-[0-9a-f]{12}$/);
+  assert.equal(version.version, info.version);
   assert.deepEqual(info.files.map((f) => f.path).sort(), ['/config.json', '/index.html']);
+
+  // Source config.json must NOT be mutated
+  const sourceConfig = JSON.parse(readFileSync(join(root, 'config.json'), 'utf8'));
+  assert.equal(sourceConfig.version, '1.0.0', 'source config.json was not mutated');
+});
+
+test('cli update: rebuilds of identical content are strictly idempotent', () => {
+  const root = makeProject();
+  runUpdate(root);
+  const v1 = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8')).version;
+
+  runUpdate(root);
+  const v2 = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8')).version;
+  assert.equal(v1, v2, 'identical files produced the exact same version string');
+});
+
+test('cli update: modifying a file updates version, reverting restores original version (rollback)', () => {
+  const root = makeProject();
+  runUpdate(root);
+  const vInitial = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8')).version;
+
+  // Modify file
+  writeFileSync(join(root, 'dist/index.html'), '<h1>hello v2</h1>');
+  runUpdate(root);
+  const vModified = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8')).version;
+  assert.notEqual(vInitial, vModified, 'version changed after file modification');
+
+  // Revert file to original content (rollback)
+  writeFileSync(join(root, 'dist/index.html'), '<h1>hello</h1>');
+  runUpdate(root);
+  const vReverted = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8')).version;
+  assert.equal(vReverted, vInitial, 'version reverted to exact original hash upon rollback');
+});
+
+test('cli update: --bump-patch explicitly increments semver patch', () => {
+  const root = makeProject();
+  const res = runUpdate(root, ['--bump-patch']);
+  assert.equal(res.status, 0, res.stderr);
+
+  const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
+  assert.equal(version.version, '1.0.1');
 });
 
 test('cli update: manifest hashes are 32 hex chars and match the file', async () => {
@@ -75,7 +116,7 @@ test('cli build: acts as alias for update', () => {
   assert.equal(res.status, 0, res.stderr);
 
   const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
-  assert.equal(version.version, '1.0.1');
+  assert.match(version.version, /^1\.0\.0-[0-9a-f]{12}$/);
 });
 
 test('cli update: expands glob patterns in precache across directories', () => {

@@ -5,6 +5,7 @@ import {
   loadConfig,
   syncSourceConfigVersion,
   incrementPatch,
+  deriveAppVersion,
   hashFile,
   collectTrackedFiles,
   resolveUpdateEndpoints,
@@ -16,7 +17,8 @@ import {
  *
  * @param {Object} [options]
  * @param {string}  [options.config]           Path to config.js or config.json
- * @param {boolean} [options.autoIncrement]    Auto-increment patch version (default: true)
+ * @param {boolean} [options.autoIncrement]    Auto-increment patch version instead of content hash (default: false)
+ * @param {boolean} [options.syncSource]       Sync version back to source config file (default: false)
  * @param {string}  [options.version]          Explicit app version override
  * @param {boolean} [options.generateManifest] Emit manifest & update API on build (default: true)
  * @param {string}  [options.distDir]          Output directory for web files (default: './dist')
@@ -34,8 +36,13 @@ export function nlpwaPlugin(options = {}) {
     targetConfigPath = findConfigFile(options.config);
     targetConfig = await loadConfig(targetConfigPath);
     const prevVersion = targetConfig.version ?? '1.0.0';
-    const autoInc = options.autoIncrement !== false && !options.version;
-    targetVersion = options.version ?? (autoInc ? incrementPatch(prevVersion) : prevVersion);
+    if (options.version) {
+      targetVersion = options.version;
+    } else if (options.autoIncrement === true) {
+      targetVersion = incrementPatch(prevVersion);
+    } else {
+      targetVersion = prevVersion;
+    }
     return { targetVersion, targetConfig, targetConfigPath };
   }
 
@@ -71,12 +78,24 @@ export function nlpwaPlugin(options = {}) {
       const configPath = targetConfigPath;
       const rawConfig = targetConfig || {};
       const distDir = resolve(process.cwd(), options.distDir ?? bundleOptions.dir ?? './dist');
+      mkdirSync(distDir, { recursive: true });
 
-      const appVersion = targetVersion;
-      const autoInc = options.autoIncrement !== false && !options.version;
+      // 1. Track offline cached files, expanding any precache globs
+      const { files, expandedPrecache } = collectTrackedFiles(rawConfig, distDir);
 
-      // 1. Sync version back to source config if auto-incremented
-      if (autoInc && configPath && existsSync(configPath)) {
+      // 2. Resolve version (manifest-hash derived by default)
+      let appVersion;
+      if (options.version) {
+        appVersion = options.version;
+      } else if (options.autoIncrement === true) {
+        appVersion = targetVersion;
+      } else {
+        appVersion = deriveAppVersion(rawConfig, files);
+      }
+
+      // Sync version back to source config if explicitly requested or if autoIncrement is enabled
+      const shouldSyncSource = options.syncSource === true || (options.autoIncrement === true && options.syncSource !== false);
+      if (shouldSyncSource && configPath && existsSync(configPath)) {
         syncSourceConfigVersion(configPath, appVersion);
       }
 
@@ -88,25 +107,16 @@ export function nlpwaPlugin(options = {}) {
           version: '/api/update/version.json',
           info: '/api/update/info.json',
         },
-        precache: rawConfig.precache || [],
+        precache: expandedPrecache,
         routes: rawConfig.routes || [],
       };
-
-      mkdirSync(distDir, { recursive: true });
-
-      // 2. Track offline cached files, expanding any precache globs
-      const { files, expandedPrecache } = collectTrackedFiles(runtimeConfig, distDir);
 
       // 3. Emit config file in distDir with expanded precache list
       const cleanConfigPath = runtimeConfig.configPath.replace(/^\/+/, '');
       const configJsonPath = resolve(distDir, cleanConfigPath);
       mkdirSync(dirname(configJsonPath), { recursive: true });
       const jsonIndent = options.pretty ? 2 : 0;
-      const configToEmit = {
-        ...runtimeConfig,
-        precache: expandedPrecache,
-      };
-      writeFileSync(configJsonPath, JSON.stringify(configToEmit, null, jsonIndent), 'utf8');
+      writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
 
       // Update hash for config.json now that it is written
       const configEntry = files.find(f => f.path === runtimeConfig.configPath);

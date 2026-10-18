@@ -27,6 +27,74 @@ export function incrementPatch(version) {
 }
 
 /**
+ * Compute a deterministic composite hash for tracked offline files and configuration rules.
+ * Excludes any existing version and the config.json file itself to prevent circular hash dependencies.
+ *
+ * @param {Array<{ path: string, hash: string }>} files
+ * @param {Object} [config]
+ * @returns {string} 12-character hex hash
+ */
+export function computeManifestHash(files = [], config = {}) {
+  const configPath = config?.configPath || '/config.json';
+
+  // 1. Sort tracked files by path (excluding config.json)
+  const sortedFiles = files
+    .filter((f) => f.path !== configPath)
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  // 2. Extract configuration rules that impact caching/routing (excluding version)
+  const canonicalConfig = {
+    routes: config.routes ?? [],
+    precache: config.precache ?? [],
+    defaultStrategy: config.defaultStrategy ?? 'network-first',
+    base: config.base ?? '',
+    clearRuntimeOnUpdate: config.clearRuntimeOnUpdate ?? false,
+    retainPreviousVersionCache: config.retainPreviousVersionCache ?? false,
+    verifyHashes: config.verifyHashes ?? 'strict',
+  };
+
+  const hasher = createHash('sha256');
+  for (const f of sortedFiles) {
+    hasher.update(`${f.path}:${f.hash}\n`);
+  }
+  hasher.update(JSON.stringify(canonicalConfig));
+  return hasher.digest('hex').slice(0, 12);
+}
+
+/**
+ * Derive an application version string deterministically.
+ *
+ * Behavior:
+ * - If explicitVersion is given (e.g. from CLI --version or plugin options.version), use it directly.
+ * - If rawConfig.version is specified (e.g. '1.0.0'):
+ *   Extract the semver base (stripping any existing hash suffix), and format as `${baseVersion}-${manifestHash}`.
+ * - If rawConfig.version is 'auto' or omitted:
+ *   Format as `${manifestHash}`.
+ *
+ * @param {Object} rawConfig
+ * @param {Array<{ path: string, hash: string }>} files
+ * @param {string} [explicitVersion]
+ * @returns {string}
+ */
+export function deriveAppVersion(rawConfig = {}, files = [], explicitVersion) {
+  if (explicitVersion) return explicitVersion;
+
+  const manifestHash = computeManifestHash(files, rawConfig);
+  const base = rawConfig.version;
+
+  if (!base || base === 'auto') {
+    return manifestHash;
+  }
+
+  // If base already contains a hyphenated hash suffix (e.g. '1.0.0-a1b2c3d4e5f6'), strip the suffix
+  const cleanBase = base.includes('-') && /^[0-9a-f]{8,32}$/i.test(base.split('-').pop())
+    ? base.slice(0, base.lastIndexOf('-'))
+    : base;
+
+  return `${cleanBase}-${manifestHash}`;
+}
+
+/**
  * Locate developer configuration file.
  *
  * @param {string} [explicitPath]

@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import {
   hashFile,
   incrementPatch,
+  deriveAppVersion,
   findConfigFile,
   loadConfig,
   syncSourceConfigVersion,
@@ -118,11 +119,13 @@ ${c.bold}OPTIONS (init)${c.reset}
   ${c.cyan}--dir${c.reset}     <path>      Target directory to drop files into (default: ./)
 
 ${c.bold}OPTIONS (update)${c.reset}
-  ${c.cyan}--config${c.reset}  <path>      Config file path            (default: auto-detect ./config.js)
-  ${c.cyan}--dir${c.reset}     <path>      Target build directory      (default: ./dist or ./)
-  ${c.cyan}--version${c.reset} <semver>    Explicit version override   (default: auto-increment patch)
-  ${c.cyan}--pretty${c.reset}              Pretty-print JSON output    (2-space indent)
-  ${c.cyan}--help, -h${c.reset}            Show this help message
+  ${c.cyan}--config${c.reset}      <path>      Config file path            (default: auto-detect ./config.js)
+  ${c.cyan}--dir${c.reset}         <path>      Target build directory      (default: ./dist or ./)
+  ${c.cyan}--version${c.reset}     <string>    Explicit version override   (default: manifest-hash derived)
+  ${c.cyan}--bump-patch${c.reset}              Increment semver patch version instead of content hash
+  ${c.cyan}--sync-source${c.reset}             Update version in source config file
+  ${c.cyan}--pretty${c.reset}                  Pretty-print JSON output    (2-space indent)
+  ${c.cyan}--help, -h${c.reset}                Show this help message
 
 ${c.bold}EXAMPLES${c.reset}
   # Drop NLPWA files into current project root
@@ -131,7 +134,7 @@ ${c.bold}EXAMPLES${c.reset}
   # Drop NLPWA files into a public/ directory
   npx nlpwa init --dir ./public
 
-  # Run after build to auto-increment app version and generate update endpoints
+  # Generate deterministic update manifest & API endpoints
   nlpwa update --dir ./dist
 `);
 }
@@ -205,10 +208,27 @@ async function cmdUpdate(args) {
 
   const rawConfig = await loadConfig(configPath);
   const targetDir = resolve(args.dir ?? (existsSync('./dist') ? './dist' : '.'));
+  mkdirSync(targetDir, { recursive: true });
 
-  // Version resolution & auto-increment patch
+  // 1. Collect tracked files and expand precache globs
+  const startMs = Date.now();
+  const { files, missing, expandedPrecache } = collectTrackedFiles(rawConfig, targetDir);
+
+  // 2. Version resolution (manifest-hash derived by default)
   const prevVersion = rawConfig.version ?? resolvePackageVersion() ?? '1.0.0';
-  const newVersion = args.version ?? incrementPatch(prevVersion);
+  let newVersion;
+  let versionNote;
+
+  if (args.version) {
+    newVersion = args.version;
+    versionNote = 'explicit override';
+  } else if (args['bump-patch'] || args.bumpPatch) {
+    newVersion = incrementPatch(prevVersion);
+    versionNote = 'patch auto-increment';
+  } else {
+    newVersion = deriveAppVersion(rawConfig, files);
+    versionNote = 'manifest-hash derived';
+  }
 
   printBanner();
   console.log(`${c.bold}nlpwa update${c.reset}\n`);
@@ -216,11 +236,12 @@ async function cmdUpdate(args) {
     console.log(`  ${c.dim}Config  :${c.reset} ${c.cyan}${configPath}${c.reset}`);
   }
   console.log(`  ${c.dim}Target  :${c.reset} ${c.cyan}${targetDir}${c.reset}`);
-  console.log(`  ${c.dim}Version :${c.reset} ${c.yellow}v${prevVersion}${c.reset} → ${c.green}${c.bold}v${newVersion}${c.reset} (patch auto-increment)\n`);
+  console.log(`  ${c.dim}Version :${c.reset} ${c.green}${c.bold}v${newVersion}${c.reset} (${versionNote})\n`);
 
-  // Update source config file if version was auto-incremented
-  if (!args.version && configPath) {
+  // Update source config file ONLY if explicitly requested via --sync-source
+  if ((args['sync-source'] || args.syncSource) && configPath) {
     syncSourceConfigVersion(configPath, newVersion);
+    console.log(`  ${c.dim}Source  :${c.reset} ${c.yellow}updated version in ${configPath}${c.reset}\n`);
   }
 
   // Prepare runtime config object
@@ -232,26 +253,16 @@ async function cmdUpdate(args) {
       version: '/api/update/version.json',
       info: '/api/update/info.json',
     },
-    precache: rawConfig.precache || [],
+    precache: expandedPrecache,
     routes: rawConfig.routes || [],
   };
 
-  mkdirSync(targetDir, { recursive: true });
-
-  // 1. Collect tracked files and expand precache globs
-  const startMs = Date.now();
-  const { files, missing, expandedPrecache } = collectTrackedFiles(runtimeConfig, targetDir);
-
-  // 2. Write runtime config into target directory (with expanded precache paths)
+  // 3. Write runtime config into target directory (with expanded precache paths)
   const cleanConfigPath = (runtimeConfig.configPath || '/config.json').replace(/^\/+/, '');
   const configJsonPath = resolve(targetDir, cleanConfigPath);
   mkdirSync(dirname(configJsonPath), { recursive: true });
   const jsonIndent = args.pretty ? 2 : 0;
-  const configToEmit = {
-    ...runtimeConfig,
-    precache: expandedPrecache,
-  };
-  writeFileSync(configJsonPath, JSON.stringify(configToEmit, null, jsonIndent), 'utf8');
+  writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
   console.log(`  ${c.green}+${c.reset} ${c.cyan}/${cleanConfigPath}${c.reset} (generated from config.js)`);
 
   // Update hash for config.json now that it is written

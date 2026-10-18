@@ -97,22 +97,30 @@ export function resolveStrategy(request) {
     ? requestUrl.origin === self.location.origin
     : true;
 
-  // Always bypass Vite internal dev requests and HMR updates directly to network
-  if (
-    requestUrl.pathname.startsWith('/@vite/') ||
-    requestUrl.pathname.startsWith('/@fs/') ||
-    requestUrl.pathname.includes('/.vite/') ||
-    requestUrl.pathname.endsWith('.hot-update.json') ||
-    requestUrl.searchParams.has('import')
-  ) {
-    return (req, event) => networkOnly(req, event);
+  // Dev-only bypass: when dev: true or devBypass: true, route Vite internal requests
+  // and HMR updates directly to network instead of caching or intercepting them.
+  const config = getConfig();
+  if (config.dev || config.devBypass) {
+    if (
+      requestUrl.pathname.startsWith('/@vite/') ||
+      requestUrl.pathname.startsWith('/@fs/') ||
+      requestUrl.pathname.includes('/.vite/') ||
+      requestUrl.pathname.endsWith('.hot-update.json') ||
+      requestUrl.searchParams.has('import')
+    ) {
+      const handler = (req, event) => networkOnly(req, event);
+      handler.strategy = 'network-only';
+      return handler;
+    }
   }
 
   // Built-in non-overridable rule: Precached / manifest files are ALWAYS served
   // from the active offline cache (cache-first). This guarantees that online
   // requests never bypass the staged cache or produce mixed old/new files.
   if (isManifestFile(requestUrl, getConfig())) {
-    return (req, event) => cacheFirst(req, event);
+    const handler = (req, event) => cacheFirst(req, event);
+    handler.strategy = 'cache-first';
+    return handler;
   }
 
   for (const route of routes) {
@@ -141,15 +149,21 @@ export function resolveStrategy(request) {
 
     if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
       const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
-      return (req, event) => fn(req, event, route);
+      const handler = (req, event) => fn(req, event, route);
+      handler.strategy = route.strategy;
+      return handler;
     }
   }
 
   // Cross-origin requests without an explicit origin route pass through without caching
   if (!isSameOrigin) {
-    return (req, event) => networkOnly(req, event);
+    const handler = (req, event) => networkOnly(req, event);
+    handler.strategy = 'network-only';
+    return handler;
   }
 
   const defaultFn = STRATEGY_FN[defaultStrategy] ?? networkFirst;
-  return (req, event) => defaultFn(req, event);
+  const handler = (req, event) => defaultFn(req, event);
+  handler.strategy = defaultStrategy;
+  return handler;
 }

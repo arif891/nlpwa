@@ -215,9 +215,12 @@ test('ensureConfigReady: synchronizes and reflects new config after loadConfigFr
   assert.equal(nextReady?.customField, 'updated');
 });
 
-test('resolveStrategy: automatically bypasses Vite dev server and HMR URLs', () => {
+test('resolveStrategy: bypasses Vite dev server and HMR URLs only when dev: true or devBypass: true', () => {
   globalThis.self = { location: { origin: 'http://localhost:5173' } };
+
+  // 1. In dev mode (dev: true), Vite internals are bypassed to network
   initConfig({
+    dev: true,
     routes: [{ match: '**', strategy: 'cache-first' }],
     defaultStrategy: 'cache-first',
   });
@@ -227,10 +230,50 @@ test('resolveStrategy: automatically bypasses Vite dev server and HMR URLs', () 
   const viteHmr = resolveStrategy(new Request('http://localhost:5173/src/App.jsx.hot-update.json'));
   const viteImport = resolveStrategy(new Request('http://localhost:5173/src/main.js?import'));
 
-  assert.equal(viteClient.name, ''); // wrapped networkOnly function
-  // Verify standard app route still gets cache-first
+  assert.equal(viteClient.strategy, 'network-only');
+  assert.equal(viteFs.strategy, 'network-only');
+  assert.equal(viteHmr.strategy, 'network-only');
+  assert.equal(viteImport.strategy, 'network-only');
   const appRoute = resolveStrategy(new Request('http://localhost:5173/assets/style.css'));
-  assert.ok(appRoute);
+  assert.equal(appRoute.strategy, 'cache-first');
+
+  // 2. In production mode (dev: false), Vite bypass is disabled and URLs follow normal routes
+  initConfig({
+    dev: false,
+    routes: [{ match: '**', strategy: 'cache-first' }],
+    defaultStrategy: 'cache-first',
+  });
+  const prodViteClient = resolveStrategy(new Request('http://localhost:5173/@vite/client'));
+  // Does not bypass to network-only; resolved by standard configured route
+  assert.equal(prodViteClient.strategy, 'cache-first');
+});
+
+test('updateActiveConfig: enforces same-origin trust boundary by locking verifyHashes, caches, and manifestCachePath', () => {
+  initConfig({
+    version: '1.0.0',
+    verifyHashes: 'strict',
+    caches: { offline: 'trusted-offline', runtime: 'trusted-runtime' },
+    manifestCachePath: '/_nlpwa/snapshot.json',
+  });
+
+  // Attempt to tamper with core security/engine settings via runtime config.json
+  const updated = updateActiveConfig({
+    version: '1.0.1',
+    verifyHashes: false,
+    caches: { offline: 'hijacked-offline', runtime: 'hijacked-runtime' },
+    manifestCachePath: '/malicious.json',
+    routes: [{ match: '/api/**', strategy: 'network-first' }],
+  });
+
+  // Core settings must remain locked to SW configuration
+  assert.equal(updated.verifyHashes, 'strict', 'verifyHashes cannot be downgraded by config.json');
+  assert.equal(updated.caches.offline, 'trusted-offline', 'caches cannot be hijacked by config.json');
+  assert.equal(updated.caches.runtime, 'trusted-runtime', 'caches cannot be hijacked by config.json');
+  assert.equal(updated.manifestCachePath, '/_nlpwa/snapshot.json', 'manifestCachePath cannot be modified');
+
+  // App-level routing and appVersion are updated safely
+  assert.equal(updated.appVersion, '1.0.1');
+  assert.equal(updated.routes.length, 1);
 });
 
 test('commitStaged: retainPreviousVersionCache keeps prior active cache and serves old chunks', async () => {

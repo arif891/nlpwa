@@ -140,6 +140,15 @@
      */
     cacheOpaque: false,
 
+    /**
+     * Enable development mode (bypasses Vite internal and HMR requests to network).
+     * Default: false
+     */
+    dev: false,
+
+    /** Explicitly bypass Vite dev server and HMR requests to network. Default: false */
+    devBypass: false,
+
     /** Cache storage names */
     caches: {
       offline: CACHE_NAMES.OFFLINE,
@@ -556,19 +565,21 @@
     const merged = {
       ..._config,
       ...runtimeConfig,
-      // Preserve manual SW version if not provided or keep engine version
+      // Version handling: preserve compiled SW engine version, reflect deployed appVersion
       version: _config.version,
       appVersion: runtimeConfig.version ?? _config.appVersion ?? runtimeConfig.appVersion,
-      // Deep merge nested caches
-      caches: {
-        ..._config.caches,
-        ...(runtimeConfig.caches ?? {}),
-      },
-      // Merge updateAPI
-      updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
-      // Runtime routes take priority
+
+      // Same-origin trust boundary protection:
+      // Core security and storage namespace settings are locked to the compiled SW engine
+      // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
+      verifyHashes: _config.verifyHashes,
+      caches: _config.caches,
+      manifestCachePath: _config.manifestCachePath,
+
+      // Runtime routes and precache take priority if provided
       routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
       precache: Array.isArray(runtimeConfig.precache) ? runtimeConfig.precache : _config.precache,
+      updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
     };
 
     _config = Object.freeze(merged);
@@ -2131,22 +2142,30 @@
       ? requestUrl.origin === self.location.origin
       : true;
 
-    // Always bypass Vite internal dev requests and HMR updates directly to network
-    if (
-      requestUrl.pathname.startsWith('/@vite/') ||
-      requestUrl.pathname.startsWith('/@fs/') ||
-      requestUrl.pathname.includes('/.vite/') ||
-      requestUrl.pathname.endsWith('.hot-update.json') ||
-      requestUrl.searchParams.has('import')
-    ) {
-      return (req, event) => networkOnly(req);
+    // Dev-only bypass: when dev: true or devBypass: true, route Vite internal requests
+    // and HMR updates directly to network instead of caching or intercepting them.
+    const config = getConfig();
+    if (config.dev || config.devBypass) {
+      if (
+        requestUrl.pathname.startsWith('/@vite/') ||
+        requestUrl.pathname.startsWith('/@fs/') ||
+        requestUrl.pathname.includes('/.vite/') ||
+        requestUrl.pathname.endsWith('.hot-update.json') ||
+        requestUrl.searchParams.has('import')
+      ) {
+        const handler = (req, event) => networkOnly(req);
+        handler.strategy = 'network-only';
+        return handler;
+      }
     }
 
     // Built-in non-overridable rule: Precached / manifest files are ALWAYS served
     // from the active offline cache (cache-first). This guarantees that online
     // requests never bypass the staged cache or produce mixed old/new files.
     if (isManifestFile(requestUrl, getConfig())) {
-      return (req, event) => cacheFirst(req, event);
+      const handler = (req, event) => cacheFirst(req, event);
+      handler.strategy = 'cache-first';
+      return handler;
     }
 
     for (const route of routes) {
@@ -2175,17 +2194,23 @@
 
       if (matchGlob(matchPattern, requestUrl.href) || matchGlob(matchPattern, requestUrl.pathname)) {
         const fn = STRATEGY_FN[route.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
-        return (req, event) => fn(req, event, route);
+        const handler = (req, event) => fn(req, event, route);
+        handler.strategy = route.strategy;
+        return handler;
       }
     }
 
     // Cross-origin requests without an explicit origin route pass through without caching
     if (!isSameOrigin) {
-      return (req, event) => networkOnly(req);
+      const handler = (req, event) => networkOnly(req);
+      handler.strategy = 'network-only';
+      return handler;
     }
 
     const defaultFn = STRATEGY_FN[defaultStrategy] ?? networkFirst;
-    return (req, event) => defaultFn(req, event);
+    const handler = (req, event) => defaultFn(req, event);
+    handler.strategy = defaultStrategy;
+    return handler;
   }
 
   /**

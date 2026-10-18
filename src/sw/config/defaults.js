@@ -73,6 +73,15 @@ export const DEFAULTS = {
    */
   cacheOpaque: false,
 
+  /**
+   * Enable development mode (bypasses Vite internal and HMR requests to network).
+   * Default: false
+   */
+  dev: false,
+
+  /** Explicitly bypass Vite dev server and HMR requests to network. Default: false */
+  devBypass: false,
+
   /** Cache storage names */
   caches: {
     offline: CACHE_NAMES.OFFLINE,

@@ -60,19 +60,21 @@ export function updateActiveConfig(runtimeConfig = {}) {
   const merged = {
     ..._config,
     ...runtimeConfig,
-    // Preserve manual SW version if not provided or keep engine version
+    // Version handling: preserve compiled SW engine version, reflect deployed appVersion
     version: _config.version,
     appVersion: runtimeConfig.version ?? _config.appVersion ?? runtimeConfig.appVersion,
-    // Deep merge nested caches
-    caches: {
-      ..._config.caches,
-      ...(runtimeConfig.caches ?? {}),
-    },
-    // Merge updateAPI
-    updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
-    // Runtime routes take priority
+
+    // Same-origin trust boundary protection:
+    // Core security and storage namespace settings are locked to the compiled SW engine
+    // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
+    verifyHashes: _config.verifyHashes,
+    caches: _config.caches,
+    manifestCachePath: _config.manifestCachePath,
+
+    // Runtime routes and precache take priority if provided
     routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
     precache: Array.isArray(runtimeConfig.precache) ? runtimeConfig.precache : _config.precache,
+    updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
   };
 
   _config = Object.freeze(merged);

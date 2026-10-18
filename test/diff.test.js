@@ -32,13 +32,18 @@ test('computeDiff: detects modified and removed files', () => {
   assert.deepEqual(diff.removed, ['/old.css']);
 });
 
-test('computeDiff: rejects cross-origin and scheme-relative paths', () => {
+test('computeDiff: rejects cross-origin, protocol-relative, and traversal paths', () => {
   const oldFiles = [];
   const newFiles = [
     { path: '/config.json', hash: 'aaaa' },
     { path: 'https://evil.com/malicious.js', hash: 'xxxx' },
     { path: '//evil.com/evil.js', hash: 'yyyy' },
-    { path: 'javascript:alert(1)', hash: 'zzzz' },
+    { path: '/\\evil.com/x', hash: 'zzzz1' },
+    { path: '\\\\evil.com/x', hash: 'zzzz2' },
+    { path: '/../traversal.js', hash: 'zzzz3' },
+    { path: '/foo/../bar.js', hash: 'zzzz4' },
+    { path: 'javascript:alert(1)', hash: 'zzzz5' },
+    { path: 'relative/path.js', hash: 'zzzz6' },
   ];
   const diff = computeDiff(newFiles, oldFiles);
 

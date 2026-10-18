@@ -101,9 +101,9 @@ async function evictNonCacheable(cache, cacheName, protectedPaths) {
  * have been removed or changed to network-only in the latest config.
  */
 export async function evictByRoute() {
-  const { caches: cacheNames, manifestCachePath, snapshotCachePath, configPath } = getConfig();
+  const { caches: cacheNames, snapshotCachePath, configPath } = getConfig();
   const protectedPaths = new Set(
-    [manifestCachePath, snapshotCachePath, configPath || '/config.json'].filter(Boolean)
+    [snapshotCachePath, configPath || '/config.json'].filter(Boolean)
   );
 
   const [offlineCache, runtimeCache] = await Promise.all([

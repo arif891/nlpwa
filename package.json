@@ -1,6 +1,6 @@
 {
   "name": "nlpwa",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Native-like PWA framework with install-time caching and OTA hash-based delta updates",
   "type": "module",
   "author": "Arif",
@@ -33,12 +33,10 @@
       "import": "./out/client.esm.js",
       "default": "./out/client.js"
     },
-    "./config": {
+    "./config.json": {
       "types": "./types/config.d.ts",
-      "import": "./out/config.json",
       "default": "./out/config.json"
     },
-    "./config.json": "./out/config.json",
     "./rollup": {
       "types": "./types/rollup.d.ts",
       "import": "./out/rollup-plugin.js",

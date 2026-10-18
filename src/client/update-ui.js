@@ -11,7 +11,7 @@ import { onSWMessage, sendToSW } from './messaging.js';
  *     console.log('New version:', e.detail.version);
  *   });
  *
- * @param {(data: { version: string, partial: boolean }) => void} [callback]
+ * @param {(data: { version: string }) => void} [callback]
  * @returns {Function}  unsubscribe — call when the listening component unmounts
  */
 export function onUpdateReady(callback) {
@@ -20,13 +20,13 @@ export function onUpdateReady(callback) {
     document.dispatchEvent(
       new CustomEvent('nlpwa:update-ready', {
         bubbles: true,
-        detail: { version: data.version, partial: Boolean(data.partial) },
+        detail: { version: data.version },
       })
     );
 
     // Direct callback
     if (typeof callback === 'function') {
-      callback({ version: data.version, partial: Boolean(data.partial) });
+      callback({ version: data.version });
     }
   });
 }

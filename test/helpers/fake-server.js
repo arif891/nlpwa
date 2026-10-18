@@ -2,7 +2,8 @@
 // computing the same 8-char sha256 hashes the CLI emits.
 import { createHash } from 'node:crypto';
 
-export const hash8 = (body) => createHash('sha256').update(body).digest('hex').slice(0, 8);
+export const hash32 = (body) => createHash('sha256').update(body).digest('hex').slice(0, 32);
+export const hash8 = hash32;
 
 export function makeServer(version, files) {
   const state = { version, files: { ...files }, calls: [], broken: new Set(), lie: new Map() };
@@ -15,11 +16,20 @@ export function makeServer(version, files) {
       return Response.json({
         version: state.version,
         // `lie` lets a test advertise a hash that doesn't match the served bytes
-        files: Object.entries(state.files).map(([p, body]) => ({ path: p, hash: state.lie.get(p) ?? hash8(body) })),
+        files: Object.entries(state.files).map(([p, body]) => ({
+          path: p,
+          hash: state.lie.get(p) ?? hash8(body),
+          size: Buffer.byteLength(String(body)),
+        })),
       });
     }
     if (state.broken.has(path)) return new Response('nope', { status: 404 });
-    if (path in state.files) return new Response(state.files[path]);
+    if (path in state.files) {
+      const content = String(state.files[path]);
+      return new Response(content, {
+        headers: { 'Content-Length': String(Buffer.byteLength(content)) },
+      });
+    }
     return new Response('not found', { status: 404 });
   };
   state.fileCalls = () => state.calls.filter((p) => !p.startsWith('/api/'));

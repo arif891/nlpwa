@@ -72,12 +72,9 @@ export async function fetchServerInfo() {
   return data;
 }
 
-export const fetchServerManifest = fetchServerInfo;
-
 /** Path of the snapshot entry inside an offline cache. */
 export function getSnapshotPath() {
-  const config = getConfig();
-  return config.snapshotCachePath || config.manifestCachePath || '/_nlpwa/snapshot.json';
+  return getConfig().snapshotCachePath;
 }
 
 let _activeSnapshotPaths = null;
@@ -110,8 +107,6 @@ export async function loadCachedSnapshot() {
   return data;
 }
 
-export const loadCachedManifest = loadCachedSnapshot;
-
 /**
  * Write a snapshot into a given offline cache. For a staged update this is the
  * LAST write: a cache that contains its snapshot is a complete one.
@@ -135,5 +130,3 @@ export async function saveCachedSnapshot(snapshotData) {
   const cache = await openActive(getConfig().caches.offline);
   await writeSnapshot(cache, snapshotData);
 }
-
-export const saveCachedManifest = saveCachedSnapshot;

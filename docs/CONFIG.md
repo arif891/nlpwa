@@ -92,8 +92,6 @@ updateAPI: {
 > - If an endpoint ends with `.json` (e.g. `/api/update/version.json`), it generates `dist/api/update/version.json`.
 > - If an endpoint has no extension (e.g. `/api/update/version`), it generates directory `index.json` files (`dist/api/update/version/index.json`).
 
-*(Also supports array format: `[{ type: 'version', endpoint: '...' }, { type: 'info', endpoint: '...' }]` or legacy `manifestEndpoint`).*
-
 ---
 
 ### Polling for Updates · Client SDK (`pollIntervalMs`)
@@ -145,13 +143,13 @@ verifyHashes: 'strict'
 
 ---
 
-### `manifestCachePath` · `string` · default: `'/_nlpwa/manifest.json'`
+### `snapshotCachePath` · `string` · default: `'/_nlpwa/snapshot.json'`
 
 The key used to store the manifest snapshot inside the `offline` cache.
 This is an internal URL — it is never served to the browser.
 
 ```js
-manifestCachePath: '/_nlpwa/manifest.json'
+snapshotCachePath: '/_nlpwa/snapshot.json'
 ```
 
 Only change this if the default path conflicts with a real file in your app.
@@ -248,9 +246,9 @@ You can define cross-origin routes in either of two ways:
 
 Cross-origin responses—including opaque responses (`status: 0`) from `<script>` or WebAssembly workers—are safely stored in the `runtime` cache and served offline.
 
-#### `maxAge` / `ttl` · `string | number` · default: `undefined`
+#### `maxAge` · `string | number` · default: `undefined`
 
-Maximum time a dynamic runtime cache entry remains valid before being considered stale. Supports human-friendly strings like `'7d'`, `'24h'`, `'30m'`, `'60s'`, `'500ms'`, or milliseconds as a number (also accepts `maxAgeSeconds: 3600`).
+Maximum time a dynamic runtime cache entry remains valid before being considered stale. Supports human-friendly strings like `'7d'`, `'24h'`, `'30m'`, `'60s'`, `'500ms'`, or milliseconds as a number.
 
 - When a request matches an entry in the runtime cache whose age exceeds `maxAge`, `cache-first` automatically fetches a fresh version from the network, updates the runtime cache, and serves the new copy.
 - If the device is offline or the network request fails, it gracefully falls back to the stale cached response rather than breaking the application.

@@ -1,6 +1,6 @@
 import { getConfig } from '../config/index.js';
 import { getStaged, tryAcquire, release } from '../cache/store.js';
-import { fetchServerVersion, fetchServerManifest, loadCachedManifest } from './manifest.js';
+import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
@@ -56,13 +56,13 @@ async function runUpdateCheck({ force = false } = {}) {
     console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
   }
 
-  const active = await loadCachedManifest();
+  const active = await loadCachedSnapshot();
   const staged = await getStaged();
 
   // A complete update is already staged and waiting for the next navigation.
   if (staged?.complete && staged.swVersion === config.version
       && (!serverVersion || serverVersion === staged.version)) {
-    await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, partial: Boolean(staged.partial), staged: true });
+    await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, staged: true });
     return { updated: true, version: staged.version, staged: true };
   }
 
@@ -74,8 +74,7 @@ async function runUpdateCheck({ force = false } = {}) {
 
   const isFresh = !active;
   const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
-  const needsRetry = Boolean(active?.needsRetry || (active?.degraded && active.degraded.length > 0));
-  const isCurrent = (version) => !isFresh && !swVersionChanged && !needsRetry && version === active.version;
+  const isCurrent = (version) => !isFresh && !swVersionChanged && version === active.version;
 
   if (serverVersion && isCurrent(serverVersion)) {
     console.log(`[NLPWA] App already up to date (v${active.version})`);
@@ -86,7 +85,7 @@ async function runUpdateCheck({ force = false } = {}) {
   // ── Tier 2: full manifest ────────────────────────────────────────────────
   let serverManifest;
   try {
-    serverManifest = await fetchServerManifest();
+    serverManifest = await fetchServerInfo();
   } catch (err) {
     console.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
     return { updated: false };
@@ -108,7 +107,9 @@ async function runUpdateCheck({ force = false } = {}) {
   if (result.status === 'incomplete') {
     const errorMsg = result.hasHashMismatch
       ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
-      : `Failed to download or verify ${result.failed.join(', ')}`;
+      : result.quotaExceeded
+        ? `Storage quota exceeded while staging ${result.failed.join(', ')}`
+        : `Failed to download or verify ${result.failed.join(', ')}`;
 
     await broadcast({
       type: MESSAGE_TYPES.UPDATE_FAILED,
@@ -120,9 +121,10 @@ async function runUpdateCheck({ force = false } = {}) {
       nextRetryAt: result.nextRetryAt,
       persistent: Boolean(result.persistent),
       hasHashMismatch: Boolean(result.hasHashMismatch),
+      quotaExceeded: Boolean(result.quotaExceeded),
     });
 
-    return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg };
+    return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
   }
 
   if (isFresh) {
@@ -133,7 +135,6 @@ async function runUpdateCheck({ force = false } = {}) {
   await broadcast({
     type: MESSAGE_TYPES.UPDATE_READY,
     version: serverManifest.version,
-    partial: result.partial,
     staged: true,
   });
   return { updated: true, version: serverManifest.version, staged: true };

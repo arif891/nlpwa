@@ -1,4 +1,4 @@
-import { CACHE_NAMES, MANIFEST_CACHE_PATH, STRATEGIES } from '../../shared/constants.js';
+import { CACHE_NAMES, SNAPSHOT_CACHE_PATH, STRATEGIES } from '../../shared/constants.js';
 
 /**
  * Default configuration values.
@@ -50,6 +50,14 @@ export const DEFAULTS = {
   verifyHashes: 'strict',
 
   /**
+   * Maximum file size in bytes for in-memory SHA-256 hash verification during staging.
+   * Files larger than this threshold (e.g. WASM binaries, on-device AI models)
+   * skip in-memory clone & buffer to avoid memory spikes and crashes on low-end devices.
+   * Default: 20 * 1024 * 1024 (20 MB)
+   */
+  maxVerifyBytes: 20 * 1024 * 1024,
+
+  /**
    * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).
    * Default: ''
    */
@@ -89,7 +97,7 @@ export const DEFAULTS = {
   },
 
   /** Path inside the offline cache where the manifest snapshot is stored */
-  manifestCachePath: MANIFEST_CACHE_PATH,
+  snapshotCachePath: SNAPSHOT_CACHE_PATH,
 
   /**
    * Files to pre-cache at SW install time (the app shell).

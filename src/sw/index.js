@@ -47,8 +47,6 @@ export function initSW(userConfig = {}) {
         await loadConfigFromCache().catch(() => {});
       })()
     );
-    // Run update check in the background without blocking activation or holding fetch events
-    checkForUpdate().catch((err) => console.warn('[NLPWA] Background update check failed:', err.message));
   });
 
   // ── fetch ──────────────────────────────────────────────────────────────────

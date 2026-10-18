@@ -68,8 +68,9 @@ export function updateActiveConfig(runtimeConfig = {}) {
     // Core security and storage namespace settings are locked to the compiled SW engine
     // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
     verifyHashes: _config.verifyHashes,
+    maxVerifyBytes: _config.maxVerifyBytes,
     caches: _config.caches,
-    manifestCachePath: _config.manifestCachePath,
+    snapshotCachePath: _config.snapshotCachePath,
 
     // Runtime routes and precache take priority if provided
     routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
@@ -150,8 +151,7 @@ export async function loadConfigFromCache() {
  * - versionEndpoint: lightweight check
  * - infoEndpoint: full manifest
  *
- * Supports both object: { version, info }
- * and array: [ { type: 'version', endpoint }, { type: 'info', endpoint } ]
+ * Config format: { version, info }
  *
  * @returns {{ versionEndpoint: string, infoEndpoint: string }}
  */
@@ -160,16 +160,9 @@ export function getUpdateEndpoints() {
   let versionEndpoint = '/api/update/version.json';
   let infoEndpoint = '/api/update/info.json';
 
-  if (config.updateAPI) {
-    if (Array.isArray(config.updateAPI)) {
-      const vEntry = config.updateAPI.find(e => e.type === 'version');
-      const iEntry = config.updateAPI.find(e => e.type === 'info');
-      if (vEntry?.endpoint) versionEndpoint = vEntry.endpoint;
-      if (iEntry?.endpoint) infoEndpoint = iEntry.endpoint;
-    } else if (typeof config.updateAPI === 'object') {
-      if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
-      if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
-    }
+  if (config.updateAPI && typeof config.updateAPI === 'object' && !Array.isArray(config.updateAPI)) {
+    if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
+    if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
   }
 
   const resolveEndpoint = (ep) => {

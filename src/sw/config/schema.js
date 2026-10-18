@@ -2,6 +2,41 @@ import { STRATEGIES } from '../../shared/constants.js';
 
 const VALID_STRATEGIES = new Set(Object.values(STRATEGIES));
 
+const ALLOWED_ROUTE_KEYS = new Set([
+  'match',
+  'strategy',
+  'origin',
+  'networkTimeoutMs',
+  'navigationFallback',
+  'ignoreSearch',
+  'throwOnFailure',
+  'maxAge',
+  'cacheOpaque',
+]);
+
+const ALLOWED_CONFIG_KEYS = new Set([
+  'version',
+  'appVersion',
+  'configPath',
+  'updateAPI',
+  'verifyHashes',
+  'maxVerifyBytes',
+  'caches',
+  'snapshotCachePath',
+  'precache',
+  'routes',
+  'defaultStrategy',
+  'networkTimeoutMs',
+  'navigationFallback',
+  'base',
+  'retainPreviousVersionCache',
+  'clearRuntimeOnUpdate',
+  'cacheOpaque',
+  'throwOnFailure',
+  'dev',
+  'devBypass',
+]);
+
 /**
  * Validate a merged config object.
  * Returns an array of error strings (empty = valid).
@@ -20,19 +55,30 @@ export function validateConfig(config) {
     errors.push('config.configPath must be a string (e.g. "/config.json")');
   }
 
-  // Validate updateAPI
-  if (!config.updateAPI) {
-    errors.push('config.updateAPI must be defined with { version, info }');
-  } else if (Array.isArray(config.updateAPI)) {
-    if (config.updateAPI.length === 0) {
-      errors.push('config.updateAPI array must not be empty');
+  // Validate updateAPI (object with { version, info } only)
+  if (!config.updateAPI || typeof config.updateAPI !== 'object' || Array.isArray(config.updateAPI)) {
+    errors.push('config.updateAPI must be an object with { version, info } endpoints');
+  } else {
+    if (typeof config.updateAPI.version !== 'string' || !config.updateAPI.version) {
+      errors.push('config.updateAPI.version must be a non-empty string endpoint (e.g. "/api/update/version.json")');
     }
-  } else if (typeof config.updateAPI !== 'object') {
-    errors.push('config.updateAPI must be an object with { version, info } or an array');
+    if (typeof config.updateAPI.info !== 'string' || !config.updateAPI.info) {
+      errors.push('config.updateAPI.info must be a non-empty string endpoint (e.g. "/api/update/info.json")');
+    }
+  }
+
+  for (const key of Object.keys(config)) {
+    if (!ALLOWED_CONFIG_KEYS.has(key)) {
+      errors.push(`config.${key} is not a recognized configuration option.`);
+    }
   }
 
   if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
     errors.push("config.verifyHashes must be 'strict', 'warn' or false");
+  }
+
+  if (config.maxVerifyBytes !== undefined && (typeof config.maxVerifyBytes !== 'number' || config.maxVerifyBytes < 0)) {
+    errors.push('config.maxVerifyBytes must be a non-negative number');
   }
 
   if (!config.caches || typeof config.caches.offline !== 'string') {
@@ -55,6 +101,11 @@ export function validateConfig(config) {
     errors.push('config.routes must be an array');
   } else {
     config.routes.forEach((route, i) => {
+      for (const key of Object.keys(route)) {
+        if (!ALLOWED_ROUTE_KEYS.has(key)) {
+          errors.push(`config.routes[${i}] has unrecognized option "${key}". Only canonical route options are supported.`);
+        }
+      }
       if (typeof route.match !== 'string') {
         errors.push(`config.routes[${i}].match must be a string (glob pattern)`);
       }

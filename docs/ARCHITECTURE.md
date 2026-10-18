@@ -43,7 +43,7 @@ src/
 │   │   ├── router.js               resolveStrategy(request) — glob route matching
 │   │   └── index.js                handleFetch(event) — SW fetch event handler
 │   └── update/
-│       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerManifest (Tier 2), save snapshot
+│       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerInfo (Tier 2), save snapshot
 │       ├── diff.js                 computeDiff(newFiles, oldFiles) → { added, modified, removed }
 │       ├── stage.js                stageUpdate() — builds + hash-verifies the new version in a separate cache
 │       ├── commit.js               commitStaged() — one-write switch to the staged version
@@ -96,10 +96,10 @@ CacheStorage
 ```
 install event
   └─ precacheFiles()
-       └─ fetch('/config.json', { cache: 'no-store' }) & app shell (or update manifest)
-       └─ stages initial version in offline@<version>-<id> cache
-       └─ writes snapshot to staged cache (marks cache complete)
-       └─ commits immediately via setActive() and hydrates active config
+       ├─ Normal path: fetchServerInfo() → stageUpdate() → commitStaged() (manifest-driven with SHA-256 integrity)
+       │    └─ writes snapshot to staged cache and commits immediately on first install
+       └─ Fallback path (when `nlpwa update` has not been run): precacheWithoutManifest()
+            └─ fetches config.json and precache list directly; subsequent update check builds hashed snapshot
   └─ self.skipWaiting()
 ```
 
@@ -139,10 +139,11 @@ checkForUpdate()
   │
   ├─ Tier 1: fetchServerVersion()
   │    └─ GET /api/update/version.json  { cache: 'no-store' }
-  │    └─ isNewer(server.version, cached.version)?
-  │         └─ false & no SW engine change: STOP (no heavy downloads)
+  │    └─ server.version === cached.version (strict equality)?
+  │         └─ equal & no SW engine change: STOP (no heavy downloads)
+  │         └─ unequal: proceed to Tier 2 (supports 1.0.0-<hash> and rollbacks)
   │
-  ├─ Tier 2: fetchServerManifest()
+  ├─ Tier 2: fetchServerInfo()
   │    └─ GET /api/update/info.json  { cache: 'no-store' }
   │
   ├─ computeDiff(server.files, cached.files)
@@ -158,7 +159,7 @@ checkForUpdate()
   │    ├─ write snapshot to staged cache once all files verified (marks staging complete)
   │    └─ record staged pointer in nlpwa-meta (/_nlpwa/staged.json)
   │
-  └─ broadcast({ type: 'UPDATE_READY', version, partial })
+  └─ broadcast({ type: 'UPDATE_READY', version })
        └─ clients.matchAll() → client.postMessage(...)
 
 Commit Phase: commitStaged() (triggered on navigation or APPLY_UPDATE message):
@@ -173,9 +174,9 @@ Commit Phase: commitStaged() (triggered on navigation or APPLY_UPDATE message):
 ### 5. Client Update Flow
 
 ```
-SW postMessage({ type: 'UPDATE_READY', version, partial })
+SW postMessage({ type: 'UPDATE_READY', version })
   └─ onSWMessage handler in register.js
-       ├─ options.onUpdateReady({ version, partial })  ← user callback
+       ├─ options.onUpdateReady({ version })  ← user callback
        ├─ document.dispatchEvent('nlpwa:update-ready')
        └─ options.autoReload → deferred to prompt if user is editing inputs, else applyUpdate
 

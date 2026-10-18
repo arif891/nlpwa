@@ -23,7 +23,7 @@ Returned periodically or on tab focus to determine if an update is available.
 }
 ```
 
-If the returned `version` is not newer than the currently cached app version (and the SW engine version is unchanged), the update check **stops immediately** without downloading any file lists.
+If the returned `version` equals the currently cached app version (`server.version === cached.version`, with no SW engine version change or pending retry), the update check **stops immediately** without downloading any file lists. Strict equality comparison is used rather than directional semver ordering so that hash-based versions (e.g. `1.0.0-<hash>`, where content hashes have no natural ordering) work seamlessly and server-side rollbacks are immediately recognized and staged.
 
 ---
 
@@ -33,7 +33,7 @@ If the returned `version` is not newer than the currently cached app version (an
 GET /api/update/info.json
 ```
 
-Fetched **only** if Tier 1 reports a strictly newer version. Contains the complete list of tracked offline files with their SHA-256 hashes.
+Fetched **only** if Tier 1 reports a different version (or the SW engine version changed). Contains the complete list of tracked offline files with their SHA-256 hashes.
 
 *(Note: Custom endpoints without `.json` extension, such as `/api/update/version` and `/api/update/info`, are also fully supported).*
 
@@ -143,11 +143,11 @@ export default function nlpwaManifest() {
 ### Step 1 — Tier 1 Version check
 
 ```
-GET /api/update/version.json  →  { version: "1.4.2" }
+GET /api/update/version.json  →  { version: "1.0.0-b6a21cb0" }
 
-isNewer("1.4.2", activeVersion)
-  → false: no update, broadcast NO_UPDATE, stop
-  → true:  continue to Tier 2
+serverVersion === activeVersion
+  → true:  no update, broadcast NO_UPDATE, stop
+  → false: continue to Tier 2 (different version or rollback detected)
 ```
 
 ### Step 2 — Tier 2 Full Manifest
@@ -203,7 +203,7 @@ Open separate cache: offline@1.4.2-<unique-id>
 ```
 // On staging success:
 clients.matchAll({ type: 'window' })
-  → postMessage({ type: 'UPDATE_READY', version: '1.4.2', partial: false })
+  → postMessage({ type: 'UPDATE_READY', version: '1.4.2' })
 
 // On staging failure or hash mismatch:
 clients.matchAll({ type: 'window' })
@@ -270,7 +270,7 @@ Failures during staging never corrupt the running application:
 
 | Type | Payload | Meaning |
 |---|---|---|
-| `UPDATE_READY` | `{ type, version, partial }` | Staged update is complete; client should prompt user |
+| `UPDATE_READY` | `{ type, version }` | Staged update is complete; client should prompt user |
 | `UPDATE_APPLIED` | `{ type, applied }` | Staged update has been switched to active; client may reload |
 | `NO_UPDATE` | `{ type, version }` | Version check ran; client is already up to date |
 
@@ -288,8 +288,8 @@ Failures during staging never corrupt the running application:
 import { register, applyUpdate } from '/client.js';
 
 register('/sw.js', {
-  onUpdateReady: ({ version, partial }) => {
-    console.log('Update ready:', version, 'Partial:', partial);
+  onUpdateReady: ({ version }) => {
+    console.log('Update ready:', version);
     showUpdateBanner();
   },
   onUpdateFailed: ({ version, failed, error, persistent, hasHashMismatch }) => {

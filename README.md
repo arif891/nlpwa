@@ -34,17 +34,17 @@ Standard Service Worker setups often fail this test: calling `self.skipWaiting()
 
 ---
 
-## Why Not Workbox?
+## How NLPWA Compares with Workbox
 
-[Workbox](https://developer.chrome.com/docs/workbox) is a general-purpose library from Google, but NLPWA takes a fundamentally different, app-centric architectural approach:
+[Workbox](https://developer.chrome.com/docs/workbox) is Google's modular, low-level library for service worker routing and caching. NLPWA approaches PWAs from a different angle — as an integrated, app-centric framework with native-like over-the-air (OTA) updates:
 
-| Capability | Workbox | NLPWA |
+| Dimension | Workbox | NLPWA |
 |---|---|---|
-| **SW vs. App Versioning** | **Tightly Coupled.** Precache manifests are hardcoded inside `sw.js`. Any single file change alters `sw.js`, forcing the browser to trigger full Service Worker byte-level reinstall, waiting, and activation lifecycle churn. | **Decoupled.** The SW engine version is managed separately from the App version. App updates arrive over the air (OTA) via lightweight JSON manifests. The SW stays running without lifecycle thrashing. |
-| **Cache Swapping & Multi-Tab** | **In-place mutation.** Modifies cached entries directly. Active tabs requesting dynamic `import()` chunks often crash with 404s after an update. | **Atomic Two-Cache Swapping.** Stages the new release in an isolated cache (`offline@v2-hash`). Swaps live via an atomic pointer flip (`nlpwa-meta`) and offers multi-tab grace retention (`retainPreviousVersionCache`). |
-| **Download Verification** | **HTTP transport only.** No content integrity checks before files enter the precache. | **Strict SHA-256 Verification.** Every staged file is checked against its manifest hash. Captive portals or proxy errors serving 200 HTML for missing assets are immediately caught and rejected. |
-| **Update Check Bandwidth** | Browser fetches the entire `sw.js` script to inspect for byte differences. | **Two-Tier OTA Check.** Tier 1 version check consumes ~20 bytes of JSON. Full manifest is only requested when an update actually exists. |
-| **Setup & Batteries** | Toolkit requiring manual bundler config, custom worker scripts, custom message channels, and DIY update UI prompts. | **Complete Framework.** 3 drop-in files, 1 command (`nlpwa init` / `nlpwa update`), Vite/Rollup plugins, automated quota cleanup, and ready-to-use client prompt listeners. |
+| **SW vs. App Versioning** | **Tightly Coupled.** Precache manifests are typically injected into `sw.js` (`self.__WB_MANIFEST`). Changing any application file changes `sw.js` bytes, triggering the browser's full Service Worker lifecycle (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active across app updates. App updates arrive over the air via lightweight JSON manifests (`version.json` / `info.json`), staging updates in the background without worker lifecycle churn. |
+| **Staging & Cache Turnover** | **Worker Lifecycle Driven.** New assets are cached during the waiting worker's `install` event; switching versions requires coordinating `skipWaiting()` and client window reloads. | **Isolated Atomic Swap.** Updates stage into an isolated cache (`offline@v2`) in the background while the active app runs undisturbed. Versions swap cleanly on navigation (or on prompt) via an atomic pointer flip (`nlpwa-meta`). |
+| **Download Integrity & Soft-404s** | **Optional SRI.** Supports Subresource Integrity (`integrity` option), but requires developers to configure and generate integrity hashes during build. | **Built-in Manifest Verification.** Automatically hashes and verifies every staged asset against SHA-256 digests. Built-in protection against captive portals or SPA hosts serving 200 HTML for missing assets. |
+| **Update Delivery & Frequency** | **Browser Script Checks.** Driven primarily by browser byte-checks on `sw.js` (on navigation or 24-hour intervals) or manual `registration.update()` calls. | **Two-Tier App Protocol.** In addition to browser SW checks, client apps can check for app updates on tab focus, interval, or custom UI via a lightweight Tier 1 JSON check before fetching full manifests. |
+| **Integration & Batteries** | **Modular Toolkit.** Gives you low-level building blocks, but requires writing worker glue code, build integrations, postMessage channels, and custom reload UI prompts. | **Turnkey App Framework.** Pre-bundled SW engine, CLI (`nlpwa init` / `nlpwa update`), Rollup/Vite plugins, cross-tab update coordination, form-edit protection prompts, and quota management out of the box. |
 
 ---
 

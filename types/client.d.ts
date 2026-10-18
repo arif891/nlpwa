@@ -1,6 +1,5 @@
 export interface UpdateReadyData {
   version: string;
-  partial: boolean;
 }
 
 export interface NoUpdateData {
@@ -112,7 +111,7 @@ export function register(swUrl?: string, options?: RegisterOptions): Promise<Reg
 /**
  * Register a handler to be called when the SW signals an update is ready.
  *
- * @param callback Callback receiving version and partial flag
+ * @param callback Callback receiving version
  * @returns Unsubscribe function
  */
 export function onUpdateReady(callback?: (data: UpdateReadyData) => void): () => void;

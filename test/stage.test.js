@@ -165,7 +165,6 @@ test('strict atomic staging: after MAX_RETRY_ATTEMPTS the update remains incompl
   server.broken.clear();
   const recovered = await stageUpdate(await fetchServerInfo(), { activeSnapshot: await loadCachedSnapshot() });
   assert.equal(recovered.status, 'ready');
-  assert.equal(recovered.partial, false);
   assert.equal(await commitStaged(), true);
 
   const finalSnap = await loadCachedSnapshot();

@@ -73,7 +73,7 @@ async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 
  * @param {{ activeSnapshot?: Object|null, forceRefetch?: boolean }} [opts]
  *        forceRefetch: ignore the active copies and download everything (SW engine change)
  * @returns {Promise<
- *   { status: 'ready', partial: boolean, failed: string[], reused: number, copied: number, fetched: number } |
+ *   { status: 'ready', failed: string[], reused: number, copied: number, fetched: number } |
  *   { status: 'incomplete', failed: string[], retryCount: number }
  * >}
  */
@@ -106,7 +106,6 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const next = await caches.open(staged.cache);
   const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
   const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
-  const activeDegraded = new Set(activeSnapshot?.degraded ?? []);
 
   const stats = { reused: 0, copied: 0, fetched: 0 };
   const failed = [];
@@ -136,7 +135,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         stats.reused++;
         return;
       }
-      if (!forceRefetch && !activeDegraded.has(path) && activeCache && hash && activeHashes.get(path) === hash) {
+      if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
         const hit = await activeCache.match(path);
         if (hit) {
           await putWithQuotaRecovery(path, hit);
@@ -230,7 +229,6 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     failedDetails: {},
     nextRetryAt: null,
     complete: true,
-    partial: false,
     evict,
     clearRuntime: forceRefetch,
   });
@@ -240,5 +238,5 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     `${stats.reused} reused`
   );
 
-  return { status: 'ready', partial: false, failed: [], ...stats };
+  return { status: 'ready', failed: [], ...stats };
 }

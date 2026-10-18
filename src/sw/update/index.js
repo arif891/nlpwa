@@ -62,7 +62,7 @@ async function runUpdateCheck({ force = false } = {}) {
   // A complete update is already staged and waiting for the next navigation.
   if (staged?.complete && staged.swVersion === config.version
       && (!serverVersion || serverVersion === staged.version)) {
-    await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, partial: Boolean(staged.partial), staged: true });
+    await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, staged: true });
     return { updated: true, version: staged.version, staged: true };
   }
 
@@ -74,8 +74,7 @@ async function runUpdateCheck({ force = false } = {}) {
 
   const isFresh = !active;
   const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
-  const needsRetry = Boolean(active?.needsRetry || (active?.degraded && active.degraded.length > 0));
-  const isCurrent = (version) => !isFresh && !swVersionChanged && !needsRetry && version === active.version;
+  const isCurrent = (version) => !isFresh && !swVersionChanged && version === active.version;
 
   if (serverVersion && isCurrent(serverVersion)) {
     console.log(`[NLPWA] App already up to date (v${active.version})`);
@@ -136,7 +135,6 @@ async function runUpdateCheck({ force = false } = {}) {
   await broadcast({
     type: MESSAGE_TYPES.UPDATE_READY,
     version: serverManifest.version,
-    partial: result.partial,
     staged: true,
   });
   return { updated: true, version: serverManifest.version, staged: true };

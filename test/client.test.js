@@ -117,7 +117,6 @@ test('register: autoReload is suppressed when user is editing, offering prompt i
         data: {
           type: MESSAGE_TYPES.UPDATE_READY,
           version: '2.0.0',
-          partial: false,
         },
       });
     }

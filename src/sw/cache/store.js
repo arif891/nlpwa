@@ -7,8 +7,7 @@
  *
  * Each app version lives in its own offline cache (`offline@<version>-<id>`).
  * An update is built in a new cache while the active one keeps serving; the
- * switch is a single write to active.json. With no pointer yet (first run, or
- * an app installed by an older NLPWA) the plain `offline` cache is the active one.
+ * switch is a single atomic write to active.json.
  *
  * This module has no dependency on config so config/index.js can use it.
  */
@@ -102,7 +101,7 @@ export function release() {
 
 /**
  * Delete every offline cache that is neither in `keep` nor the runtime cache.
- * Managed names are the base name itself (legacy) and `<base>@…` (versioned).
+ * Managed names are versioned offline caches (`<base>@…`).
  *
  * @param {{ base: string, runtime: string, keep: Array<string|undefined> }} opts
  */
@@ -112,7 +111,7 @@ export async function cleanupCaches({ base, runtime, keep }) {
   await Promise.all(
     names
       .filter((name) => name !== runtime && name !== META_CACHE && !keepSet.has(name))
-      .filter((name) => name === base || name.startsWith(`${base}@`))
+      .filter((name) => name.startsWith(`${base}@`))
       .map((name) => {
         console.log(`[NLPWA] Removed old cache: ${name}`);
         return caches.delete(name);

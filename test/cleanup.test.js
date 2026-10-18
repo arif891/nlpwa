@@ -6,6 +6,9 @@ import { getStorageQuotaInfo, cleanRuntimeCache } from '../src/sw/cache/cleanup.
 import { CLEANUP_STRATEGIES, MESSAGE_TYPES } from '../src/shared/constants.js';
 
 function mockStorage(estimateFn) {
+  if (!globalThis.navigator) {
+    globalThis.navigator = {};
+  }
   try {
     Object.defineProperty(globalThis.navigator, 'storage', {
       value: { estimate: estimateFn },

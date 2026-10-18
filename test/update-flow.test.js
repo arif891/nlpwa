@@ -315,3 +315,68 @@ test('update: consecutive retries failing on same file detects persistent failur
   assert.equal(messages.at(-1)?.retryCount, 2);
 });
 
+test('install: failed precache on first install rethrows and does not commit active cache', async () => {
+  const server = makeServer('1.0.0', v1);
+  server.broken.add('/app.js');
+  fakeSelf();
+  setupEnv(server.fetch);
+
+  await assert.rejects(
+    () => precacheFiles(),
+    /Precache incomplete on first install/
+  );
+
+  assert.equal(await getActive(), null, 'no active cache committed on failed install');
+});
+
+test('install: precacheWithoutManifest rethrows when a precache resource fails on first install', async () => {
+  const server = makeServer('1.0.0', v1);
+  server.broken.add('/app.js');
+  fakeSelf();
+  setupEnv(server.fetch, { precache: ['/app.js'] });
+
+  // Simulate no manifest (404 on API)
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (r, init) => {
+    const url = typeof r === 'string' ? r : r.url;
+    if (new URL(url).pathname.startsWith('/api/')) return new Response('', { status: 404 });
+    return origFetch(r, init);
+  };
+
+  await assert.rejects(
+    () => precacheFiles(),
+    /Precache failed on first install/
+  );
+
+  assert.equal(await getActive(), null);
+});
+
+test('install event: failed precache rejects event.waitUntil and skips calling skipWaiting', async () => {
+  let skipWaitingCalled = false;
+  let waitUntilPromise = null;
+  const handlers = {};
+
+  const server = makeServer('1.0.0', v1);
+  server.broken.add('/app.js');
+  setupEnv(server.fetch);
+
+  globalThis.self.addEventListener = (event, fn) => { handlers[event] = fn; };
+  globalThis.self.skipWaiting = async () => { skipWaitingCalled = true; };
+
+  const { initSW } = await import('../src/sw/index.js');
+  initSW();
+
+  assert.ok(handlers.install, 'install handler registered');
+
+  handlers.install({
+    waitUntil: (p) => { waitUntilPromise = p; },
+  });
+
+  await assert.rejects(
+    () => waitUntilPromise,
+    /Precache incomplete on first install/
+  );
+
+  assert.equal(skipWaitingCalled, false, 'skipWaiting was NOT called after install failure');
+});
+

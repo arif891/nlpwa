@@ -1371,12 +1371,18 @@
       if (manifest) {
         const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
         const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
-        // Incomplete staging is resumed by the update check on activate.
-        if (result.status === 'ready' && !activeSnapshot) await commitStaged();
-        return;
+        if (result.status === 'incomplete' && !activeSnapshot) {
+          throw new Error(`[NLPWA] Precache incomplete on first install: ${result.failed.join(', ')} failed`);
+        }
+        if (result.status === 'ready' && !activeSnapshot) {
+          await commitStaged();
+        }
+        return result;
       }
 
-      if (!activeSnapshot) await precacheWithoutManifest();
+      if (!activeSnapshot) {
+        return await precacheWithoutManifest();
+      }
     } finally {
       release();
     }
@@ -1409,9 +1415,19 @@
     const results = await Promise.allSettled(
       precache.map((url) => offlineCache.add(new Request(new URL(url, self.location.href), { cache: 'reload' })))
     );
+    const failed = [];
     results.forEach((result, i) => {
-      if (result.status === 'rejected') console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+      if (result.status === 'rejected') {
+        console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+        failed.push(precache[i]);
+      }
     });
+
+    if (failed.length > 0) {
+      throw new Error(`[NLPWA] Precache failed on first install: ${failed.join(', ')} failed`);
+    }
+
+    return { status: 'ready', precached: precache.length };
   }
 
   /**
@@ -2572,9 +2588,18 @@
     self.addEventListener('install', (event) => {
       console.log(`[NLPWA] Installing SW v${config.version}`);
       event.waitUntil(
-        precacheFiles()
-          .then(() => self.skipWaiting())
-          .catch(err => console.error('[NLPWA] Install error:', err))
+        (async () => {
+          try {
+            const result = await precacheFiles();
+            // Only skip waiting if staging/installation completed successfully
+            if (!result || result.status !== 'incomplete') {
+              await self.skipWaiting();
+            }
+          } catch (err) {
+            console.error('[NLPWA] Install error:', err);
+            throw err;
+          }
+        })()
       );
     });
 

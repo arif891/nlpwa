@@ -35,12 +35,18 @@ export async function precacheFiles() {
     if (manifest) {
       const swChanged = Boolean(activeSnapshot?.swVersion && activeSnapshot.swVersion !== getConfig().version);
       const result = await stageUpdate(manifest, { activeSnapshot, forceRefetch: swChanged });
-      // Incomplete staging is resumed by the update check on activate.
-      if (result.status === 'ready' && !activeSnapshot) await commitStaged();
-      return;
+      if (result.status === 'incomplete' && !activeSnapshot) {
+        throw new Error(`[NLPWA] Precache incomplete on first install: ${result.failed.join(', ')} failed`);
+      }
+      if (result.status === 'ready' && !activeSnapshot) {
+        await commitStaged();
+      }
+      return result;
     }
 
-    if (!activeSnapshot) await precacheWithoutManifest();
+    if (!activeSnapshot) {
+      return await precacheWithoutManifest();
+    }
   } finally {
     release();
   }
@@ -73,7 +79,17 @@ async function precacheWithoutManifest() {
   const results = await Promise.allSettled(
     precache.map((url) => offlineCache.add(new Request(new URL(url, self.location.href), { cache: 'reload' })))
   );
+  const failed = [];
   results.forEach((result, i) => {
-    if (result.status === 'rejected') console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+    if (result.status === 'rejected') {
+      console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+      failed.push(precache[i]);
+    }
   });
+
+  if (failed.length > 0) {
+    throw new Error(`[NLPWA] Precache failed on first install: ${failed.join(', ')} failed`);
+  }
+
+  return { status: 'ready', precached: precache.length };
 }

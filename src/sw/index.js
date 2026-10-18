@@ -21,9 +21,18 @@ export function initSW(userConfig = {}) {
   self.addEventListener('install', (event) => {
     console.log(`[NLPWA] Installing SW v${config.version}`);
     event.waitUntil(
-      precacheFiles()
-        .then(() => self.skipWaiting())
-        .catch(err => console.error('[NLPWA] Install error:', err))
+      (async () => {
+        try {
+          const result = await precacheFiles();
+          // Only skip waiting if staging/installation completed successfully
+          if (!result || result.status !== 'incomplete') {
+            await self.skipWaiting();
+          }
+        } catch (err) {
+          console.error('[NLPWA] Install error:', err);
+          throw err;
+        }
+      })()
     );
   });
 

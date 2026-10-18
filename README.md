@@ -258,7 +258,7 @@ An update is built in a brand-new `offline@…` cache while the active one keeps
    entries from runtime cache, route-aware eviction, delete old offline cache
 ```
 
-First install runs the same pipeline during `install` and switches at once (no prompt), so the first update check has nothing left to download. If a file keeps failing, the old version stays live; after 5 consecutive failed checks the update goes ahead without that file (it keeps its old copy) and is retried on the next version bump.
+First install runs the same pipeline during `install` and switches at once (no prompt), so the first update check has nothing left to download. If any file fails to download or verify, the update is never finalized or committed (strict all-or-nothing atomicity); verified files are preserved in staging so subsequent checks resume, entering exponential backoff after 5 attempts while the active app version remains 100% clean and untouched.
 
 ---
 

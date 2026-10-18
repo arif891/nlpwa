@@ -51,9 +51,10 @@ async function fetchVerified(path, expected, verify) {
  *   3. otherwise                                  → fetch (no-store) and verify hash
  *
  * The snapshot is written last: a staging cache that contains its snapshot is
- * complete. If some files keep failing, after MAX_RETRY_ATTEMPTS the update is
- * finalised anyway ("degraded"): failed files keep their old copy and old hash
- * (or are left out if new), so a later version bump retries them.
+ * complete. If any file fails to download or verify, the update is never
+ * finalized or committed (strict atomicity). Verified files are preserved in the
+ * staging cache so subsequent checks can resume, entering exponential backoff
+ * after MAX_RETRY_ATTEMPTS while the running app stays 100% untouched.
  *
  * @param {{ version: string, files: Array<{ path: string, hash: string }> }} manifest
  * @param {{ activeSnapshot?: Object|null, forceRefetch?: boolean }} [opts]
@@ -91,6 +92,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const next = await caches.open(staged.cache);
   const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
   const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
+  const activeDegraded = new Set(activeSnapshot?.degraded ?? []);
 
   const stats = { reused: 0, copied: 0, fetched: 0 };
   const failed = [];
@@ -101,7 +103,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         stats.reused++;
         return;
       }
-      if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
+      if (!forceRefetch && !activeDegraded.has(path) && activeCache && hash && activeHashes.get(path) === hash) {
         const hit = await activeCache.match(path);
         if (hit) {
           await next.put(path, hit);
@@ -118,55 +120,51 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   });
 
   const retryCount = failed.length ? staged.retryCount + 1 : 0;
-  const gaveUp = failed.length > 0 && retryCount >= MAX_RETRY_ATTEMPTS;
 
-  if (failed.length && !gaveUp) {
-    // Keep what verified; the next check resumes from here. Active is untouched.
-    await setStaged({ ...staged, retryCount });
+  if (failed.length > 0) {
+    // True all-or-nothing atomicity: never finalize or commit a partial or broken update.
+    // Keep verified files in the staging cache so subsequent checks can resume.
+    // Active cache remains 100% pure and untouched.
+    let nextRetryAt = null;
+    if (retryCount >= MAX_RETRY_ATTEMPTS) {
+      const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), 3600000);
+      nextRetryAt = Date.now() + backoffMs;
+      console.warn(
+        `[NLPWA] Staging incomplete: ${failed.length} file(s) failed after ${retryCount} attempts: ` +
+        `${failed.join(', ')}. Active version remains live.`
+      );
+    }
+
+    await setStaged({
+      ...staged,
+      retryCount,
+      failedFiles: failed,
+      nextRetryAt,
+      complete: false,
+    });
+
     return { status: 'incomplete', failed, retryCount };
   }
 
   // ── Finalise: snapshot last, then mark the staged record complete ────────
-  const failedSet = new Set(failed);
-  const snapshotFiles = [];
-  for (const file of files) {
-    if (!failedSet.has(file.path)) {
-      snapshotFiles.push(file);
-      continue;
-    }
-    const oldHash = activeHashes.get(file.path);
-    const old = oldHash && activeCache ? await activeCache.match(file.path) : null;
-    if (old) {
-      await next.put(file.path, old);
-      snapshotFiles.push({ path: file.path, hash: oldHash });
-    }
-  }
-
   await writeSnapshot(next, {
     version: manifest.version,
-    files: snapshotFiles,
-    ...(failed.length ? { degraded: failed } : {}),
+    files,
   });
-
-  if (gaveUp) {
-    console.error(
-      `[NLPWA] Giving up on ${failed.length} file(s) after ${retryCount} attempts: ${failed.join(', ')}`
-    );
-  }
 
   await setStaged({
     ...staged,
-    retryCount,
+    retryCount: 0,
     complete: true,
-    partial: failed.length > 0,
+    partial: false,
     evict,
     clearRuntime: forceRefetch,
   });
 
   console.log(
     `[NLPWA] Staged v${manifest.version}: ${stats.fetched} fetched, ${stats.copied} copied, ` +
-    `${stats.reused} reused${failed.length ? `, ${failed.length} failed` : ''}`
+    `${stats.reused} reused`
   );
 
-  return { status: 'ready', partial: failed.length > 0, failed, ...stats };
+  return { status: 'ready', partial: false, failed: [], ...stats };
 }

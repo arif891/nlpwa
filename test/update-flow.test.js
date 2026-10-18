@@ -6,7 +6,7 @@ import { checkForUpdate } from '../src/sw/update/index.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
 import { commitIfReady } from '../src/sw/update/commit.js';
 import { handleFetch } from '../src/sw/fetch/index.js';
-import { getActive, getStaged } from '../src/sw/cache/store.js';
+import { getActive, getStaged, openActive } from '../src/sw/cache/store.js';
 import { loadCachedSnapshot } from '../src/sw/update/manifest.js';
 import { getConfig } from '../src/sw/config/index.js';
 
@@ -182,4 +182,59 @@ test('config.json travels with the app shell: routes change only when the update
   assert.equal(getConfig().routes[0].strategy, 'network-first', 'old routes until commit');
   await commitIfReady();
   assert.equal(getConfig().routes[0].strategy, 'cache-first');
+});
+
+test('update: active snapshot with degraded field is not current and triggers self-healing retry', async () => {
+  const server = makeServer('1.0.0', v1);
+  fakeSelf();
+  const caches = setupEnv(server.fetch);
+  await precacheFiles();
+
+  // Simulate an older release that had degraded: ['/app.js']
+  const activeSnap = await loadCachedSnapshot();
+  const activeCache = await openActive(getConfig().caches.offline);
+  await activeCache.put(
+    '/_nlpwa/snapshot.json',
+    new Response(JSON.stringify({ ...activeSnap, degraded: ['/app.js'] }))
+  );
+
+  // Even though server is still on 1.0.0, isCurrent() must return false to self-heal
+  server.calls.length = 0;
+  const result = await checkForUpdate();
+  assert.equal(result.updated, true);
+  assert.equal(server.fileCalls().includes('/app.js'), true, 'degraded file re-fetched to self heal');
+  await commitIfReady();
+
+  const healedSnap = await loadCachedSnapshot();
+  assert.equal(Boolean(healedSnap.degraded), false, 'healed snapshot has no degraded items');
+});
+
+test('update: retry backoff activates after MAX_RETRY_ATTEMPTS, periodic skips, manual forces', async () => {
+  const server = makeServer('1.0.0', v1);
+  fakeSelf();
+  setupEnv(server.fetch);
+  await precacheFiles();
+
+  server.set('1.0.1', { ...v1, '/app.js': 'app v2' });
+  server.broken.add('/app.js');
+
+  // Trigger 5 failed attempts to reach MAX_RETRY_ATTEMPTS
+  for (let i = 0; i < 5; i++) {
+    await checkForUpdate({ force: true });
+  }
+
+  const staged = await getStaged();
+  assert.equal(staged.retryCount >= 5, true);
+  assert.equal(typeof staged.nextRetryAt, 'number');
+  assert.equal(staged.nextRetryAt > Date.now(), true);
+
+  // Unforced periodic check will skip due to backoff
+  const periodic = await checkForUpdate();
+  assert.equal(periodic.updated, false);
+  assert.equal(periodic.backingOff, true);
+
+  // Force check proceeds anyway
+  server.broken.clear();
+  const forced = await checkForUpdate({ force: true });
+  assert.equal(forced.updated, true);
 });

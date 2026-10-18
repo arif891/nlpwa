@@ -152,8 +152,8 @@ checkForUpdate()
   │    ├─ copy unchanged files locally from active cache (zero network bytes)
   │    ├─ fetch added + modified files with { cache: 'no-store' }
   │    ├─ verify SHA-256 against manifest hashes (config.verifyHashes)
-  │    ├─ if single file fails 5 times (MAX_RETRY_ATTEMPTS): proceed degraded
-  │    ├─ write snapshot to staged cache (marks staging complete)
+  │    ├─ if any file fails: remains incomplete, resumes on next check (exponential backoff after 5 attempts)
+  │    ├─ write snapshot to staged cache once all files verified (marks staging complete)
   │    └─ record staged pointer in nlpwa-meta (/_nlpwa/staged.json)
   │
   └─ broadcast({ type: 'UPDATE_READY', version, partial })
@@ -233,6 +233,6 @@ The SW is single-threaded, but `checkForUpdate()` is async. A boolean lock (`_up
 | Manifest storage | Cache snapshot at `/_nlpwa/snapshot.json` | Survives SW restarts, marks cache complete, no IndexedDB required |
 | Diff computation | Client-side (SW) | Server stays stateless; no complex delta calculations |
 | Eviction rule | Route-strategy-aware | Routes define cacheability; not file presence |
-| Atomic Staging & Resumption | Separate staging cache + SHA-256 verification | Downloads stage in a separate cache; live app stays untouched until atomic commit. Failed downloads resume, degraded fallback after 5 retries |
+| Atomic Staging & Resumption | Separate staging cache + SHA-256 verification | Downloads stage in a separate cache; live app stays untouched until atomic commit. Failed downloads resume, never committing mixed/broken files |
 | SW format | ES module (`type: 'module'`) | Modern browsers support it; readable output |
 | Client format | IIFE (`out/client.js`, global `NLPWAClient`) + ES module (`out/client.esm.js`) | Drop-in `<script>` tag or bundler import |

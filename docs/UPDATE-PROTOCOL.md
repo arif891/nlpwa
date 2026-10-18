@@ -184,11 +184,13 @@ Open separate cache: offline@1.4.2-<unique-id>
    - Compute SHA-256 of downloaded body.
    - Match against manifest hash (config.verifyHashes: 'strict' | 'warn' | false).
    - Strict mode rejects mismatches (and HTTP 200 HTML error pages).
-5. Error recovery:
-   - If a file repeatedly fails across 5 checks (MAX_RETRY_ATTEMPTS),
-     the update stages degraded by copying the older cached version.
+5. Error recovery & Atomicity:
+   - If any file fails to fetch or verify, the update is never finalized or committed.
+   - Verified files are kept in the staging cache so subsequent checks resume.
+   - After 5 consecutive failed attempts, update checks enter exponential backoff
+     while the running app remains 100% clean and untouched.
 6. Seal staging:
-   - Write snapshot to offline@1.4.2-<unique-id>/_nlpwa/snapshot.json
+   - Once 100% of manifest files are verified, write snapshot to offline@1.4.2-<unique-id>/_nlpwa/snapshot.json
    - Write pointer in nlpwa-meta: /_nlpwa/staged.json { complete: true, ... }
 ```
 
@@ -241,7 +243,7 @@ Failures during staging never corrupt the running application:
 |---|---|
 | `fetch()` fails or hash mismatches | Active version continues serving untouched; retry on next check |
 | Network drops mid-update | Verified files remain cached in staging; resumed on next check |
-| Single file permanently broken | Retried 5 times; then update proceeds degraded using previous copy |
+| Single file permanently broken | Retried with exponential backoff after 5 attempts; active app remains 100% untouched |
 | Manifest endpoint unreachable | Update skipped entirely; retried on next check |
 
 ---

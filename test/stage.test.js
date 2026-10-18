@@ -131,7 +131,7 @@ test('resume: a retry reuses files that already verified instead of downloading 
   assert.equal(second.reused, 2);
 });
 
-test('give up: after MAX_RETRY_ATTEMPTS the update goes ahead degraded, keeping the old copy', async () => {
+test('strict atomic staging: after MAX_RETRY_ATTEMPTS the update remains incomplete, active version untouched', async () => {
   const server = makeServer('1.0.0', v1);
   setupEnv(server.fetch);
   await stageAndCommit(server);
@@ -143,16 +143,28 @@ test('give up: after MAX_RETRY_ATTEMPTS the update goes ahead degraded, keeping 
   let result;
   for (let i = 0; i < MAX_RETRY_ATTEMPTS; i++) {
     result = await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
-    if (i < MAX_RETRY_ATTEMPTS - 1) assert.equal(result.status, 'incomplete');
+    assert.equal(result.status, 'incomplete');
+    assert.deepEqual(result.failed.sort(), ['/app.js', '/new.js']);
   }
-  assert.equal(result.status, 'ready');
-  assert.equal(result.partial, true);
+  // Even after MAX_RETRY_ATTEMPTS, it never finalizes or commits incomplete updates
+  assert.equal(result.status, 'incomplete');
+  assert.equal(await commitStaged(), false, 'incomplete staging cannot be committed');
 
-  await commitStaged();
   const snap = await loadCachedSnapshot();
-  assert.deepEqual(snap.degraded.sort(), ['/app.js', '/new.js']);
-  assert.equal(snap.files.find((f) => f.path === '/app.js').hash, hash8('app v1'), 'old hash kept so a bump retries it');
-  assert.equal(snap.files.some((f) => f.path === '/new.js'), false, 'new file left out');
+  assert.equal(snap.version, '1.0.0', 'active version remains clean and uncorrupted');
+  assert.equal(snap.files.find((f) => f.path === '/app.js').hash, hash8('app v1'));
+  assert.equal(snap.files.some((f) => f.path === '/new.js'), false);
+
+  // When network recovers, next stage completes cleanly
+  server.broken.clear();
+  const recovered = await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
+  assert.equal(recovered.status, 'ready');
+  assert.equal(recovered.partial, false);
+  assert.equal(await commitStaged(), true);
+
+  const finalSnap = await loadCachedSnapshot();
+  assert.equal(finalSnap.version, '1.0.1');
+  assert.equal(finalSnap.files.find((f) => f.path === '/app.js').hash, hash8('app v2'));
 });
 
 test('a new version discards an older partial staging cache', async () => {

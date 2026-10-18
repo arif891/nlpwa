@@ -64,7 +64,7 @@ export function initSW(userConfig = {}) {
 
     switch (event.data?.type) {
       case MESSAGE_TYPES.CHECK_UPDATE:
-        event.waitUntil(checkForUpdate());
+        event.waitUntil(checkForUpdate({ force: true }));
         break;
 
       case MESSAGE_TYPES.APPLY_UPDATE:

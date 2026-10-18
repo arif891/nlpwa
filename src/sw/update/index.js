@@ -33,19 +33,19 @@ async function broadcast(message) {
  *
  * @returns {Promise<{ updated: boolean, version?: string }>}
  */
-export async function checkForUpdate() {
+export async function checkForUpdate(options = {}) {
   if (!tryAcquire()) {
     console.log('[NLPWA] Update already in progress, skipping.');
     return { updated: false };
   }
   try {
-    return await runUpdateCheck();
+    return await runUpdateCheck(options);
   } finally {
     release();
   }
 }
 
-async function runUpdateCheck() {
+async function runUpdateCheck({ force = false } = {}) {
   const config = getConfig();
 
   // ── Tier 1: lightweight version check ────────────────────────────────────
@@ -66,9 +66,15 @@ async function runUpdateCheck() {
     return { updated: true, version: staged.version, staged: true };
   }
 
+  // If a previous retry failed and backoff has not expired yet, skip this periodic check unless forced
+  if (!force && staged && !staged.complete && staged.nextRetryAt && Date.now() < staged.nextRetryAt) {
+    console.log(`[NLPWA] Staging retry in backoff until ${new Date(staged.nextRetryAt).toISOString()}`);
+    return { updated: false, backingOff: true };
+  }
+
   const isFresh = !active;
   const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
-  const needsRetry = Boolean(active?.needsRetry); // snapshots written by older NLPWA versions
+  const needsRetry = Boolean(active?.needsRetry || (active?.degraded && active.degraded.length > 0));
   const isCurrent = (version) => !isFresh && !swVersionChanged && !needsRetry && version === active.version;
 
   if (serverVersion && isCurrent(serverVersion)) {

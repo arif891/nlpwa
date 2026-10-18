@@ -18,6 +18,7 @@ import {
  * @param {Object} [options]
  * @param {string}  [options.config]           Path to config.js or config.json
  * @param {boolean} [options.autoIncrement]    Auto-increment patch version instead of content hash (default: false)
+ * @param {boolean} [options.deriveVersion]    Derive app version suffix from manifest content hash (default: true)
  * @param {boolean} [options.syncSource]       Sync version back to source config file (default: false)
  * @param {string}  [options.version]          Explicit app version override
  * @param {boolean} [options.generateManifest] Emit manifest & update API on build (default: true)
@@ -89,12 +90,10 @@ export function nlpwaPlugin(options = {}) {
         appVersion = options.version;
       } else if (options.autoIncrement === true) {
         appVersion = targetVersion;
-      } else if (options.deriveVersion === true || rawConfig.version === 'auto') {
-        appVersion = deriveAppVersion(rawConfig, files);
-      } else {
-        // Default: use targetVersion from config so APP_VERSION in the virtual module
-        // matches the emitted version in version.json and info.json exactly.
+      } else if (options.deriveVersion === false) {
         appVersion = targetVersion;
+      } else {
+        appVersion = deriveAppVersion(rawConfig, files);
       }
 
       // Sync version back to source config if explicitly requested or if autoIncrement is enabled

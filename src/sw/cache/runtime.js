@@ -10,7 +10,7 @@ import { openActive, getActive, getActiveName, resetMeta } from './store.js';
  * @returns {Promise<Response|undefined>}
  */
 export async function getFromOffline(request, matchOptions) {
-  const { caches: cacheNames, retainPreviousVersionCache } = getConfig();
+  const { caches: cacheNames, retainPreviousVersionCache, base } = getConfig();
   const cache = await openActive(cacheNames.offline);
   let hit = await cache.match(request, matchOptions);
 
@@ -23,6 +23,18 @@ export async function getFromOffline(request, matchOptions) {
       hit = await cache.match('/index.html', matchOptions);
     } else if (pathname === '/index.html') {
       hit = await cache.match('/', matchOptions);
+    } else if (base) {
+      const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+      if (pathname === cleanBase || pathname === `${cleanBase}/`) {
+        hit = (await cache.match(`${cleanBase}/index.html`, matchOptions))
+          ?? (await cache.match('/index.html', matchOptions))
+          ?? (await cache.match(cleanBase, matchOptions))
+          ?? (await cache.match(`${cleanBase}/`, matchOptions));
+      } else if (pathname === `${cleanBase}/index.html`) {
+        hit = (await cache.match(`${cleanBase}/`, matchOptions))
+          ?? (await cache.match(cleanBase, matchOptions))
+          ?? (await cache.match('/index.html', matchOptions));
+      }
     }
   }
 
@@ -41,6 +53,18 @@ export async function getFromOffline(request, matchOptions) {
             hit = await prev.match('/index.html', matchOptions);
           } else if (pathname === '/index.html') {
             hit = await prev.match('/', matchOptions);
+          } else if (base) {
+            const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+            if (pathname === cleanBase || pathname === `${cleanBase}/`) {
+              hit = (await prev.match(`${cleanBase}/index.html`, matchOptions))
+                ?? (await prev.match('/index.html', matchOptions))
+                ?? (await prev.match(cleanBase, matchOptions))
+                ?? (await prev.match(`${cleanBase}/`, matchOptions));
+            } else if (pathname === `${cleanBase}/index.html`) {
+              hit = (await prev.match(`${cleanBase}/`, matchOptions))
+                ?? (await prev.match(cleanBase, matchOptions))
+                ?? (await prev.match('/index.html', matchOptions));
+            }
           }
         }
       } catch {

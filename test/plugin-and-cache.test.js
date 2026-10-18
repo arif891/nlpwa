@@ -93,6 +93,53 @@ test('nlpwaPlugin: custom configPath is emitted to correct subpath and tracked',
   assert.ok(info.files.some(f => f.path === '/assets/custom-config.json'));
 });
 
+test('nlpwaPlugin: derives content-hash version by default for different app code', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-plugin-hash-'));
+  const configPath = join(root, 'config.json');
+  writeFileSync(configPath, JSON.stringify({ version: '1.0.0', precache: ['/main.js'] }));
+
+  // Build 1: main.js with version 1 code
+  const distDir = join(root, 'dist');
+  mkdirSync(distDir, { recursive: true });
+  writeFileSync(join(distDir, 'main.js'), 'console.log("build 1 app code");');
+
+  const plugin1 = nlpwaPlugin({
+    config: configPath,
+    distDir,
+  });
+  await plugin1.buildStart();
+  await plugin1.writeBundle({ dir: distDir });
+
+  const manifest1 = JSON.parse(readFileSync(join(distDir, 'api/update/version.json'), 'utf8'));
+  assert.match(manifest1.version, /^1\.0\.0-[0-9a-f]{8,32}$/i);
+
+  // Build 2: main.js with modified app code
+  writeFileSync(join(distDir, 'main.js'), 'console.log("build 2 different code");');
+
+  const plugin2 = nlpwaPlugin({
+    config: configPath,
+    distDir,
+  });
+  await plugin2.buildStart();
+  await plugin2.writeBundle({ dir: distDir });
+
+  const manifest2 = JSON.parse(readFileSync(join(distDir, 'api/update/version.json'), 'utf8'));
+  assert.match(manifest2.version, /^1\.0\.0-[0-9a-f]{8,32}$/i);
+  assert.notEqual(manifest1.version, manifest2.version, 'Emitted versions must differ when app code changes');
+
+  // Explicit deriveVersion: false preserves base semver without hash
+  const pluginNoDerive = nlpwaPlugin({
+    config: configPath,
+    distDir,
+    deriveVersion: false,
+  });
+  await pluginNoDerive.buildStart();
+  await pluginNoDerive.writeBundle({ dir: distDir });
+
+  const manifestNoDerive = JSON.parse(readFileSync(join(distDir, 'api/update/version.json'), 'utf8'));
+  assert.equal(manifestNoDerive.version, '1.0.0');
+});
+
 test('precacheWithoutManifest: guards against HTML soft-404 responses', async () => {
   const caches = setupEnv(async (request) => {
     const url = new URL(request.url);

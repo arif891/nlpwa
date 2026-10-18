@@ -5,6 +5,7 @@ import { writeSnapshot } from './manifest.js';
 import { cleanRuntimeCache } from '../cache/cleanup.js';
 import { sha256Hex, hashMatches } from '../../shared/hash.js';
 import { MAX_RETRY_ATTEMPTS, FETCH_CONCURRENCY } from '../../shared/constants.js';
+import { resolvePathWithBase } from '../../shared/url.js';
 
 /** Run `fn` over `items` with at most `limit` in flight. */
 async function mapLimit(items, limit, fn) {
@@ -16,8 +17,8 @@ async function mapLimit(items, limit, fn) {
 }
 
 /** Is `path` already in the staging cache with the expected content? */
-async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null) {
-  const hit = await cache.match(path);
+async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, fetchUrl = path) {
+  const hit = (await cache.match(fetchUrl)) || (fetchUrl !== path ? await cache.match(path) : null);
   if (!hit) return false;
   if (!expected || verify === false) return true;
   const size = fileSize ?? Number(hit.headers?.get?.('content-length') || hit.headers?.get?.('x-nlpwa-content-length') || 0);
@@ -130,26 +131,35 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   };
 
   await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
+    const fetchUrl = resolvePathWithBase(path, config.base);
     try {
-      if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size)) {
+      if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size, fetchUrl)) {
         stats.reused++;
         return;
       }
       if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
-        const hit = await activeCache.match(path);
+        const hit = (await activeCache.match(fetchUrl)) || (fetchUrl !== path ? await activeCache.match(path) : null);
         if (hit) {
-          await putWithQuotaRecovery(path, hit);
+          const copyForPath = fetchUrl !== path ? hit.clone() : null;
+          await putWithQuotaRecovery(fetchUrl, hit);
+          if (copyForPath) {
+            await putWithQuotaRecovery(path, copyForPath);
+          }
           stats.copied++;
           return;
         }
       }
-      const fetchedRes = await fetchVerified(path, hash, verify, maxVerifyBytes, size);
-      await putWithQuotaRecovery(path, fetchedRes);
+      const fetchedRes = await fetchVerified(fetchUrl, hash, verify, maxVerifyBytes, size);
+      const copyForPath = fetchUrl !== path ? fetchedRes.clone() : null;
+      await putWithQuotaRecovery(fetchUrl, fetchedRes);
+      if (copyForPath) {
+        await putWithQuotaRecovery(path, copyForPath);
+      }
       stats.fetched++;
     } catch (err) {
       failed.push(path);
       failedDetails[path] = err.message;
-      console.warn(`[NLPWA] Staging failed: ${path} - ${err.message}`);
+      console.warn(`[NLPWA] Staging failed: ${fetchUrl} - ${err.message}`);
     }
   });
 

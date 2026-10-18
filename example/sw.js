@@ -117,6 +117,14 @@
     verifyHashes: 'strict',
 
     /**
+     * Maximum file size in bytes for in-memory SHA-256 hash verification during staging.
+     * Files larger than this threshold (e.g. WASM binaries, on-device AI models)
+     * skip in-memory clone & buffer to avoid memory spikes and crashes on low-end devices.
+     * Default: 20 * 1024 * 1024 (20 MB)
+     */
+    maxVerifyBytes: 20 * 1024 * 1024,
+
+    /**
      * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).
      * Default: ''
      */
@@ -225,6 +233,10 @@
 
     if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
       errors.push("config.verifyHashes must be 'strict', 'warn' or false");
+    }
+
+    if (config.maxVerifyBytes !== undefined && (typeof config.maxVerifyBytes !== 'number' || config.maxVerifyBytes < 0)) {
+      errors.push('config.maxVerifyBytes must be a non-negative number');
     }
 
     if (!config.caches || typeof config.caches.offline !== 'string') {
@@ -573,6 +585,7 @@
       // Core security and storage namespace settings are locked to the compiled SW engine
       // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
       verifyHashes: _config.verifyHashes,
+      maxVerifyBytes: _config.maxVerifyBytes,
       caches: _config.caches,
       manifestCachePath: _config.manifestCachePath,
 
@@ -709,8 +722,14 @@
    */
   function isSafePath(path) {
     if (typeof path !== 'string' || !path) return false;
-    // Reject absolute URLs with protocols (e.g. http:, https:, data:) and protocol-relative URLs (//)
-    if (path.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(path)) return false;
+    // Must start with a single forward slash and not be followed by / or \
+    if (!/^\/(?![\/\\])/.test(path)) return false;
+    // Reject absolute URLs with protocols (e.g. http:, https:, data:, javascript:)
+    if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return false;
+    // Reject backslashes anywhere in path (prevent Windows/URL parser normalization quirks)
+    if (path.includes('\\')) return false;
+    // Reject path traversal with '..' segments
+    if (/(?:^|\/)\.\.(?:\/|$)/.test(path)) return false;
     return true;
   }
 
@@ -744,385 +763,6 @@
     }
 
     return { added, modified, removed };
-  }
-
-  /**
-   * SHA-256 of a buffer as a lowercase hex string.
-   * Works in Service Workers, browsers and Node 18+ (Web Crypto).
-   *
-   * @param {ArrayBuffer|Uint8Array} buffer
-   * @returns {Promise<string>}
-   */
-  async function sha256Hex(buffer) {
-    const digest = await crypto.subtle.digest('SHA-256', buffer);
-    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  /**
-   * Compare a full SHA-256 hex digest with a manifest hash.
-   *
-   * The CLI emits the first 32 hex characters (older builds emitted 8), so the
-   * manifest hash is treated as a prefix. Anything shorter than 8 characters is rejected so a
-   * truncated or empty hash can never "match" by accident.
-   *
-   * @param {string} actualHex  full digest from sha256Hex()
-   * @param {string} expected   hash from the manifest (prefix of the digest)
-   * @returns {boolean}
-   */
-  function hashMatches(actualHex, expected) {
-    if (typeof expected !== 'string' || expected.length < 8) return false;
-    return actualHex.startsWith(expected.toLowerCase());
-  }
-
-  /** Run `fn` over `items` with at most `limit` in flight. */
-  async function mapLimit(items, limit, fn) {
-    let next = 0;
-    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) await fn(items[next++]);
-    });
-    await Promise.all(workers);
-  }
-
-  /** Is `path` already in the staging cache with the expected content? */
-  async function isAlreadyStaged(cache, path, expected, verify) {
-    const hit = await cache.match(path);
-    if (!hit) return false;
-    if (!expected || verify === false) return true;
-    return hashMatches(await sha256Hex(await hit.arrayBuffer()), expected);
-  }
-
-  /** Fetch a file fresh from the network and check it against its manifest hash. */
-  async function fetchVerified(path, expected, verify) {
-    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(30000)
-      : undefined;
-    const response = await fetch(path, { cache: 'no-store', signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    if (expected && verify !== false) {
-      const actual = await sha256Hex(await response.clone().arrayBuffer());
-      if (!hashMatches(actual, expected)) {
-        const detail = `hash mismatch (expected ${expected}, got ${actual.slice(0, expected.length)})`;
-        if (verify === 'strict') throw new Error(detail);
-        console.warn(`[NLPWA] ${path}: ${detail} - storing anyway (verifyHashes: 'warn')`);
-      }
-    }
-    return response;
-  }
-
-  /**
-   * Build the new app version in a SEPARATE cache while the active one keeps
-   * serving. Nothing here is visible to the running app until commitStaged().
-   *
-   * For every file in the manifest:
-   *   1. already in the staging cache and verified  → reuse   (resume after failure)
-   *   2. unchanged since the active version         → copy locally, no network
-   *   3. otherwise                                  → fetch (no-store) and verify hash
-   *
-   * The snapshot is written last: a staging cache that contains its snapshot is
-   * complete. If any file fails to download or verify, the update is never
-   * finalized or committed (strict atomicity). Verified files are preserved in the
-   * staging cache so subsequent checks can resume, entering exponential backoff
-   * after MAX_RETRY_ATTEMPTS while the running app stays 100% untouched.
-   *
-   * @param {{ version: string, files: Array<{ path: string, hash: string }> }} manifest
-   * @param {{ activeSnapshot?: Object|null, forceRefetch?: boolean }} [opts]
-   *        forceRefetch: ignore the active copies and download everything (SW engine change)
-   * @returns {Promise<
-   *   { status: 'ready', partial: boolean, failed: string[], reused: number, copied: number, fetched: number } |
-   *   { status: 'incomplete', failed: string[], retryCount: number }
-   * >}
-   */
-  async function stageUpdate(manifest, { activeSnapshot = null, forceRefetch = false } = {}) {
-    const config = getConfig();
-    const verify = config.verifyHashes ?? 'strict';
-    const files = manifest.files.filter((f) => isSafePath(f?.path));
-
-    const diff = computeDiff(files, activeSnapshot?.files ?? null);
-    const evict = [...diff.modified, ...diff.removed];
-
-    // ── Resume a matching partial staging cache, or start a new one ──────────
-    let staged = await getStaged();
-    const resumable = staged && !staged.complete
-      && staged.version === manifest.version && staged.swVersion === config.version;
-    if (!resumable) {
-      if (staged?.cache) await caches.delete(staged.cache);
-      staged = {
-        cache: `${config.caches.offline}@${manifest.version}-${Date.now().toString(36)}`,
-        version: manifest.version,
-        swVersion: config.version,
-        complete: false,
-        retryCount: 0,
-      };
-    }
-    // Record the staging cache BEFORE creating it so a crash can never orphan it
-    await setStaged(staged);
-
-    const next = await caches.open(staged.cache);
-    const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
-    const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
-    const activeDegraded = new Set(activeSnapshot?.degraded ?? []);
-
-    const stats = { reused: 0, copied: 0, fetched: 0 };
-    const failed = [];
-    const failedDetails = {};
-
-    await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash }) => {
-      try {
-        if (await isAlreadyStaged(next, path, hash, verify)) {
-          stats.reused++;
-          return;
-        }
-        if (!forceRefetch && !activeDegraded.has(path) && activeCache && hash && activeHashes.get(path) === hash) {
-          const hit = await activeCache.match(path);
-          if (hit) {
-            await next.put(path, hit);
-            stats.copied++;
-            return;
-          }
-        }
-        await next.put(path, await fetchVerified(path, hash, verify));
-        stats.fetched++;
-      } catch (err) {
-        failed.push(path);
-        failedDetails[path] = err.message;
-        console.warn(`[NLPWA] Staging failed: ${path} - ${err.message}`);
-      }
-    });
-
-    const retryCount = failed.length ? staged.retryCount + 1 : 0;
-
-    if (failed.length > 0) {
-      // True all-or-nothing atomicity: never finalize or commit a partial or broken update.
-      // Keep verified files in the staging cache so subsequent checks can resume.
-      // Active cache remains 100% pure and untouched.
-      const prevFailed = staged.failedFiles ?? [];
-      const isSameFiles = prevFailed.length > 0
-        && failed.length === prevFailed.length
-        && failed.every((f) => prevFailed.includes(f));
-
-      const hasHashMismatch = Object.values(failedDetails).some(
-        (msg) => typeof msg === 'string' && msg.includes('hash mismatch')
-      );
-
-      let nextRetryAt = null;
-      if (retryCount >= MAX_RETRY_ATTEMPTS) {
-        const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), 3600000);
-        nextRetryAt = Date.now() + backoffMs;
-        console.warn(
-          `[NLPWA] Staging incomplete: ${failed.length} file(s) failed after ${retryCount} attempts: ` +
-          `${failed.join(', ')}. Active version remains live.`
-        );
-      }
-
-      if (isSameFiles && retryCount >= 2) {
-        if (hasHashMismatch) {
-          console.error(
-            `[NLPWA] Persistent hash mismatch on ${failed.join(', ')} across ${retryCount} attempts. ` +
-            `A CDN, proxy, or host minification may be altering file contents in transit. ` +
-            `Consider setting verifyHashes: 'warn' or false in your nlpwa config if this transformation is expected.`
-          );
-        } else {
-          console.warn(
-            `[NLPWA] Repeated staging failure on the same file(s): ${failed.join(', ')} (${retryCount} attempts).`
-          );
-        }
-      }
-
-      await setStaged({
-        ...staged,
-        retryCount,
-        failedFiles: failed,
-        failedDetails,
-        nextRetryAt,
-        complete: false,
-      });
-
-      return {
-        status: 'incomplete',
-        failed,
-        failedDetails,
-        retryCount,
-        nextRetryAt,
-        persistent: Boolean(isSameFiles && retryCount >= 2),
-        hasHashMismatch: Boolean(hasHashMismatch),
-      };
-    }
-
-    // ── Finalise: snapshot last, then mark the staged record complete ────────
-    await writeSnapshot(next, {
-      version: manifest.version,
-      files,
-    });
-
-    await setStaged({
-      ...staged,
-      retryCount: 0,
-      failedFiles: [],
-      failedDetails: {},
-      nextRetryAt: null,
-      complete: true,
-      partial: false,
-      evict,
-      clearRuntime: forceRefetch,
-    });
-
-    console.log(
-      `[NLPWA] Staged v${manifest.version}: ${stats.fetched} fetched, ${stats.copied} copied, ` +
-      `${stats.reused} reused`
-    );
-
-    return { status: 'ready', partial: false, failed: [], ...stats };
-  }
-
-  // ── Offline cache helpers ────────────────────────────────────────────────────
-
-  /**
-   * Read a response from the offline (app shell) cache.
-   *
-   * @param {Request|string} request
-   * @returns {Promise<Response|undefined>}
-   */
-  async function getFromOffline(request, matchOptions) {
-    const { caches: cacheNames, retainPreviousVersionCache } = getConfig();
-    const cache = await openActive(cacheNames.offline);
-    let hit = await cache.match(request, matchOptions);
-
-    if (!hit) {
-      let pathname = null;
-      try {
-        pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
-      } catch {}
-      if (pathname === '/') {
-        hit = await cache.match('/index.html', matchOptions);
-      } else if (pathname === '/index.html') {
-        hit = await cache.match('/', matchOptions);
-      }
-    }
-
-    if (!hit && retainPreviousVersionCache) {
-      const active = await getActive();
-      if (active?.previousCache) {
-        try {
-          const prev = await caches.open(active.previousCache);
-          hit = await prev.match(request, matchOptions);
-          if (!hit) {
-            let pathname = null;
-            try {
-              pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
-            } catch {}
-            if (pathname === '/') {
-              hit = await prev.match('/index.html', matchOptions);
-            } else if (pathname === '/index.html') {
-              hit = await prev.match('/', matchOptions);
-            }
-          }
-        } catch {
-          // previous cache may have been removed
-        }
-      }
-    }
-    return hit;
-  }
-
-  // ── Runtime cache helpers ────────────────────────────────────────────────────
-
-  /**
-   * Read a response from the runtime (lazy) cache.
-   *
-   * @param {Request|string} request
-   * @returns {Promise<Response|undefined>}
-   */
-  async function getFromRuntime(request, matchOptions) {
-    const { caches: cacheNames } = getConfig();
-    const cache = await caches.open(cacheNames.runtime);
-    return cache.match(request, matchOptions);
-  }
-
-  /**
-   * Write a response into the runtime cache.
-   * Used by fetch strategies (network-first, stale-while-revalidate, cache-first).
-   *
-   * @param {Request|string} request
-   * @param {Response} response
-   */
-  async function putInRuntime(request, response) {
-    const { caches: cacheNames } = getConfig();
-    const cache = await caches.open(cacheNames.runtime);
-
-    let responseToStore = response.clone();
-    if (response.type !== 'opaque') {
-      try {
-        const isNullBody = [101, 204, 205, 304].includes(response.status);
-        const headers = new Headers(response.headers);
-        if (!headers.has('X-NLPWA-Cached-At')) {
-          headers.set('X-NLPWA-Cached-At', String(Date.now()));
-        }
-        if (isNullBody) {
-          headers.set('X-NLPWA-Content-Length', '0');
-          responseToStore = new Response(null, {
-            status: response.status,
-            statusText: response.statusText,
-            headers,
-          });
-          await cache.put(request, responseToStore);
-          return;
-        }
-        if (!headers.has('X-NLPWA-Content-Length')) {
-          const cl = headers.get('Content-Length');
-          if (cl) {
-            headers.set('X-NLPWA-Content-Length', cl);
-          } else {
-            try {
-              const buf = await response.clone().arrayBuffer();
-              headers.set('X-NLPWA-Content-Length', String(buf.byteLength));
-              responseToStore = new Response(buf, {
-                status: response.status,
-                statusText: response.statusText,
-                headers,
-              });
-              await cache.put(request, responseToStore);
-              return;
-            } catch {
-              // fallback
-            }
-          }
-        }
-        responseToStore = new Response(responseToStore.body, {
-          status: response.status,
-          statusText: response.statusText,
-          headers,
-        });
-      } catch {
-        responseToStore = response.clone();
-      }
-    }
-
-    await cache.put(request, responseToStore);
-  }
-
-  /**
-   * Delete specific URLs from the runtime cache.
-   * Used during update to evict stale/changed files so they are re-fetched fresh.
-   *
-   * @param {string[]} paths  URL pathnames to evict, e.g. ['/app.js', '/pages/about.html']
-   */
-  async function evictFromRuntime(paths) {
-    if (!paths.length) return;
-    const { caches: cacheNames } = getConfig();
-    const cache = await caches.open(cacheNames.runtime);
-    await Promise.all(paths.map(path => cache.delete(path)));
-  }
-
-  /**
-   * Convenience: look up a request from offline first, then runtime.
-   * Returns the first match found, or undefined if neither has it.
-   *
-   * @param {Request|string} request
-   * @returns {Promise<Response|undefined>}
-   */
-  async function getFromCache(request, matchOptions) {
-    return (await getFromOffline(request, matchOptions)) ?? (await getFromRuntime(request, matchOptions));
   }
 
   /** Compiled regex cache — avoids recompiling the same glob on every fetch event */
@@ -1182,88 +822,6 @@
     } catch {
       return false;
     }
-  }
-
-  /**
-   * Cache status values added to responses via the X-Cache-Status header.
-   *
-   * Clients can read this header from any intercepted response to determine
-   * where the response actually came from:
-   *
-   *   fetch('/app.js').then(r => console.log(r.headers.get('X-Cache-Status')));
-   *   // → 'offline-cache' | 'runtime-cache' | 'network' | 'stale' | 'offline-fallback'
-   */
-  const CACHE_STATUS = {
-    /** Response was fetched fresh from the network */
-    NETWORK:          'network',
-
-    /** Response came from the offline (precache / app shell) store */
-    OFFLINE_CACHE:    'offline-cache',
-
-    /** Response came from the runtime (lazy) cache */
-    RUNTIME_CACHE:    'runtime-cache',
-
-    /** Stale-while-revalidate: served from cache while network update runs in background */
-    STALE:            'stale',
-
-    /** Synthetic 503: no network and no cached version available */
-    OFFLINE_FALLBACK: 'offline-fallback',
-
-    /** Request bypassed the Service Worker cache */
-    BYPASS:           'bypass',
-  };
-
-  /** Name of the response header injected by the SW */
-  const CACHE_STATUS_HEADER = 'X-Cache-Status';
-
-  /**
-   * Wrap a Response with an X-Cache-Status header indicating its origin.
-   *
-   * Notes:
-   *   - Response headers are immutable, so a new Response is constructed.
-   *   - Opaque responses (cross-origin, no CORS) cannot have their body read,
-   *     so they are returned as-is with no header added.
-   *   - The original response is consumed — do not use it after calling this.
-   *
-   * @param {Response} response
-   * @param {string}   status    one of CACHE_STATUS values
-   * @returns {Response}
-   */
-  function tagResponse(response, status) {
-    if (!response) return response;
-
-    // Opaque responses (opaque / opaqueredirect / status 0) cannot have their body
-    // read or reconstructed without throwing RangeError. Return them unchanged.
-    if (response.type === 'opaque' || response.type === 'opaqueredirect' || response.status === 0) {
-      return response;
-    }
-
-    const headers = new Headers(response.headers);
-    headers.set(CACHE_STATUS_HEADER, status);
-
-    const tagged = new Response(response.body, {
-      status:     response.status,
-      statusText: response.statusText,
-      headers,
-    });
-
-    if (response.url) {
-      try {
-        Object.defineProperty(tagged, 'url', { value: response.url });
-      } catch {
-        // ignore in environments that do not permit defining url
-      }
-    }
-
-    if (response.redirected) {
-      try {
-        Object.defineProperty(tagged, 'redirected', { value: response.redirected });
-      } catch {
-        // ignore
-      }
-    }
-
-    return tagged;
   }
 
   /**
@@ -1623,6 +1181,503 @@
       remainingBytes: finalRemainingBytes,
       quota: updatedQuota,
     };
+  }
+
+  /**
+   * SHA-256 of a buffer as a lowercase hex string.
+   * Works in Service Workers, browsers and Node 18+ (Web Crypto).
+   *
+   * @param {ArrayBuffer|Uint8Array} buffer
+   * @returns {Promise<string>}
+   */
+  async function sha256Hex(buffer) {
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Compare a full SHA-256 hex digest with a manifest hash.
+   *
+   * The CLI emits the first 32 hex characters (older builds emitted 8), so the
+   * manifest hash is treated as a prefix. Anything shorter than 8 characters is rejected so a
+   * truncated or empty hash can never "match" by accident.
+   *
+   * @param {string} actualHex  full digest from sha256Hex()
+   * @param {string} expected   hash from the manifest (prefix of the digest)
+   * @returns {boolean}
+   */
+  function hashMatches(actualHex, expected) {
+    if (typeof expected !== 'string' || expected.length < 8) return false;
+    return actualHex.startsWith(expected.toLowerCase());
+  }
+
+  /** Run `fn` over `items` with at most `limit` in flight. */
+  async function mapLimit(items, limit, fn) {
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) await fn(items[next++]);
+    });
+    await Promise.all(workers);
+  }
+
+  /** Is `path` already in the staging cache with the expected content? */
+  async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null) {
+    const hit = await cache.match(path);
+    if (!hit) return false;
+    if (!expected || verify === false) return true;
+    const size = fileSize ?? Number(hit.headers?.get?.('content-length') || hit.headers?.get?.('x-nlpwa-content-length') || 0);
+    if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+      return true;
+    }
+    return hashMatches(await sha256Hex(await hit.arrayBuffer()), expected);
+  }
+
+  /** Fetch a file fresh from the network and check it against its manifest hash. */
+  async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null) {
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(30000)
+      : undefined;
+    const response = await fetch(path, { cache: 'no-store', signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    if (expected && verify !== false) {
+      const size = fileSize ?? Number(response.headers?.get?.('content-length') || response.headers?.get?.('x-nlpwa-content-length') || 0);
+      if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+        console.warn(
+          `[NLPWA] ${path}: File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold ` +
+          `(${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB). Skipping in-memory hash verification to prevent memory spikes on low-end devices.`
+        );
+        return response;
+      }
+      const actual = await sha256Hex(await response.clone().arrayBuffer());
+      if (!hashMatches(actual, expected)) {
+        const detail = `hash mismatch (expected ${expected}, got ${actual.slice(0, expected.length)})`;
+        if (verify === 'strict') throw new Error(detail);
+        console.warn(`[NLPWA] ${path}: ${detail} - storing anyway (verifyHashes: 'warn')`);
+      }
+    }
+    return response;
+  }
+
+  /**
+   * Build the new app version in a SEPARATE cache while the active one keeps
+   * serving. Nothing here is visible to the running app until commitStaged().
+   *
+   * For every file in the manifest:
+   *   1. already in the staging cache and verified  → reuse   (resume after failure)
+   *   2. unchanged since the active version         → copy locally, no network
+   *   3. otherwise                                  → fetch (no-store) and verify hash
+   *
+   * The snapshot is written last: a staging cache that contains its snapshot is
+   * complete. If any file fails to download or verify, the update is never
+   * finalized or committed (strict atomicity). Verified files are preserved in the
+   * staging cache so subsequent checks can resume, entering exponential backoff
+   * after MAX_RETRY_ATTEMPTS while the running app stays 100% untouched.
+   *
+   * @param {{ version: string, files: Array<{ path: string, hash: string }> }} manifest
+   * @param {{ activeSnapshot?: Object|null, forceRefetch?: boolean }} [opts]
+   *        forceRefetch: ignore the active copies and download everything (SW engine change)
+   * @returns {Promise<
+   *   { status: 'ready', partial: boolean, failed: string[], reused: number, copied: number, fetched: number } |
+   *   { status: 'incomplete', failed: string[], retryCount: number }
+   * >}
+   */
+  async function stageUpdate(manifest, { activeSnapshot = null, forceRefetch = false } = {}) {
+    const config = getConfig();
+    const verify = config.verifyHashes ?? 'strict';
+    const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
+    const files = manifest.files.filter((f) => isSafePath(f?.path));
+
+    const diff = computeDiff(files, activeSnapshot?.files ?? null);
+    const evict = [...diff.modified, ...diff.removed];
+
+    // ── Resume a matching partial staging cache, or start a new one ──────────
+    let staged = await getStaged();
+    const resumable = staged && !staged.complete
+      && staged.version === manifest.version && staged.swVersion === config.version;
+    if (!resumable) {
+      if (staged?.cache) await caches.delete(staged.cache);
+      staged = {
+        cache: `${config.caches.offline}@${manifest.version}-${Date.now().toString(36)}`,
+        version: manifest.version,
+        swVersion: config.version,
+        complete: false,
+        retryCount: 0,
+      };
+    }
+    // Record the staging cache BEFORE creating it so a crash can never orphan it
+    await setStaged(staged);
+
+    const next = await caches.open(staged.cache);
+    const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
+    const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
+    const activeDegraded = new Set(activeSnapshot?.degraded ?? []);
+
+    const stats = { reused: 0, copied: 0, fetched: 0 };
+    const failed = [];
+    const failedDetails = {};
+
+    const putWithQuotaRecovery = async (path, res) => {
+      const retryCopy = res.clone();
+      try {
+        await next.put(path, res);
+      } catch (err) {
+        const isQuota = err.name === 'QuotaExceededError' || /quota/i.test(err.message || '');
+        if (isQuota) {
+          console.warn(`[NLPWA] QuotaExceededError while staging ${path}. Freeing runtime cache space...`);
+          const cleaned = await cleanRuntimeCache({ strategy: 'all' }).catch(() => null);
+          if (cleaned && (cleaned.freedBytes > 0 || cleaned.evictedCount > 0)) {
+            await next.put(path, retryCopy);
+            return;
+          }
+        }
+        throw err;
+      }
+    };
+
+    await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
+      try {
+        if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size)) {
+          stats.reused++;
+          return;
+        }
+        if (!forceRefetch && !activeDegraded.has(path) && activeCache && hash && activeHashes.get(path) === hash) {
+          const hit = await activeCache.match(path);
+          if (hit) {
+            await putWithQuotaRecovery(path, hit);
+            stats.copied++;
+            return;
+          }
+        }
+        const fetchedRes = await fetchVerified(path, hash, verify, maxVerifyBytes, size);
+        await putWithQuotaRecovery(path, fetchedRes);
+        stats.fetched++;
+      } catch (err) {
+        failed.push(path);
+        failedDetails[path] = err.message;
+        console.warn(`[NLPWA] Staging failed: ${path} - ${err.message}`);
+      }
+    });
+
+    const retryCount = failed.length ? staged.retryCount + 1 : 0;
+
+    if (failed.length > 0) {
+      // True all-or-nothing atomicity: never finalize or commit a partial or broken update.
+      // Keep verified files in the staging cache so subsequent checks can resume.
+      // Active cache remains 100% pure and untouched.
+      const prevFailed = staged.failedFiles ?? [];
+      const isSameFiles = prevFailed.length > 0
+        && failed.length === prevFailed.length
+        && failed.every((f) => prevFailed.includes(f));
+
+      const hasHashMismatch = Object.values(failedDetails).some(
+        (msg) => typeof msg === 'string' && msg.includes('hash mismatch')
+      );
+      const hasQuotaExceeded = Object.values(failedDetails).some(
+        (msg) => typeof msg === 'string' && (msg.includes('QuotaExceededError') || /quota/i.test(msg))
+      );
+
+      let nextRetryAt = null;
+      if (retryCount >= MAX_RETRY_ATTEMPTS) {
+        const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), 3600000);
+        nextRetryAt = Date.now() + backoffMs;
+        console.warn(
+          `[NLPWA] Staging incomplete: ${failed.length} file(s) failed after ${retryCount} attempts: ` +
+          `${failed.join(', ')}. Active version remains live.`
+        );
+      }
+
+      if (isSameFiles && retryCount >= 2) {
+        if (hasHashMismatch) {
+          console.error(
+            `[NLPWA] Persistent hash mismatch on ${failed.join(', ')} across ${retryCount} attempts. ` +
+            `A CDN, proxy, or host minification may be altering file contents in transit. ` +
+            `Consider setting verifyHashes: 'warn' or false in your nlpwa config if this transformation is expected.`
+          );
+        } else {
+          console.warn(
+            `[NLPWA] Repeated staging failure on the same file(s): ${failed.join(', ')} (${retryCount} attempts).`
+          );
+        }
+      }
+
+      await setStaged({
+        ...staged,
+        retryCount,
+        failedFiles: failed,
+        failedDetails,
+        nextRetryAt,
+        complete: false,
+      });
+
+      return {
+        status: 'incomplete',
+        failed,
+        failedDetails,
+        retryCount,
+        nextRetryAt,
+        persistent: Boolean(isSameFiles && retryCount >= 2),
+        hasHashMismatch: Boolean(hasHashMismatch),
+        quotaExceeded: Boolean(hasQuotaExceeded),
+      };
+    }
+
+    // ── Finalise: snapshot last, then mark the staged record complete ────────
+    await writeSnapshot(next, {
+      version: manifest.version,
+      files,
+    });
+
+    await setStaged({
+      ...staged,
+      retryCount: 0,
+      failedFiles: [],
+      failedDetails: {},
+      nextRetryAt: null,
+      complete: true,
+      partial: false,
+      evict,
+      clearRuntime: forceRefetch,
+    });
+
+    console.log(
+      `[NLPWA] Staged v${manifest.version}: ${stats.fetched} fetched, ${stats.copied} copied, ` +
+      `${stats.reused} reused`
+    );
+
+    return { status: 'ready', partial: false, failed: [], ...stats };
+  }
+
+  // ── Offline cache helpers ────────────────────────────────────────────────────
+
+  /**
+   * Read a response from the offline (app shell) cache.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromOffline(request, matchOptions) {
+    const { caches: cacheNames, retainPreviousVersionCache } = getConfig();
+    const cache = await openActive(cacheNames.offline);
+    let hit = await cache.match(request, matchOptions);
+
+    if (!hit) {
+      let pathname = null;
+      try {
+        pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+      } catch {}
+      if (pathname === '/') {
+        hit = await cache.match('/index.html', matchOptions);
+      } else if (pathname === '/index.html') {
+        hit = await cache.match('/', matchOptions);
+      }
+    }
+
+    if (!hit && retainPreviousVersionCache) {
+      const active = await getActive();
+      if (active?.previousCache) {
+        try {
+          const prev = await caches.open(active.previousCache);
+          hit = await prev.match(request, matchOptions);
+          if (!hit) {
+            let pathname = null;
+            try {
+              pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+            } catch {}
+            if (pathname === '/') {
+              hit = await prev.match('/index.html', matchOptions);
+            } else if (pathname === '/index.html') {
+              hit = await prev.match('/', matchOptions);
+            }
+          }
+        } catch {
+          // previous cache may have been removed
+        }
+      }
+    }
+    return hit;
+  }
+
+  // ── Runtime cache helpers ────────────────────────────────────────────────────
+
+  /**
+   * Read a response from the runtime (lazy) cache.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromRuntime(request, matchOptions) {
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    return cache.match(request, matchOptions);
+  }
+
+  /**
+   * Write a response into the runtime cache.
+   * Used by fetch strategies (network-first, stale-while-revalidate, cache-first).
+   *
+   * @param {Request|string} request
+   * @param {Response} response
+   */
+  async function putInRuntime(request, response) {
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+
+    let responseToStore = response.clone();
+    if (response.type !== 'opaque') {
+      try {
+        const isNullBody = [101, 204, 205, 304].includes(response.status);
+        const headers = new Headers(response.headers);
+        if (!headers.has('X-NLPWA-Cached-At')) {
+          headers.set('X-NLPWA-Cached-At', String(Date.now()));
+        }
+        if (isNullBody) {
+          headers.set('X-NLPWA-Content-Length', '0');
+          responseToStore = new Response(null, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+          });
+          await cache.put(request, responseToStore);
+          return;
+        }
+        if (!headers.has('X-NLPWA-Content-Length')) {
+          const cl = headers.get('Content-Length');
+          if (cl) {
+            headers.set('X-NLPWA-Content-Length', cl);
+          } else {
+            try {
+              const buf = await response.clone().arrayBuffer();
+              headers.set('X-NLPWA-Content-Length', String(buf.byteLength));
+              responseToStore = new Response(buf, {
+                status: response.status,
+                statusText: response.statusText,
+                headers,
+              });
+              await cache.put(request, responseToStore);
+              return;
+            } catch {
+              // fallback
+            }
+          }
+        }
+        responseToStore = new Response(responseToStore.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers,
+        });
+      } catch {
+        responseToStore = response.clone();
+      }
+    }
+
+    await cache.put(request, responseToStore);
+  }
+
+  /**
+   * Delete specific URLs from the runtime cache.
+   * Used during update to evict stale/changed files so they are re-fetched fresh.
+   *
+   * @param {string[]} paths  URL pathnames to evict, e.g. ['/app.js', '/pages/about.html']
+   */
+  async function evictFromRuntime(paths) {
+    if (!paths.length) return;
+    const { caches: cacheNames } = getConfig();
+    const cache = await caches.open(cacheNames.runtime);
+    await Promise.all(paths.map(path => cache.delete(path)));
+  }
+
+  /**
+   * Convenience: look up a request from offline first, then runtime.
+   * Returns the first match found, or undefined if neither has it.
+   *
+   * @param {Request|string} request
+   * @returns {Promise<Response|undefined>}
+   */
+  async function getFromCache(request, matchOptions) {
+    return (await getFromOffline(request, matchOptions)) ?? (await getFromRuntime(request, matchOptions));
+  }
+
+  /**
+   * Cache status values added to responses via the X-Cache-Status header.
+   *
+   * Clients can read this header from any intercepted response to determine
+   * where the response actually came from:
+   *
+   *   fetch('/app.js').then(r => console.log(r.headers.get('X-Cache-Status')));
+   *   // → 'offline-cache' | 'runtime-cache' | 'network' | 'stale' | 'offline-fallback'
+   */
+  const CACHE_STATUS = {
+    /** Response was fetched fresh from the network */
+    NETWORK:          'network',
+
+    /** Response came from the offline (precache / app shell) store */
+    OFFLINE_CACHE:    'offline-cache',
+
+    /** Response came from the runtime (lazy) cache */
+    RUNTIME_CACHE:    'runtime-cache',
+
+    /** Stale-while-revalidate: served from cache while network update runs in background */
+    STALE:            'stale',
+
+    /** Synthetic 503: no network and no cached version available */
+    OFFLINE_FALLBACK: 'offline-fallback',
+
+    /** Request bypassed the Service Worker cache */
+    BYPASS:           'bypass',
+  };
+
+  /** Name of the response header injected by the SW */
+  const CACHE_STATUS_HEADER = 'X-Cache-Status';
+
+  /**
+   * Wrap a Response with an X-Cache-Status header indicating its origin.
+   *
+   * Notes:
+   *   - Response headers are immutable, so a new Response is constructed.
+   *   - Opaque responses (cross-origin, no CORS) cannot have their body read,
+   *     so they are returned as-is with no header added.
+   *   - The original response is consumed — do not use it after calling this.
+   *
+   * @param {Response} response
+   * @param {string}   status    one of CACHE_STATUS values
+   * @returns {Response}
+   */
+  function tagResponse(response, status) {
+    if (!response) return response;
+
+    // Opaque responses (opaque / opaqueredirect / status 0) cannot have their body
+    // read or reconstructed without throwing RangeError. Return them unchanged.
+    if (response.type === 'opaque' || response.type === 'opaqueredirect' || response.status === 0) {
+      return response;
+    }
+
+    const headers = new Headers(response.headers);
+    headers.set(CACHE_STATUS_HEADER, status);
+
+    const tagged = new Response(response.body, {
+      status:     response.status,
+      statusText: response.statusText,
+      headers,
+    });
+
+    if (response.url) {
+      try {
+        Object.defineProperty(tagged, 'url', { value: response.url });
+      } catch {
+        // ignore in environments that do not permit defining url
+      }
+    }
+
+    if (response.redirected) {
+      try {
+        Object.defineProperty(tagged, 'redirected', { value: response.redirected });
+      } catch {
+        // ignore
+      }
+    }
+
+    return tagged;
   }
 
   /**
@@ -2641,7 +2696,9 @@
     if (result.status === 'incomplete') {
       const errorMsg = result.hasHashMismatch
         ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
-        : `Failed to download or verify ${result.failed.join(', ')}`;
+        : result.quotaExceeded
+          ? `Storage quota exceeded while staging ${result.failed.join(', ')}`
+          : `Failed to download or verify ${result.failed.join(', ')}`;
 
       await broadcast({
         type: MESSAGE_TYPES.UPDATE_FAILED,
@@ -2653,9 +2710,10 @@
         nextRetryAt: result.nextRetryAt,
         persistent: Boolean(result.persistent),
         hasHashMismatch: Boolean(result.hasHashMismatch),
+        quotaExceeded: Boolean(result.quotaExceeded),
       });
 
-      return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg };
+      return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
     }
 
     if (isFresh) {
@@ -2713,8 +2771,6 @@
           await loadConfigFromCache().catch(() => {});
         })()
       );
-      // Run update check in the background without blocking activation or holding fetch events
-      checkForUpdate().catch((err) => console.warn('[NLPWA] Background update check failed:', err.message));
     });
 
     // ── fetch ──────────────────────────────────────────────────────────────────

@@ -139,8 +139,9 @@ checkForUpdate()
   │
   ├─ Tier 1: fetchServerVersion()
   │    └─ GET /api/update/version.json  { cache: 'no-store' }
-  │    └─ isNewer(server.version, cached.version)?
-  │         └─ false & no SW engine change: STOP (no heavy downloads)
+  │    └─ server.version === cached.version (strict equality)?
+  │         └─ equal & no SW engine change: STOP (no heavy downloads)
+  │         └─ unequal: proceed to Tier 2 (supports 1.0.0-<hash> and rollbacks)
   │
   ├─ Tier 2: fetchServerManifest()
   │    └─ GET /api/update/info.json  { cache: 'no-store' }

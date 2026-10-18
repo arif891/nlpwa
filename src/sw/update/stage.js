@@ -2,6 +2,7 @@ import { getConfig } from '../config/index.js';
 import { openActive, getStaged, setStaged } from '../cache/store.js';
 import { computeDiff, isSafePath } from './diff.js';
 import { writeSnapshot } from './manifest.js';
+import { cleanRuntimeCache } from '../cache/cleanup.js';
 import { sha256Hex, hashMatches } from '../../shared/hash.js';
 import { MAX_RETRY_ATTEMPTS, FETCH_CONCURRENCY } from '../../shared/constants.js';
 
@@ -15,15 +16,19 @@ async function mapLimit(items, limit, fn) {
 }
 
 /** Is `path` already in the staging cache with the expected content? */
-async function isAlreadyStaged(cache, path, expected, verify) {
+async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null) {
   const hit = await cache.match(path);
   if (!hit) return false;
   if (!expected || verify === false) return true;
+  const size = fileSize ?? Number(hit.headers?.get?.('content-length') || hit.headers?.get?.('x-nlpwa-content-length') || 0);
+  if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+    return true;
+  }
   return hashMatches(await sha256Hex(await hit.arrayBuffer()), expected);
 }
 
 /** Fetch a file fresh from the network and check it against its manifest hash. */
-async function fetchVerified(path, expected, verify) {
+async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? AbortSignal.timeout(30000)
     : undefined;
@@ -31,6 +36,14 @@ async function fetchVerified(path, expected, verify) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
   if (expected && verify !== false) {
+    const size = fileSize ?? Number(response.headers?.get?.('content-length') || response.headers?.get?.('x-nlpwa-content-length') || 0);
+    if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+      console.warn(
+        `[NLPWA] ${path}: File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold ` +
+        `(${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB). Skipping in-memory hash verification to prevent memory spikes on low-end devices.`
+      );
+      return response;
+    }
     const actual = await sha256Hex(await response.clone().arrayBuffer());
     if (!hashMatches(actual, expected)) {
       const detail = `hash mismatch (expected ${expected}, got ${actual.slice(0, expected.length)})`;
@@ -67,6 +80,7 @@ async function fetchVerified(path, expected, verify) {
 export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetch = false } = {}) {
   const config = getConfig();
   const verify = config.verifyHashes ?? 'strict';
+  const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
   const files = manifest.files.filter((f) => isSafePath(f?.path));
 
   const diff = computeDiff(files, activeSnapshot?.files ?? null);
@@ -98,21 +112,40 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const failed = [];
   const failedDetails = {};
 
-  await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash }) => {
+  const putWithQuotaRecovery = async (path, res) => {
+    const retryCopy = res.clone();
     try {
-      if (await isAlreadyStaged(next, path, hash, verify)) {
+      await next.put(path, res);
+    } catch (err) {
+      const isQuota = err.name === 'QuotaExceededError' || /quota/i.test(err.message || '');
+      if (isQuota) {
+        console.warn(`[NLPWA] QuotaExceededError while staging ${path}. Freeing runtime cache space...`);
+        const cleaned = await cleanRuntimeCache({ strategy: 'all' }).catch(() => null);
+        if (cleaned && (cleaned.freedBytes > 0 || cleaned.evictedCount > 0)) {
+          await next.put(path, retryCopy);
+          return;
+        }
+      }
+      throw err;
+    }
+  };
+
+  await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
+    try {
+      if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size)) {
         stats.reused++;
         return;
       }
       if (!forceRefetch && !activeDegraded.has(path) && activeCache && hash && activeHashes.get(path) === hash) {
         const hit = await activeCache.match(path);
         if (hit) {
-          await next.put(path, hit);
+          await putWithQuotaRecovery(path, hit);
           stats.copied++;
           return;
         }
       }
-      await next.put(path, await fetchVerified(path, hash, verify));
+      const fetchedRes = await fetchVerified(path, hash, verify, maxVerifyBytes, size);
+      await putWithQuotaRecovery(path, fetchedRes);
       stats.fetched++;
     } catch (err) {
       failed.push(path);
@@ -134,6 +167,9 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
 
     const hasHashMismatch = Object.values(failedDetails).some(
       (msg) => typeof msg === 'string' && msg.includes('hash mismatch')
+    );
+    const hasQuotaExceeded = Object.values(failedDetails).some(
+      (msg) => typeof msg === 'string' && (msg.includes('QuotaExceededError') || /quota/i.test(msg))
     );
 
     let nextRetryAt = null;
@@ -177,6 +213,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       nextRetryAt,
       persistent: Boolean(isSameFiles && retryCount >= 2),
       hasHashMismatch: Boolean(hasHashMismatch),
+      quotaExceeded: Boolean(hasQuotaExceeded),
     };
   }
 

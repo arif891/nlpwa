@@ -35,6 +35,10 @@ export function validateConfig(config) {
     errors.push("config.verifyHashes must be 'strict', 'warn' or false");
   }
 
+  if (config.maxVerifyBytes !== undefined && (typeof config.maxVerifyBytes !== 'number' || config.maxVerifyBytes < 0)) {
+    errors.push('config.maxVerifyBytes must be a non-negative number');
+  }
+
   if (!config.caches || typeof config.caches.offline !== 'string') {
     errors.push('config.caches.offline must be a string');
   }

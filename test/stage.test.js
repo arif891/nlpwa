@@ -185,3 +185,83 @@ test('a new version discards an older partial staging cache', async () => {
   await stageUpdate(await fetchServerManifest());
   assert.equal((await caches.keys()).includes(stale), false);
 });
+
+test('stage: skips in-memory hash verification for files exceeding maxVerifyBytes threshold', async () => {
+  const server = makeServer('1.0.0', {
+    ...v1,
+    '/model.wasm': 'wasm-binary-bytes-data',
+  });
+  // maxVerifyBytes configured to 10 bytes, while model.wasm is > 10 bytes
+  setupEnv(server.fetch, { maxVerifyBytes: 10 });
+  // Intentionally mismatch hash in server manifest
+  server.lie.set('/model.wasm', hash8('tampered-or-different'));
+
+  const result = await stageUpdate(await fetchServerManifest());
+  assert.equal(result.status, 'ready');
+  assert.equal(result.failed.length, 0);
+  assert.equal(await commitStaged(), true);
+});
+
+test('stage: recovers from QuotaExceededError by triggering cleanRuntimeCache and retrying', async () => {
+  const server = makeServer('1.0.0', v1);
+  const caches = setupEnv(server.fetch);
+
+  // Put an entry into runtime cache
+  const runtime = await caches.open('runtime');
+  await runtime.put(req('/cached-video.mp4'), new Response('lots of bytes', {
+    headers: { 'Content-Length': '1000000', 'X-NLPWA-Cached-At': String(Date.now() - 5000) },
+  }));
+
+  let quotaThrown = false;
+  // Intercept open to hook cache.put on staging cache
+  const origOpen = caches.open.bind(caches);
+  caches.open = async (name) => {
+    const cache = await origOpen(name);
+    if (name.startsWith('offline@')) {
+      const origPut = cache.put.bind(cache);
+      cache.put = async (path, res) => {
+        const urlStr = typeof path === 'string' ? path : path.url;
+        if (!quotaThrown && urlStr.includes('/app.js')) {
+          quotaThrown = true;
+          const err = new Error('The quota has been exceeded.');
+          err.name = 'QuotaExceededError';
+          throw err;
+        }
+        return origPut(path, res);
+      };
+    }
+    return cache;
+  };
+
+  const result = await stageUpdate(await fetchServerManifest());
+  assert.equal(quotaThrown, true, 'QuotaExceededError was triggered');
+  assert.equal(result.status, 'ready', 'Staging succeeded after cleanRuntimeCache reclaimed space');
+  assert.equal(await runtime.match(req('/cached-video.mp4')), undefined, 'Runtime cache was evicted');
+});
+
+test('stage: persistent QuotaExceededError reports quotaExceeded: true', async () => {
+  const server = makeServer('1.0.0', v1);
+  const caches = setupEnv(server.fetch);
+
+  // Intercept open to hook cache.put on staging cache to always throw QuotaExceededError
+  const origOpen = caches.open.bind(caches);
+  caches.open = async (name) => {
+    const cache = await origOpen(name);
+    if (name.startsWith('offline@')) {
+      cache.put = async (path) => {
+        const urlStr = typeof path === 'string' ? path : path.url;
+        if (urlStr.includes('/app.js')) {
+          const err = new Error('Quota exceeded on disk.');
+          err.name = 'QuotaExceededError';
+          throw err;
+        }
+      };
+    }
+    return cache;
+  };
+
+  const result = await stageUpdate(await fetchServerManifest());
+  assert.equal(result.status, 'incomplete');
+  assert.equal(result.quotaExceeded, true);
+  assert.ok(result.failed.includes('/app.js'));
+});

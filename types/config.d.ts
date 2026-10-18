@@ -57,6 +57,8 @@ export interface NLPWAConfig {
   updateAPI?: UpdateAPIConfig;
   /** Hash verification mode for update downloads */
   verifyHashes?: 'strict' | 'warn' | false;
+  /** Maximum file size in bytes for in-memory SHA-256 hash verification during staging (default: 20MB) */
+  maxVerifyBytes?: number;
   /** Cache storage names */
   caches?: {
     offline?: string;

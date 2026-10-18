@@ -108,7 +108,9 @@ async function runUpdateCheck({ force = false } = {}) {
   if (result.status === 'incomplete') {
     const errorMsg = result.hasHashMismatch
       ? `Hash mismatch verification failed for ${result.failed.join(', ')}`
-      : `Failed to download or verify ${result.failed.join(', ')}`;
+      : result.quotaExceeded
+        ? `Storage quota exceeded while staging ${result.failed.join(', ')}`
+        : `Failed to download or verify ${result.failed.join(', ')}`;
 
     await broadcast({
       type: MESSAGE_TYPES.UPDATE_FAILED,
@@ -120,9 +122,10 @@ async function runUpdateCheck({ force = false } = {}) {
       nextRetryAt: result.nextRetryAt,
       persistent: Boolean(result.persistent),
       hasHashMismatch: Boolean(result.hasHashMismatch),
+      quotaExceeded: Boolean(result.quotaExceeded),
     });
 
-    return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg };
+    return { updated: false, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
   }
 
   if (isFresh) {

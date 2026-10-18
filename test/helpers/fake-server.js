@@ -15,11 +15,20 @@ export function makeServer(version, files) {
       return Response.json({
         version: state.version,
         // `lie` lets a test advertise a hash that doesn't match the served bytes
-        files: Object.entries(state.files).map(([p, body]) => ({ path: p, hash: state.lie.get(p) ?? hash8(body) })),
+        files: Object.entries(state.files).map(([p, body]) => ({
+          path: p,
+          hash: state.lie.get(p) ?? hash8(body),
+          size: Buffer.byteLength(String(body)),
+        })),
       });
     }
     if (state.broken.has(path)) return new Response('nope', { status: 404 });
-    if (path in state.files) return new Response(state.files[path]);
+    if (path in state.files) {
+      const content = String(state.files[path]);
+      return new Response(content, {
+        headers: { 'Content-Length': String(Buffer.byteLength(content)) },
+      });
+    }
     return new Response('not found', { status: 404 });
   };
   state.fileCalls = () => state.calls.filter((p) => !p.startsWith('/api/'));

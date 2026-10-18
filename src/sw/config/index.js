@@ -68,6 +68,7 @@ export function updateActiveConfig(runtimeConfig = {}) {
     // Core security and storage namespace settings are locked to the compiled SW engine
     // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
     verifyHashes: _config.verifyHashes,
+    maxVerifyBytes: _config.maxVerifyBytes,
     caches: _config.caches,
     manifestCachePath: _config.manifestCachePath,
 

@@ -10,7 +10,6 @@
 
   /** Path inside the offline cache where the snapshot is stored */
   const SNAPSHOT_CACHE_PATH = '/_nlpwa/snapshot.json';
-  const MANIFEST_CACHE_PATH = SNAPSHOT_CACHE_PATH;
 
   /** postMessage type identifiers (SW ↔ client) */
   const MESSAGE_TYPES = {
@@ -164,7 +163,7 @@
     },
 
     /** Path inside the offline cache where the manifest snapshot is stored */
-    manifestCachePath: MANIFEST_CACHE_PATH,
+    snapshotCachePath: SNAPSHOT_CACHE_PATH,
 
     /**
      * Files to pre-cache at SW install time (the app shell).
@@ -202,6 +201,41 @@
 
   const VALID_STRATEGIES = new Set(Object.values(STRATEGIES));
 
+  const ALLOWED_ROUTE_KEYS = new Set([
+    'match',
+    'strategy',
+    'origin',
+    'networkTimeoutMs',
+    'navigationFallback',
+    'ignoreSearch',
+    'throwOnFailure',
+    'maxAge',
+    'cacheOpaque',
+  ]);
+
+  const ALLOWED_CONFIG_KEYS = new Set([
+    'version',
+    'appVersion',
+    'configPath',
+    'updateAPI',
+    'verifyHashes',
+    'maxVerifyBytes',
+    'caches',
+    'snapshotCachePath',
+    'precache',
+    'routes',
+    'defaultStrategy',
+    'networkTimeoutMs',
+    'navigationFallback',
+    'base',
+    'retainPreviousVersionCache',
+    'clearRuntimeOnUpdate',
+    'cacheOpaque',
+    'throwOnFailure',
+    'dev',
+    'devBypass',
+  ]);
+
   /**
    * Validate a merged config object.
    * Returns an array of error strings (empty = valid).
@@ -220,15 +254,22 @@
       errors.push('config.configPath must be a string (e.g. "/config.json")');
     }
 
-    // Validate updateAPI
-    if (!config.updateAPI) {
-      errors.push('config.updateAPI must be defined with { version, info }');
-    } else if (Array.isArray(config.updateAPI)) {
-      if (config.updateAPI.length === 0) {
-        errors.push('config.updateAPI array must not be empty');
+    // Validate updateAPI (object with { version, info } only)
+    if (!config.updateAPI || typeof config.updateAPI !== 'object' || Array.isArray(config.updateAPI)) {
+      errors.push('config.updateAPI must be an object with { version, info } endpoints');
+    } else {
+      if (typeof config.updateAPI.version !== 'string' || !config.updateAPI.version) {
+        errors.push('config.updateAPI.version must be a non-empty string endpoint (e.g. "/api/update/version.json")');
       }
-    } else if (typeof config.updateAPI !== 'object') {
-      errors.push('config.updateAPI must be an object with { version, info } or an array');
+      if (typeof config.updateAPI.info !== 'string' || !config.updateAPI.info) {
+        errors.push('config.updateAPI.info must be a non-empty string endpoint (e.g. "/api/update/info.json")');
+      }
+    }
+
+    for (const key of Object.keys(config)) {
+      if (!ALLOWED_CONFIG_KEYS.has(key)) {
+        errors.push(`config.${key} is not a recognized configuration option.`);
+      }
     }
 
     if (![ 'strict', 'warn', false ].includes(config.verifyHashes)) {
@@ -259,6 +300,11 @@
       errors.push('config.routes must be an array');
     } else {
       config.routes.forEach((route, i) => {
+        for (const key of Object.keys(route)) {
+          if (!ALLOWED_ROUTE_KEYS.has(key)) {
+            errors.push(`config.routes[${i}] has unrecognized option "${key}". Only canonical route options are supported.`);
+          }
+        }
         if (typeof route.match !== 'string') {
           errors.push(`config.routes[${i}].match must be a string (glob pattern)`);
         }
@@ -290,8 +336,7 @@
    *
    * Each app version lives in its own offline cache (`offline@<version>-<id>`).
    * An update is built in a new cache while the active one keeps serving; the
-   * switch is a single write to active.json. With no pointer yet (first run, or
-   * an app installed by an older NLPWA) the plain `offline` cache is the active one.
+   * switch is a single atomic write to active.json.
    *
    * This module has no dependency on config so config/index.js can use it.
    */
@@ -373,7 +418,7 @@
 
   /**
    * Delete every offline cache that is neither in `keep` nor the runtime cache.
-   * Managed names are the base name itself (legacy) and `<base>@…` (versioned).
+   * Managed names are versioned offline caches (`<base>@…`).
    *
    * @param {{ base: string, runtime: string, keep: Array<string|undefined> }} opts
    */
@@ -383,7 +428,7 @@
     await Promise.all(
       names
         .filter((name) => name !== runtime && name !== META_CACHE && !keepSet.has(name))
-        .filter((name) => name === base || name.startsWith(`${base}@`))
+        .filter((name) => name.startsWith(`${base}@`))
         .map((name) => {
           console.log(`[NLPWA] Removed old cache: ${name}`);
           return caches.delete(name);
@@ -462,12 +507,9 @@
     return data;
   }
 
-  const fetchServerManifest = fetchServerInfo;
-
   /** Path of the snapshot entry inside an offline cache. */
   function getSnapshotPath() {
-    const config = getConfig();
-    return config.snapshotCachePath || config.manifestCachePath || '/_nlpwa/snapshot.json';
+    return getConfig().snapshotCachePath;
   }
 
   let _activeSnapshotPaths = null;
@@ -499,8 +541,6 @@
     }
     return data;
   }
-
-  const loadCachedManifest = loadCachedSnapshot;
 
   /**
    * Write a snapshot into a given offline cache. For a staged update this is the
@@ -587,7 +627,7 @@
       verifyHashes: _config.verifyHashes,
       maxVerifyBytes: _config.maxVerifyBytes,
       caches: _config.caches,
-      manifestCachePath: _config.manifestCachePath,
+      snapshotCachePath: _config.snapshotCachePath,
 
       // Runtime routes and precache take priority if provided
       routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,
@@ -668,8 +708,7 @@
    * - versionEndpoint: lightweight check
    * - infoEndpoint: full manifest
    *
-   * Supports both object: { version, info }
-   * and array: [ { type: 'version', endpoint }, { type: 'info', endpoint } ]
+   * Config format: { version, info }
    *
    * @returns {{ versionEndpoint: string, infoEndpoint: string }}
    */
@@ -678,16 +717,9 @@
     let versionEndpoint = '/api/update/version.json';
     let infoEndpoint = '/api/update/info.json';
 
-    if (config.updateAPI) {
-      if (Array.isArray(config.updateAPI)) {
-        const vEntry = config.updateAPI.find(e => e.type === 'version');
-        const iEntry = config.updateAPI.find(e => e.type === 'info');
-        if (vEntry?.endpoint) versionEndpoint = vEntry.endpoint;
-        if (iEntry?.endpoint) infoEndpoint = iEntry.endpoint;
-      } else if (typeof config.updateAPI === 'object') {
-        if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
-        if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
-      }
+    if (config.updateAPI && typeof config.updateAPI === 'object' && !Array.isArray(config.updateAPI)) {
+      if (config.updateAPI.version) versionEndpoint = config.updateAPI.version;
+      if (config.updateAPI.info) infoEndpoint = config.updateAPI.info;
     }
 
     const resolveEndpoint = (ep) => {
@@ -1198,16 +1230,16 @@
   /**
    * Compare a full SHA-256 hex digest with a manifest hash.
    *
-   * The CLI emits the first 32 hex characters (older builds emitted 8), so the
-   * manifest hash is treated as a prefix. Anything shorter than 8 characters is rejected so a
-   * truncated or empty hash can never "match" by accident.
+   * The CLI emits the first 32 hex characters, so the manifest hash is treated
+   * as a prefix of the full digest. Anything shorter than 32 characters is rejected
+   * so a truncated or empty hash can never "match" by accident.
    *
    * @param {string} actualHex  full digest from sha256Hex()
-   * @param {string} expected   hash from the manifest (prefix of the digest)
+   * @param {string} expected   hash from the manifest (prefix of the digest, min 32 chars)
    * @returns {boolean}
    */
   function hashMatches(actualHex, expected) {
-    if (typeof expected !== 'string' || expected.length < 8) return false;
+    if (typeof expected !== 'string' || expected.length < 32) return false;
     return actualHex.startsWith(expected.toLowerCase());
   }
 
@@ -1278,7 +1310,7 @@
    * @param {{ activeSnapshot?: Object|null, forceRefetch?: boolean }} [opts]
    *        forceRefetch: ignore the active copies and download everything (SW engine change)
    * @returns {Promise<
-   *   { status: 'ready', partial: boolean, failed: string[], reused: number, copied: number, fetched: number } |
+   *   { status: 'ready', failed: string[], reused: number, copied: number, fetched: number } |
    *   { status: 'incomplete', failed: string[], retryCount: number }
    * >}
    */
@@ -1311,7 +1343,6 @@
     const next = await caches.open(staged.cache);
     const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
     const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
-    const activeDegraded = new Set(activeSnapshot?.degraded ?? []);
 
     const stats = { reused: 0, copied: 0, fetched: 0 };
     const failed = [];
@@ -1341,7 +1372,7 @@
           stats.reused++;
           return;
         }
-        if (!forceRefetch && !activeDegraded.has(path) && activeCache && hash && activeHashes.get(path) === hash) {
+        if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
           const hit = await activeCache.match(path);
           if (hit) {
             await putWithQuotaRecovery(path, hit);
@@ -1435,7 +1466,6 @@
       failedDetails: {},
       nextRetryAt: null,
       complete: true,
-      partial: false,
       evict,
       clearRuntime: forceRefetch,
     });
@@ -1445,7 +1475,7 @@
       `${stats.reused} reused`
     );
 
-    return { status: 'ready', partial: false, failed: [], ...stats };
+    return { status: 'ready', failed: [], ...stats };
   }
 
   // ── Offline cache helpers ────────────────────────────────────────────────────
@@ -1702,7 +1732,6 @@
     if (response.type === 'opaque') {
       const allowOpaque = Boolean(
         options?.cacheOpaque ??
-        options?.opaque ??
         getConfig().cacheOpaque ??
         false
       );
@@ -1735,7 +1764,6 @@
   function getShouldThrow(options) {
     return Boolean(
       options?.throwOnFailure ??
-      options?.throwOfflineError ??
       getConfig().throwOnFailure ??
       false
     );
@@ -1773,10 +1801,7 @@
    * Resolve max age in milliseconds from route options or global config.
    */
   function resolveMaxAgeMs(options) {
-    if (options?.maxAgeMs != null) return parseDurationMs(options.maxAgeMs);
-    if (options?.maxAgeSeconds != null) return options.maxAgeSeconds * 1000;
     if (options?.maxAge != null) return parseDurationMs(options.maxAge);
-    if (options?.ttl != null) return parseDurationMs(options.ttl);
     return null;
   }
 
@@ -2365,9 +2390,9 @@
    * have been removed or changed to network-only in the latest config.
    */
   async function evictByRoute() {
-    const { caches: cacheNames, manifestCachePath, snapshotCachePath, configPath } = getConfig();
+    const { caches: cacheNames, snapshotCachePath, configPath } = getConfig();
     const protectedPaths = new Set(
-      [manifestCachePath, snapshotCachePath, configPath || '/config.json'].filter(Boolean)
+      [snapshotCachePath, configPath || '/config.json'].filter(Boolean)
     );
 
     const [offlineCache, runtimeCache] = await Promise.all([
@@ -2489,7 +2514,7 @@
     try {
       let manifest = null;
       try {
-        manifest = await fetchServerManifest();
+        manifest = await fetchServerInfo();
       } catch (err) {
         console.warn(`[NLPWA] No update manifest at install (${err.message})`);
       }
@@ -2644,13 +2669,13 @@
       console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
     }
 
-    const active = await loadCachedManifest();
+    const active = await loadCachedSnapshot();
     const staged = await getStaged();
 
     // A complete update is already staged and waiting for the next navigation.
     if (staged?.complete && staged.swVersion === config.version
         && (!serverVersion || serverVersion === staged.version)) {
-      await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, partial: Boolean(staged.partial), staged: true });
+      await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, staged: true });
       return { updated: true, version: staged.version, staged: true };
     }
 
@@ -2662,8 +2687,7 @@
 
     const isFresh = !active;
     const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
-    const needsRetry = Boolean(active?.needsRetry || (active?.degraded && active.degraded.length > 0));
-    const isCurrent = (version) => !isFresh && !swVersionChanged && !needsRetry && version === active.version;
+    const isCurrent = (version) => !isFresh && !swVersionChanged && version === active.version;
 
     if (serverVersion && isCurrent(serverVersion)) {
       console.log(`[NLPWA] App already up to date (v${active.version})`);
@@ -2674,7 +2698,7 @@
     // ── Tier 2: full manifest ────────────────────────────────────────────────
     let serverManifest;
     try {
-      serverManifest = await fetchServerManifest();
+      serverManifest = await fetchServerInfo();
     } catch (err) {
       console.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
       return { updated: false };
@@ -2724,7 +2748,6 @@
     await broadcast({
       type: MESSAGE_TYPES.UPDATE_READY,
       version: serverManifest.version,
-      partial: result.partial,
       staged: true,
     });
     return { updated: true, version: serverManifest.version, staged: true };

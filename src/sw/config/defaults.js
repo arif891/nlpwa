@@ -79,6 +79,12 @@ export const DEFAULTS = {
   /**
    * Files to pre-cache at SW install time (the app shell).
    * These are fetched immediately when the SW installs.
+   *
+   * Keep this list small and focused strictly on the essential app shell (HTML, CSS, JS, icons).
+   * Note: During update staging, hash verification clones and buffers each downloaded file
+   * into memory to compute its SHA-256 digest before storing the original in CacheStorage.
+   * Large precached files (videos, 3D models, heavy datasets) will double peak memory consumption
+   * while hashing; serve them via runtime cache routes instead.
    */
   precache: [],
 

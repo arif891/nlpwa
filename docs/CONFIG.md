@@ -182,10 +182,15 @@ You can specify glob patterns in `precache` (such as `'/assets/icons/**'` or `'/
 - Include the entry point HTML (`/` or `/index.html`)
 - Include critical JS, CSS, and icons/fonts
 - Do **not** include API responses or user-specific data
-- Large media files are better left to runtime caching
+- Keep precache lean: large media files (videos, high-res images, 3D models) should be cached via runtime routes
 
-Individual precache failures are logged as warnings and do **not** abort the
-SW install. They will be retried on the next update check.
+> [!WARNING]
+> **Keep Precache Lean (Memory Footprint)**:
+> During update staging and integrity verification, `fetchVerified` clones and buffers each downloaded response into memory as an `ArrayBuffer` to compute its SHA-256 digest before storing the original response into `CacheStorage`. For typical app shell files (HTML, JS, CSS, SVG icons), memory overhead is negligible. However, putting large multi-megabyte files into `precache` will temporarily double peak memory usage while hashing.
+> 
+> Keep `precache` strictly limited to essential app shell assets, and route large media or binary assets through runtime caching routes (`cache-first` or `network-first` with `maxItemMB` eviction).
+
+On first install, precache failures reject `install` to prevent activating an empty or broken offline cache. During subsequent background updates, individual file staging failures are recorded, leaving the active version serving cleanly while retries enter exponential backoff.
 
 ---
 

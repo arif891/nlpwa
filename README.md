@@ -125,6 +125,9 @@ export default {
 };
 ```
 
+> [!TIP]
+> **Keep `precache` limited to the essential app shell**: During update staging, `fetchVerified` clones and buffers each downloaded resource in memory as an `ArrayBuffer` to verify its SHA-256 hash before storing it in `CacheStorage`. For core app shell assets (HTML, JS, CSS, icons), this is fast and lightweight. Avoid putting large multi-megabyte files (videos, heavy 3D assets or datasets) in `precache` as hashing will temporarily double peak memory usage; cache large assets via runtime routing strategies instead.
+
 ### 3. Initialize the Service Worker (`sw.js`)
 
 When you run `npx nlpwa init`, the generated `sw.js` is **already the standalone, bundled engine** ready to run out of the box — no custom build step required.

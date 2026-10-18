@@ -101,8 +101,9 @@ test('register: autoReload is suppressed when user is editing, offering prompt i
     let promptCalled = false;
     let promptData = null;
 
-    await register('/sw.js', {
+    const handle = await register('/sw.js', {
       autoReload: true,
+      pollIntervalMs: 0,
       onUpdatePrompt: (data) => {
         promptCalled = true;
         promptData = data;
@@ -129,6 +130,8 @@ test('register: autoReload is suppressed when user is editing, offering prompt i
     assert.ok(promptEvt, 'Dispatched nlpwa:update-prompt event');
     assert.equal(promptEvt.detail.version, '2.0.0');
     assert.equal(promptEvt.detail.reason, 'editing');
+
+    handle?.unsubscribe();
   } finally {
     if (origDocDesc) {
       Object.defineProperty(globalThis, 'document', origDocDesc);

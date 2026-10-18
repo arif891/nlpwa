@@ -185,6 +185,7 @@ Open separate cache: offline@1.4.2-<unique-id>
    - Match against manifest hash (config.verifyHashes: 'strict' | 'warn' | false).
    - Strict mode rejects mismatches (and HTTP 200 HTML error pages).
    - *Security Scope*: Same-origin hashes protect against network transport corruption, captive portal intercepts, and partial deployments—not against a compromised web origin.
+   - *Memory Considerations*: `fetchVerified` clones and buffers the response into an `ArrayBuffer` in memory to compute its digest before storing the original in `CacheStorage`. This temporarily doubles memory consumption per fetched file. For this reason, `precache` should be kept strictly limited to small app shell assets; large media (videos, heavy 3D assets/datasets) should be routed through runtime caching strategies instead.
 5. Error recovery & Atomicity:
    - If any file fails to fetch or verify, the update is never finalized or committed.
    - Verified files are kept in the staging cache so subsequent checks resume.

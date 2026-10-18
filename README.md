@@ -2,11 +2,14 @@
 
 A lightweight, zero-runtime-dependency Service Worker framework that makes Progressive Web Apps feel truly native. It handles install-time caching, per-route fetch strategies, and seamless OTA (over-the-air) delta updates — all from three drop-in files (or npm package exports).
 
+> [!NOTE]
+> **Prototype Stage:** NLPWA is currently in prototype development and under active evolution. APIs, configuration options, and storage protocols may be refined as we head toward a stable 1.0 release. Feedback, issues, and contributions are very welcome!
+
 ---
 
 ## Features
 
-- **Decoupled SW vs. App versioning** — SW engine version is managed manually; App version is auto-incremented by build tool
+- **Decoupled SW vs. App versioning** — SW engine version is managed manually; App version is deterministically derived from manifest content hashes (or semver)
 - **Dynamic runtime configuration** — write routes in `config.js`; SW reads from `offline` cache for instant updates without SW reinstall
 - **Only offline files tracked** — build tool tracks & hashes only `config.json` and precached app shell files
 - **Two-tier update check** — lightweight version check first (~20 bytes); full manifest only downloaded when an update exists

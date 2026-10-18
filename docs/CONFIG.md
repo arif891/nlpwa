@@ -92,8 +92,6 @@ updateAPI: {
 > - If an endpoint ends with `.json` (e.g. `/api/update/version.json`), it generates `dist/api/update/version.json`.
 > - If an endpoint has no extension (e.g. `/api/update/version`), it generates directory `index.json` files (`dist/api/update/version/index.json`).
 
-*(Also supports array format: `[{ type: 'version', endpoint: '...' }, { type: 'info', endpoint: '...' }]` or legacy `manifestEndpoint`).*
-
 ---
 
 ### Polling for Updates · Client SDK (`pollIntervalMs`)
@@ -145,13 +143,13 @@ verifyHashes: 'strict'
 
 ---
 
-### `manifestCachePath` · `string` · default: `'/_nlpwa/manifest.json'`
+### `snapshotCachePath` · `string` · default: `'/_nlpwa/snapshot.json'`
 
 The key used to store the manifest snapshot inside the `offline` cache.
 This is an internal URL — it is never served to the browser.
 
 ```js
-manifestCachePath: '/_nlpwa/manifest.json'
+snapshotCachePath: '/_nlpwa/snapshot.json'
 ```
 
 Only change this if the default path conflicts with a real file in your app.

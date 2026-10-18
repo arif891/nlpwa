@@ -4,7 +4,7 @@ import { setupEnv, req } from './helpers/fake-env.js';
 import { makeServer, hash8 } from './helpers/fake-server.js';
 import { stageUpdate } from '../src/sw/update/stage.js';
 import { commitStaged } from '../src/sw/update/commit.js';
-import { loadCachedSnapshot, fetchServerManifest } from '../src/sw/update/manifest.js';
+import { loadCachedSnapshot, fetchServerInfo } from '../src/sw/update/manifest.js';
 import { getActive, getStaged } from '../src/sw/cache/store.js';
 import { MAX_RETRY_ATTEMPTS } from '../src/shared/constants.js';
 
@@ -12,7 +12,7 @@ const CONFIG = JSON.stringify({ routes: [{ match: '**', strategy: 'network-first
 const v1 = { '/config.json': CONFIG, '/app.js': 'app v1', '/style.css': 'css v1' };
 
 async function stageAndCommit(server, opts) {
-  const result = await stageUpdate(await fetchServerManifest(), opts);
+  const result = await stageUpdate(await fetchServerInfo(), opts);
   assert.equal(result.status, 'ready');
   assert.equal(await commitStaged(), true);
   return result;
@@ -25,7 +25,7 @@ test('stage: builds a separate cache and leaves the active version untouched unt
   const activeV1 = (await getActive()).cache;
 
   server.set('1.0.1', { ...v1, '/app.js': 'app v2' });
-  const result = await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
+  const result = await stageUpdate(await fetchServerInfo(), { activeSnapshot: await loadCachedSnapshot() });
   assert.equal(result.status, 'ready');
 
   // running app still sees v1 everywhere
@@ -43,7 +43,7 @@ test('stage: builds a separate cache and leaves the active version untouched unt
 
   // A subsequent version commit evicts activeV1
   server.set('1.0.2', { ...v1, '/app.js': 'app v3' });
-  await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
+  await stageUpdate(await fetchServerInfo(), { activeSnapshot: await loadCachedSnapshot() });
   await commitStaged();
   assert.equal((await caches.keys()).includes(activeV1), false, 'oldest cache removed after subsequent commit');
 });
@@ -55,7 +55,7 @@ test('stage: unchanged files are copied locally, only changed files hit the netw
 
   server.calls.length = 0;
   server.set('1.0.1', { ...v1, '/app.js': 'app v2' });
-  const result = await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
+  const result = await stageUpdate(await fetchServerInfo(), { activeSnapshot: await loadCachedSnapshot() });
   assert.deepEqual(server.fileCalls(), ['/app.js']);
   assert.equal(result.copied, 2);
   assert.equal(result.fetched, 1);
@@ -92,7 +92,7 @@ test('verify strict: a body that does not match its manifest hash is rejected, n
   setupEnv(server.fetch);
   server.lie.set('/app.js', hash8('something else'));
 
-  const result = await stageUpdate(await fetchServerManifest());
+  const result = await stageUpdate(await fetchServerInfo());
   assert.equal(result.status, 'incomplete');
   assert.deepEqual(result.failed, ['/app.js']);
   assert.equal(await commitStaged(), false, 'incomplete staging cannot be committed');
@@ -106,7 +106,7 @@ test('verify strict: a host that answers 200 with HTML for a missing file is cau
     if (path === '/app.js') return new Response('<html>SPA fallback</html>'); // 200, wrong body
     return server.fetch(r);
   });
-  const result = await stageUpdate(await fetchServerManifest());
+  const result = await stageUpdate(await fetchServerInfo());
   assert.deepEqual(result.failed, ['/app.js']);
 });
 
@@ -115,7 +115,7 @@ test("verify 'warn' stores the mismatching file anyway; false skips verification
     const server = makeServer('1.0.0', v1);
     setupEnv(server.fetch, { verifyHashes: mode });
     server.lie.set('/app.js', hash8('something else'));
-    const result = await stageUpdate(await fetchServerManifest());
+    const result = await stageUpdate(await fetchServerInfo());
     assert.equal(result.status, 'ready', `mode ${mode}`);
   }
 });
@@ -125,13 +125,13 @@ test('resume: a retry reuses files that already verified instead of downloading 
   setupEnv(server.fetch);
   server.broken.add('/style.css');
 
-  const first = await stageUpdate(await fetchServerManifest());
+  const first = await stageUpdate(await fetchServerInfo());
   assert.equal(first.status, 'incomplete');
   assert.equal(first.retryCount, 1);
 
   server.broken.clear();
   server.calls.length = 0;
-  const second = await stageUpdate(await fetchServerManifest());
+  const second = await stageUpdate(await fetchServerInfo());
   assert.equal(second.status, 'ready');
   assert.deepEqual(server.fileCalls(), ['/style.css']);
   assert.equal(second.reused, 2);
@@ -148,7 +148,7 @@ test('strict atomic staging: after MAX_RETRY_ATTEMPTS the update remains incompl
 
   let result;
   for (let i = 0; i < MAX_RETRY_ATTEMPTS; i++) {
-    result = await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
+    result = await stageUpdate(await fetchServerInfo(), { activeSnapshot: await loadCachedSnapshot() });
     assert.equal(result.status, 'incomplete');
     assert.deepEqual(result.failed.sort(), ['/app.js', '/new.js']);
   }
@@ -163,7 +163,7 @@ test('strict atomic staging: after MAX_RETRY_ATTEMPTS the update remains incompl
 
   // When network recovers, next stage completes cleanly
   server.broken.clear();
-  const recovered = await stageUpdate(await fetchServerManifest(), { activeSnapshot: await loadCachedSnapshot() });
+  const recovered = await stageUpdate(await fetchServerInfo(), { activeSnapshot: await loadCachedSnapshot() });
   assert.equal(recovered.status, 'ready');
   assert.equal(recovered.partial, false);
   assert.equal(await commitStaged(), true);
@@ -177,12 +177,12 @@ test('a new version discards an older partial staging cache', async () => {
   const server = makeServer('1.0.0', v1);
   const caches = setupEnv(server.fetch);
   server.broken.add('/style.css');
-  await stageUpdate(await fetchServerManifest());
+  await stageUpdate(await fetchServerInfo());
   const stale = (await getStaged()).cache;
 
   server.broken.clear();
   server.set('1.0.1', v1);
-  await stageUpdate(await fetchServerManifest());
+  await stageUpdate(await fetchServerInfo());
   assert.equal((await caches.keys()).includes(stale), false);
 });
 
@@ -196,7 +196,7 @@ test('stage: skips in-memory hash verification for files exceeding maxVerifyByte
   // Intentionally mismatch hash in server manifest
   server.lie.set('/model.wasm', hash8('tampered-or-different'));
 
-  const result = await stageUpdate(await fetchServerManifest());
+  const result = await stageUpdate(await fetchServerInfo());
   assert.equal(result.status, 'ready');
   assert.equal(result.failed.length, 0);
   assert.equal(await commitStaged(), true);
@@ -233,7 +233,7 @@ test('stage: recovers from QuotaExceededError by triggering cleanRuntimeCache an
     return cache;
   };
 
-  const result = await stageUpdate(await fetchServerManifest());
+  const result = await stageUpdate(await fetchServerInfo());
   assert.equal(quotaThrown, true, 'QuotaExceededError was triggered');
   assert.equal(result.status, 'ready', 'Staging succeeded after cleanRuntimeCache reclaimed space');
   assert.equal(await runtime.match(req('/cached-video.mp4')), undefined, 'Runtime cache was evicted');
@@ -260,7 +260,7 @@ test('stage: persistent QuotaExceededError reports quotaExceeded: true', async (
     return cache;
   };
 
-  const result = await stageUpdate(await fetchServerManifest());
+  const result = await stageUpdate(await fetchServerInfo());
   assert.equal(result.status, 'incomplete');
   assert.equal(result.quotaExceeded, true);
   assert.ok(result.failed.includes('/app.js'));

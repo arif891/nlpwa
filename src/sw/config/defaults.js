@@ -1,4 +1,4 @@
-import { CACHE_NAMES, MANIFEST_CACHE_PATH, STRATEGIES } from '../../shared/constants.js';
+import { CACHE_NAMES, SNAPSHOT_CACHE_PATH, STRATEGIES } from '../../shared/constants.js';
 
 /**
  * Default configuration values.
@@ -97,7 +97,7 @@ export const DEFAULTS = {
   },
 
   /** Path inside the offline cache where the manifest snapshot is stored */
-  manifestCachePath: MANIFEST_CACHE_PATH,
+  snapshotCachePath: SNAPSHOT_CACHE_PATH,
 
   /**
    * Files to pre-cache at SW install time (the app shell).

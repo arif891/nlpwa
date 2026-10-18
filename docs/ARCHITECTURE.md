@@ -43,7 +43,7 @@ src/
 │   │   ├── router.js               resolveStrategy(request) — glob route matching
 │   │   └── index.js                handleFetch(event) — SW fetch event handler
 │   └── update/
-│       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerManifest (Tier 2), save snapshot
+│       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerInfo (Tier 2), save snapshot
 │       ├── diff.js                 computeDiff(newFiles, oldFiles) → { added, modified, removed }
 │       ├── stage.js                stageUpdate() — builds + hash-verifies the new version in a separate cache
 │       ├── commit.js               commitStaged() — one-write switch to the staged version
@@ -143,7 +143,7 @@ checkForUpdate()
   │         └─ equal & no SW engine change: STOP (no heavy downloads)
   │         └─ unequal: proceed to Tier 2 (supports 1.0.0-<hash> and rollbacks)
   │
-  ├─ Tier 2: fetchServerManifest()
+  ├─ Tier 2: fetchServerInfo()
   │    └─ GET /api/update/info.json  { cache: 'no-store' }
   │
   ├─ computeDiff(server.files, cached.files)

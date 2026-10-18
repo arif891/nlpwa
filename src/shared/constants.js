@@ -6,7 +6,6 @@ export const CACHE_NAMES = {
 
 /** Path inside the offline cache where the snapshot is stored */
 export const SNAPSHOT_CACHE_PATH = '/_nlpwa/snapshot.json';
-export const MANIFEST_CACHE_PATH = SNAPSHOT_CACHE_PATH;
 
 /** postMessage type identifiers (SW ↔ client) */
 export const MESSAGE_TYPES = {

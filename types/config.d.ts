@@ -64,8 +64,8 @@ export interface NLPWAConfig {
     offline?: string;
     runtime?: string;
   };
-  /** Path inside offline cache where manifest snapshot is stored */
-  manifestCachePath?: string;
+  /** Path inside offline cache where snapshot is stored */
+  snapshotCachePath?: string;
   /** Files to pre-cache at SW install time (the app shell) */
   precache?: string[];
   /** Per-URL-pattern fetch strategies */

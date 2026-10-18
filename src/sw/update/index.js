@@ -1,6 +1,6 @@
 import { getConfig } from '../config/index.js';
 import { getStaged, tryAcquire, release } from '../cache/store.js';
-import { fetchServerVersion, fetchServerManifest, loadCachedManifest } from './manifest.js';
+import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
@@ -56,7 +56,7 @@ async function runUpdateCheck({ force = false } = {}) {
     console.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
   }
 
-  const active = await loadCachedManifest();
+  const active = await loadCachedSnapshot();
   const staged = await getStaged();
 
   // A complete update is already staged and waiting for the next navigation.
@@ -86,7 +86,7 @@ async function runUpdateCheck({ force = false } = {}) {
   // ── Tier 2: full manifest ────────────────────────────────────────────────
   let serverManifest;
   try {
-    serverManifest = await fetchServerManifest();
+    serverManifest = await fetchServerInfo();
   } catch (err) {
     console.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
     return { updated: false };

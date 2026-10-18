@@ -1,6 +1,6 @@
 import { getConfig, updateActiveConfig, loadConfigFromCache } from '../config/index.js';
 import { tryAcquire, release, openActive } from './store.js';
-import { fetchServerManifest, loadCachedSnapshot } from '../update/manifest.js';
+import { fetchServerInfo, loadCachedSnapshot } from '../update/manifest.js';
 import { stageUpdate } from '../update/stage.js';
 import { commitStaged } from '../update/commit.js';
 
@@ -25,7 +25,7 @@ export async function precacheFiles() {
   try {
     let manifest = null;
     try {
-      manifest = await fetchServerManifest();
+      manifest = await fetchServerInfo();
     } catch (err) {
       console.warn(`[NLPWA] No update manifest at install (${err.message})`);
     }

@@ -70,7 +70,7 @@ export function updateActiveConfig(runtimeConfig = {}) {
     verifyHashes: _config.verifyHashes,
     maxVerifyBytes: _config.maxVerifyBytes,
     caches: _config.caches,
-    manifestCachePath: _config.manifestCachePath,
+    snapshotCachePath: _config.snapshotCachePath,
 
     // Runtime routes and precache take priority if provided
     routes: Array.isArray(runtimeConfig.routes) ? runtimeConfig.routes : _config.routes,

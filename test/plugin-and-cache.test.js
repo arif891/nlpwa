@@ -15,7 +15,7 @@ import { resolveStrategy } from '../src/sw/fetch/router.js';
 import { stageUpdate } from '../src/sw/update/stage.js';
 import { commitStaged } from '../src/sw/update/commit.js';
 import { getActive, openActive } from '../src/sw/cache/store.js';
-import { fetchServerManifest } from '../src/sw/update/manifest.js';
+import { fetchServerInfo, getSnapshotPath } from '../src/sw/update/manifest.js';
 
 test('isCacheableUrl: cross-origin route matching respects route.origin', () => {
   globalThis.self = {
@@ -248,12 +248,12 @@ test('resolveStrategy: bypasses Vite dev server and HMR URLs only when dev: true
   assert.equal(prodViteClient.strategy, 'cache-first');
 });
 
-test('updateActiveConfig: enforces same-origin trust boundary by locking verifyHashes, caches, and manifestCachePath', () => {
+test('updateActiveConfig: enforces same-origin trust boundary by locking verifyHashes, caches, and snapshotCachePath', () => {
   initConfig({
     version: '1.0.0',
     verifyHashes: 'strict',
     caches: { offline: 'trusted-offline', runtime: 'trusted-runtime' },
-    manifestCachePath: '/_nlpwa/snapshot.json',
+    snapshotCachePath: '/_nlpwa/snapshot.json',
   });
 
   // Attempt to tamper with core security/engine settings via runtime config.json
@@ -261,7 +261,7 @@ test('updateActiveConfig: enforces same-origin trust boundary by locking verifyH
     version: '1.0.1',
     verifyHashes: false,
     caches: { offline: 'hijacked-offline', runtime: 'hijacked-runtime' },
-    manifestCachePath: '/malicious.json',
+    snapshotCachePath: '/malicious.json',
     routes: [{ match: '/api/**', strategy: 'network-first' }],
   });
 
@@ -269,11 +269,26 @@ test('updateActiveConfig: enforces same-origin trust boundary by locking verifyH
   assert.equal(updated.verifyHashes, 'strict', 'verifyHashes cannot be downgraded by config.json');
   assert.equal(updated.caches.offline, 'trusted-offline', 'caches cannot be hijacked by config.json');
   assert.equal(updated.caches.runtime, 'trusted-runtime', 'caches cannot be hijacked by config.json');
-  assert.equal(updated.manifestCachePath, '/_nlpwa/snapshot.json', 'manifestCachePath cannot be modified');
+  assert.equal(updated.snapshotCachePath, '/_nlpwa/snapshot.json', 'snapshotCachePath cannot be modified');
+  assert.equal(getSnapshotPath(), '/_nlpwa/snapshot.json', 'getSnapshotPath() cannot be redirected by config.json');
 
   // App-level routing and appVersion are updated safely
   assert.equal(updated.appVersion, '1.0.1');
   assert.equal(updated.routes.length, 1);
+});
+
+test('updateActiveConfig: runtime config.json with snapshotCachePath: /evil.json is ignored', () => {
+  initConfig({
+    version: '1.0.0',
+    snapshotCachePath: '/_nlpwa/snapshot.json',
+  });
+
+  updateActiveConfig({
+    version: '1.0.2',
+    snapshotCachePath: '/evil.json',
+  });
+
+  assert.equal(getSnapshotPath(), '/_nlpwa/snapshot.json', 'snapshotCachePath was locked and /evil.json was ignored');
 });
 
 test('commitStaged: retainPreviousVersionCache keeps prior active cache and serves old chunks', async () => {
@@ -282,14 +297,14 @@ test('commitStaged: retainPreviousVersionCache keeps prior active cache and serv
   const server = makeServer('1.0.0', v1);
   const caches = setupEnv(server.fetch, { retainPreviousVersionCache: true, routes });
 
-  const r1 = await stageUpdate(await fetchServerManifest());
+  const r1 = await stageUpdate(await fetchServerInfo());
   assert.equal(r1.status, 'ready');
   assert.equal(await commitStaged(), true);
   const activeV1 = (await getActive()).cache;
 
   // New version replaces chunk-v1 with chunk-v2
   server.set('1.0.1', { '/config.json': JSON.stringify({ version: '1.0.1', retainPreviousVersionCache: true, routes }), '/app.js': 'v2', '/chunk-v2.js': 'chunk v2' });
-  const r2 = await stageUpdate(await fetchServerManifest());
+  const r2 = await stageUpdate(await fetchServerInfo());
   assert.equal(r2.status, 'ready');
 
   assert.equal(await commitStaged(), true);

@@ -464,16 +464,18 @@ var NLPWAClient = (function (exports) {
     });
 
     // ── No-update handler ──────────────────────────────────────────────────────
-    let unsubscribeNoUpdate = null;
-    if (typeof options.onNoUpdate === 'function') {
-      unsubscribeNoUpdate = onNoUpdate(options.onNoUpdate);
-    }
+    const unsubscribeNoUpdate = onNoUpdate((data) => {
+      if (typeof options.onNoUpdate === 'function') {
+        options.onNoUpdate(data);
+      }
+    });
 
     // ── Update-failed handler ──────────────────────────────────────────────────
-    let unsubscribeUpdateFailed = null;
-    if (typeof options.onUpdateFailed === 'function') {
-      unsubscribeUpdateFailed = onUpdateFailed(options.onUpdateFailed);
-    }
+    const unsubscribeUpdateFailed = onUpdateFailed((data) => {
+      if (typeof options.onUpdateFailed === 'function') {
+        options.onUpdateFailed(data);
+      }
+    });
 
     // ── Focus-triggered update check ──────────────────────────────────────────
     const focusCheck = options.checkOnFocus !== false;

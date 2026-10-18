@@ -43,6 +43,7 @@ const server = createServer(async (req, res) => {
     try {
       const versionFile = join(__dirname, 'api/update/version.json');
       const infoFile = join(__dirname, 'api/update/info.json');
+      const configFile = join(__dirname, 'config.json');
 
       const current = JSON.parse(readFileSync(versionFile, 'utf8'));
       const parts = current.version.split('.').map(Number);
@@ -50,18 +51,60 @@ const server = createServer(async (req, res) => {
 
       writeFileSync(versionFile, JSON.stringify({ version: newVersion }, null, 2), 'utf8');
 
+      // Update config.json and compute real SHA-256 digest
+      const configData = JSON.parse(readFileSync(configFile, 'utf8'));
+      configData.version = newVersion;
+      const configStr = JSON.stringify(configData, null, 2);
+      writeFileSync(configFile, configStr, 'utf8');
+
+      const { createHash } = await import('node:crypto');
+      const newHash = createHash('sha256').update(configStr).digest('hex').slice(0, 32);
+
       if (existsSync(infoFile)) {
         const info = JSON.parse(readFileSync(infoFile, 'utf8'));
         info.version = newVersion;
-        // Slightly tweak a hash to simulate an actual file delta
         if (info.files && info.files.length > 0) {
-          info.files[0].hash = 'beef' + info.files[0].hash.slice(4);
+          const cfgEntry = info.files.find(f => f.path === '/config.json') || info.files[0];
+          cfgEntry.hash = newHash;
         }
         writeFileSync(infoFile, JSON.stringify(info, null, 2), 'utf8');
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ success: true, newVersion }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: err.message }));
+    }
+  }
+
+  // Reset version back to 1.0.0 for clean testing
+  if (pathname === '/api/reset-version' && (req.method === 'POST' || req.method === 'GET')) {
+    try {
+      const versionFile = join(__dirname, 'api/update/version.json');
+      const infoFile = join(__dirname, 'api/update/info.json');
+      const configFile = join(__dirname, 'config.json');
+
+      const configData = JSON.parse(readFileSync(configFile, 'utf8'));
+      configData.version = '1.0.0';
+      const configStr = JSON.stringify(configData, null, 2);
+      writeFileSync(configFile, configStr, 'utf8');
+
+      const { createHash } = await import('node:crypto');
+      const baseHash = createHash('sha256').update(configStr).digest('hex').slice(0, 32);
+
+      writeFileSync(versionFile, JSON.stringify({ version: '1.0.0' }, null, 2), 'utf8');
+      if (existsSync(infoFile)) {
+        const info = JSON.parse(readFileSync(infoFile, 'utf8'));
+        info.version = '1.0.0';
+        if (info.files && info.files.length > 0) {
+          const cfgEntry = info.files.find(f => f.path === '/config.json') || info.files[0];
+          cfgEntry.hash = baseHash;
+        }
+        writeFileSync(infoFile, JSON.stringify(info, null, 2), 'utf8');
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ success: true, version: '1.0.0' }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ error: err.message }));

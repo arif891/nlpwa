@@ -10,7 +10,9 @@
     "url": "https://github.com/arif891/nlpwa.git"
   },
   "homepage": "https://github.com/arif891/nlpwa#readme",
-  "bugs": { "url": "https://github.com/arif891/nlpwa/issues" },
+  "bugs": {
+    "url": "https://github.com/arif891/nlpwa/issues"
+  },
   "files": [
     "out",
     "bin",
@@ -53,21 +55,31 @@
     "nlpwa": "./bin/nlpwa.js"
   },
   "scripts": {
-    "build":          "rollup -c && npm run sync:example",
-    "build:prod":     "rollup -c --environment PROD && npm run sync:example",
-    "dev":            "rollup -c --watch",
-    "test":           "node --test test/*.test.js",
-    "sync:example":   "node -e \"const { copyFileSync } = require('fs'); copyFileSync('out/sw.js', 'example/sw.js'); copyFileSync('out/client.js', 'example/client.js'); copyFileSync('out/config.json', 'example/config.json'); console.log('[NLPWA] example/ synced with out/');\"",
-    "check:drift":    "git diff --exit-code example/",
+    "build": "rollup -c && npm run sync:example",
+    "build:prod": "rollup -c --environment PROD && npm run sync:example",
+    "dev": "rollup -c --watch",
+    "test": "node --test test/*.test.js",
+    "sync:example": "node -e \"const { copyFileSync } = require('fs'); copyFileSync('out/sw.js', 'example/sw.js'); copyFileSync('out/client.js', 'example/client.js'); console.log('[NLPWA] example/ synced with out/');\"",
+    "check:drift": "git diff --exit-code example/",
     "prepublishOnly": "npm run build:prod && npm test",
-    "nlpwa":          "node ./bin/nlpwa.js",
-    "nlpwa:update":   "node ./bin/nlpwa.js update",
-    "nlpwa:help":     "node ./bin/nlpwa.js --help",
-    "example":        "node example/server.js"
+    "nlpwa": "node ./bin/nlpwa.js",
+    "nlpwa:update": "node ./bin/nlpwa.js update",
+    "nlpwa:help": "node ./bin/nlpwa.js --help",
+    "example": "node example/server.js",
+    "test:e2e": "playwright test",
+    "test:all": "npm test && npm run test:e2e"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@rollup/plugin-terser": "^0.4.0",
     "rollup": "^4.0.0"
   },
-  "keywords": ["pwa", "service-worker", "offline", "cache", "ota-update", "cli"]
+  "keywords": [
+    "pwa",
+    "service-worker",
+    "offline",
+    "cache",
+    "ota-update",
+    "cli"
+  ]
 }

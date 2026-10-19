@@ -99,5 +99,53 @@ export default async () => {
     ],
     plugins,
   },
+
+  // ── Sync Plugin: ES module (import from 'nlpwa/sync') ─────────────────────
+  {
+    input: 'src/plugins/sync/index.js',
+    output: {
+      file:    'out/plugins/sync.js',
+      format:  'es',
+      banner:  '/* NLPWA Background Sync Plugin (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+
+  // ── Sync Client: ES module (import from 'nlpwa/sync/client') ──────────────
+  {
+    input: 'src/plugins/sync/client.js',
+    output: {
+      file:    'out/plugins/sync.client.esm.js',
+      format:  'es',
+      banner:  '/* NLPWA Sync Client (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+
+  // ── Sync SW: Standalone drop-in IIFE ──────────────────────────────────────
+  {
+    input: 'src/plugins/sync/sw.js',
+    output: {
+      file:    'out/plugins/sync.sw.js',
+      format:  'iife',
+      name:    'NLPWASyncSW',
+      banner:  '/* NLPWA Background Sync SW (standalone) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+
+  // ── Sync Client: Standalone drop-in IIFE (<script src="/plugins/sync.client.js">)
+  {
+    input: 'src/plugins/sync/client.js',
+    output: {
+      file:    'out/plugins/sync.client.js',
+      format:  'iife',
+      name:    'NLPWASyncClient',
+      banner:  '/* NLPWA Sync Client (standalone) — https://github.com/arif891/nlpwa */',
+      exports: 'named',
+    },
+    plugins,
+  },
 ];
 };
+

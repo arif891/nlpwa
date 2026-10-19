@@ -56,6 +56,16 @@
       "import": "./out/webpack-plugin.js",
       "default": "./out/webpack-plugin.js"
     },
+    "./sync": {
+      "types": "./types/sync.d.ts",
+      "import": "./out/plugins/sync.js",
+      "default": "./out/plugins/sync.js"
+    },
+    "./sync/client": {
+      "types": "./types/sync-client.d.ts",
+      "import": "./out/plugins/sync.client.esm.js",
+      "default": "./out/plugins/sync.client.js"
+    },
     "./testing": {
       "default": "./test/helpers/fake-env.js"
     },

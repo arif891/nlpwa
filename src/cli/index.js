@@ -1,5 +1,6 @@
 import { c, printBanner, printHelp } from './ui/terminal.js';
 import { cmdInit } from './commands/init.js';
+import { cmdAdd } from './commands/add.js';
 import { cmdUpdate } from './commands/update.js';
 import { cmdStatus } from './commands/status.js';
 import { cmdGenerateOffline } from './commands/generate-offline.js';
@@ -42,6 +43,9 @@ export async function runCLI(argv = process.argv.slice(2)) {
   switch (command) {
     case 'init':
       await cmdInit(args);
+      break;
+    case 'add':
+      await cmdAdd(args);
       break;
     case 'generate-offline':
       await cmdGenerateOffline(args);

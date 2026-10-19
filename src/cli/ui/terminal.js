@@ -31,6 +31,8 @@ export function printHelp() {
 ${c.bold}COMMANDS${c.reset}
   ${c.green}init${c.reset}              Scaffolds or copies sw.js, client.js, and config.json
                    into your target project directory for immediate drop-in use.
+  ${c.green}add <plugin>${c.reset}       Installs a pre-built plugin (e.g. "sync") into your project
+                   for no-build drop-in usage (e.g. plugins/sync.sw.js).
   ${c.green}generate-offline${c.reset}  Generates a zero-dependency, self-contained offline.html
                    fallback page with auto-reconnect and retry button.
   ${c.green}update${c.reset}            Reads config.js, derives content-hash app version,

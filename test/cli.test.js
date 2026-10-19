@@ -185,4 +185,32 @@ test('cli help: init documents copying config.json (not config.js)', () => {
   assert.doesNotMatch(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and config\.js\b/);
 });
 
+test('cli add: lists available plugins when no plugin name is provided', () => {
+  const res = spawnSync(process.execPath, [CLI, 'add'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Available plugins:/);
+  assert.match(res.stdout, /sync — Background Sync/);
+});
+
+test('cli add: warns on unknown plugin', () => {
+  const res = spawnSync(process.execPath, [CLI, 'add', 'nonexistent'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stderr, /Unknown plugin "nonexistent"/);
+});
+
+test('cli add: installs sync plugin into target directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-add-'));
+  const res = spawnSync(process.execPath, [CLI, 'add', 'sync', '--dir', root], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Plugin "sync" added successfully/);
+
+  const swFile = readFileSync(join(root, 'plugins/sync.sw.js'), 'utf8');
+  const clientFile = readFileSync(join(root, 'plugins/sync.client.js'), 'utf8');
+  assert.ok(swFile.length > 0);
+  assert.ok(clientFile.length > 0);
+  assert.match(swFile, /NLPWASyncSW/);
+  assert.match(clientFile, /NLPWASyncClient/);
+});
+
+
 

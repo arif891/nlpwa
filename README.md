@@ -48,11 +48,10 @@ Standard Service Worker setups often fail this test: calling `self.skipWaiting()
 
 ### When Workbox is the Better Choice
 
-While NLPWA is tailored for end-to-end PWA application lifecycles with atomic OTA delta updates, Workbox remains the industry standard when you need:
-- **Custom Service Worker Architecture**: You write bespoke worker routing logic, stream transformations, or assemble custom pipelines using low-level modules (`workbox-routing`, `workbox-strategies`, `workbox-range-requests`).
-- **Complex Offline Sync & Mutations**: You need specialized offline mutation queuing, background sync replays, and IndexedDB-backed transaction stores (`workbox-background-sync`).
+While NLPWA provides a turnkey application framework with atomic OTA updates, full plugin lifecycle hooks (`requestWillFetch`, `cacheWillUpdate`, etc.), and background sync, Workbox remains the industry standard when you need:
+- **Custom Service Worker Architecture**: You write bespoke worker routing pipelines, stream transformations, or assemble custom worker topologies with low-level building blocks.
 - **Broad Framework Ecosystem**: Deep, off-the-shelf integrations with Next.js PWA plugins (`next-pwa` / `@ducanh2912/next-pwa`), Nuxt PWA, or legacy Webpack build chains (`workbox-webpack-plugin`).
-- **Granular Plugin Lifecycle Hooks**: You require fine-grained request/response lifecycle plugins (`cacheWillUpdate`, `requestWillFetch`, `cachedResponseWillBeUsed`) to rewrite headers, transform bodies, or handle custom redirects.
+- **Google Analytics Offline Queueing**: Specialized, pre-bundled tracking queueing for Google Analytics (`workbox-google-analytics`).
 - **Per-Route Runtime Expiration Rules**: Configuring max-age and max-entries declaratively inside individual route declarations without coordinating explicit cache cleanup calls (`workbox-expiration`).
 
 ---
@@ -534,6 +533,92 @@ All size options conveniently accept **MB** (`maxTotalMB`), **KB** (`maxTotalKB`
 
 All intercepted responses carry an `X-Cache-Status` header (`offline-cache`, `runtime-cache`, `network`, `stale`, `offline-fallback`, or `bypass`).
 See [docs/STRATEGIES.md](docs/STRATEGIES.md) for detailed behaviour.
+
+---
+
+## Plugins & Extensions
+
+NLPWA includes a modular plugin system that works seamlessly for both bundlers (Vite / Rollup) and no-build drop-in static sites.
+
+### Official Plugin: Background Sync & Offline Mutation (`nlpwa/sync`)
+
+Queue failed offline `POST`, `PUT`, `PATCH`, and `DELETE` requests in IndexedDB and replay them in FIFO order when connectivity returns. Includes automatic cross-browser fallbacks (`online` and `visibilitychange` events) for Safari and Firefox where native `SyncManager` is unavailable.
+
+#### 1. Installation
+
+**For No-Build / Static Sites (CLI):**
+```bash
+npx nlpwa add sync --dir ./public
+```
+*This copies pre-bundled standalone scripts into `public/plugins/sync.sw.js` and `public/plugins/sync.client.js`.*
+
+**For Bundler / NPM Projects:**
+```bash
+npm install nlpwa
+```
+
+#### 2. Service Worker Setup
+
+Attach `BackgroundSyncPlugin` to your mutation routes:
+
+**With Bundlers:**
+```javascript
+import { BackgroundSyncPlugin } from 'nlpwa/sync';
+
+export default {
+  routes: [
+    {
+      match: '/api/submit/**',
+      strategy: 'network-only',
+      plugins: [
+        new BackgroundSyncPlugin({
+          queueName: 'form-submissions',
+          maxRetentionMs: 24 * 60 * 60 * 1000, // 24 hours
+          maxRetries: 5,
+        }),
+      ],
+    },
+  ],
+};
+```
+
+**With No-Build Drop-in (`sw.js`):**
+```javascript
+importScripts('/plugins/sync.sw.js');
+
+const syncPlugin = new NLPWASyncSW.BackgroundSyncPlugin({
+  queueName: 'form-submissions',
+  maxRetries: 5,
+});
+```
+
+#### 3. Client Web Application Integration
+
+Interact with the queue directly in the browser:
+
+```javascript
+// With ES Modules / Bundlers:
+import { syncClient } from 'nlpwa/sync/client';
+
+// Or in static HTML:
+// <script src="/plugins/sync.client.js"></script>
+// const { syncClient } = window.NLPWASyncClient;
+
+// 1. Cross-browser auto-sync on reconnect (Safari / Firefox / iOS)
+syncClient.autoSyncOnOnline('form-submissions');
+
+// 2. Query pending items (e.g. for offline indicator badges)
+const { count, items } = await syncClient.getPending('form-submissions');
+console.log(`Pending offline submissions: ${count}`);
+
+// 3. Listen to sync results
+syncClient.on('success', ({ url, status }) => {
+  console.log(`Synced submission to ${url} (HTTP ${status})`);
+});
+
+// 4. Manually trigger replay (e.g. "Retry Now" button)
+await syncClient.replay('form-submissions');
+```
 
 ---
 

@@ -103,6 +103,7 @@ src/
 │   ├── index.js                    CLI argument parser & command router (runCLI)
 │   ├── commands/
 │   │   ├── init.js                 cmdInit() — project scaffolding & drop-in file installer
+│   │   ├── add.js                  cmdAdd() — installs optional official plugins into project
 │   │   ├── update.js               cmdUpdate() — manifest generation & update endpoint emitter
 │   │   ├── status.js               cmdStatus() — inspect deployed config and tracked files
 │   │   └── generate-offline.js     cmdGenerateOffline() — standalone offline.html page generator
@@ -111,6 +112,15 @@ src/
 │   │   └── config.js               findConfigFile(), loadConfig(), syncSourceConfigVersion()
 │   └── ui/
 │       └── terminal.js             ANSI color formatting, printBanner(), printHelp()
+│
+├── plugins/                        ← Official modular plugins
+│   └── sync/                       Background Sync & Offline Mutation (IndexedDB + cross-browser fallback)
+│       ├── idb.js                  Zero-dependency IndexedDB wrapper & request serializer
+│       ├── queue.js                SyncQueue — FIFO replay queue with retention pruning & retries
+│       ├── sw.js                   BackgroundSyncPlugin — SW fetchDidFail & sync event listeners
+│       ├── client.js               SyncClient — window API & autoSyncOnOnline fallback
+│       ├── constants.js            Typed message constants
+│       └── index.js                Barrel re-export
 │
 ├── bin/
 │   ├── nlpwa.js                    Thin executable shim delegating to src/cli/index.js

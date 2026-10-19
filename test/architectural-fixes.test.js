@@ -263,7 +263,7 @@ test('url: resolveUpdateEndpoints surfaces timeoutMs from config and updateAPI',
 });
 
 test('strategies: cacheOnly throws Error instead of TypeError when throwOnFailure is true', async () => {
-  const { cacheOnly } = await import('../src/sw/fetch/strategies.js');
+  const { cacheOnly } = await import('../src/sw/fetch/strategies/index.js');
   setupEnv(() => new Response('ok'));
 
   await assert.rejects(

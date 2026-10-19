@@ -25,7 +25,7 @@ NLPWA breaks this dilemma by completely decoupling the Service Worker engine fro
 - **Zero SW Lifecycle Churn:** The Service Worker engine installs once and stays running. Updates to your app never trigger worker reinstall, waiting worker queues, or lifecycle thrashing.
 - **Atomic OTA Delta Staging:** App releases arrive Over-The-Air (OTA) via lightweight JSON manifests (`version.json` / `info.json`). Unchanged files are copied locally from the active cache (zero network bytes). Changed files are downloaded into an isolated staging cache (`offline@v2`) and verified against SHA-256 hashes.
 - **Client Version Pinning:** Every open tab is isolated to its active version (`offline@v1`). If a newer version is staged or committed by another tab, existing tabs remain strictly bound to their pinned version for their entire lifespan.
-- **One-Pointer Atomic Swap:** When the user navigates or approves an update prompt, a single metadata pointer write (`nlpwa-meta`) switches the active version atomically. Active sessions are never broken, and partial updates are mathematically impossible.
+- **One-Pointer Atomic Swap:** When the user navigates or approves an update prompt, a single metadata pointer write (`nlpwa-meta`) switches the active version atomically. Active sessions are never broken, and tabs are never served a mix of old and new files because version switching is an atomic pointer flip.
 
 ---
 
@@ -38,7 +38,7 @@ NLPWA breaks this dilemma by completely decoupling the Service Worker engine fro
 | **SW vs. App Versioning** | **Tightly Coupled.** Precache manifests are typically injected into `sw.js` (`self.__WB_MANIFEST`). Changing any application file changes `sw.js` bytes, triggering the browser's full Service Worker lifecycle (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active across app updates. App updates arrive over the air via lightweight JSON manifests (`version.json` / `info.json`), staging updates in the background without worker lifecycle churn. |
 | **Staging & Cache Turnover** | **Worker Lifecycle Driven.** New assets are cached during the waiting worker's `install` event; switching versions requires coordinating `skipWaiting()` and client window reloads. | **Isolated Atomic Swap.** Updates stage into an isolated cache (`offline@v2`) in the background while the active app runs undisturbed. Versions swap cleanly on navigation (or on prompt) via an atomic pointer flip (`nlpwa-meta`). |
 | **Multi-Tab Isolation** | **Shared Worker State.** When a waiting worker activates, all open tabs immediately contend with new worker logic and updated caches, risking runtime version skew. | **Per-Client Version Pinning.** Each open browser tab is pinned by `clientId` to its active version cache. Pinned caches are immune to garbage collection until the tab closes. |
-| **Download Integrity & Soft-404s** | **Optional SRI.** Supports Subresource Integrity (`integrity` option), but requires developers to configure and generate integrity hashes during build. | **Built-in Manifest Verification.** Automatically hashes and verifies every staged asset against SHA-256 digests. Built-in protection against captive portals or SPA hosts serving 200 HTML for missing assets. |
+| **Operational Verification & Soft-404s** | **Optional SRI.** Supports Subresource Integrity (`integrity` option) for cryptographic origin protection, but requires developers to configure and generate integrity hashes during build. | **Built-in Manifest Verification.** Automatically verifies staged assets against same-origin SHA-256 digests in `info.json`. Built-in protection against network corruption, file truncation, captive portals, and SPA soft-404 HTML errors (operational verification; not a defense against a compromised origin server). |
 | **Update Delivery & Frequency** | **Browser Script Checks.** Driven primarily by browser byte-checks on `sw.js` (on navigation or 24-hour intervals) or manual `registration.update()` calls. | **Two-Tier App Protocol.** In addition to browser SW checks, client apps can check for app updates on tab focus, interval, or custom UI via a lightweight Tier 1 JSON check before fetching full manifests. |
 | **Integration & Batteries** | **Modular Toolkit.** Gives you low-level building blocks, but requires writing worker glue code, build integrations, postMessage channels, and custom reload UI prompts. | **Turnkey App Framework.** Pre-bundled SW engine, CLI (`nlpwa init` / `nlpwa update` / `nlpwa add`), Rollup/Vite plugins, cross-tab update coordination, form-edit protection prompts, and quota management out of the box. |
 
@@ -49,6 +49,18 @@ While NLPWA provides a turnkey application framework with atomic OTA updates, fu
 - **Broad Framework Ecosystem**: Deep, off-the-shelf integrations with Next.js PWA plugins (`next-pwa` / `@ducanh2912/next-pwa`), Nuxt PWA, or legacy Webpack build chains (`workbox-webpack-plugin`).
 - **Google Analytics Offline Queueing**: Specialized, pre-bundled tracking queueing for Google Analytics (`workbox-google-analytics`).
 - **Per-Route Runtime Expiration Rules**: Configuring max-age and max-entries declaratively inside individual route declarations without coordinating explicit cache cleanup calls (`workbox-expiration`).
+
+### What Manifest Hashes Protect (and What They Don't)
+
+During update staging, each downloaded file is verified against the SHA-256 digest in `info.json` before being accepted into the staging cache. Because the hashes and the `skipVerify` flags both arrive from the same-origin `info.json` endpoint, it is important to be clear about what this covers:
+
+- **What it protects against (Operational Integrity):**
+  - **Network corruption and truncation:** Partial downloads over unstable mobile connections or interrupted HTTP streams are detected and retried.
+  - **Soft-404 and SPA fallbacks:** Single-page app hosts or CDNs configured to return `index.html` with a `200 OK` status when a hashed bundle is missing are caught before corrupting the cache.
+  - **Captive portals:** Hotel, airport, or public Wi-Fi networks intercepting asset requests with HTML login screens are blocked from overwriting real application code.
+  - **In-flight / partial deployments:** If a multi-CDN propagation is delayed and some assets return older versions or 404s, staging will not commit a partial update.
+- **What it does NOT protect against (Server Compromise):**
+  - **A compromised server or CDN origin:** If an attacker gains control of your origin server, they can overwrite both the assets and the `info.json` manifest (or mark assets `skipVerify: true`). Same-origin manifest hashing is an operational reliability mechanism, not a cryptographic security barrier against an adversary controlling the server. For tamper-proofing against a compromised host, use out-of-band Subresource Integrity (SRI) or signed packages.
 
 ---
 

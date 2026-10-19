@@ -524,7 +524,7 @@ test('strategies: safePutInRuntime skips opaque responses by default to prevent 
   Object.defineProperty(fakeOpaque, 'type', { value: 'opaque' });
 
   const caches = setupEnv(async () => fakeOpaque);
-  const { cacheFirst } = await import('../src/sw/fetch/strategies.js');
+  const { cacheFirst } = await import('../src/sw/fetch/strategies/index.js');
 
   const request = req('https://cdn.example.com/asset.js');
   const response = await cacheFirst(request);
@@ -541,7 +541,7 @@ test('strategies: safePutInRuntime caches opaque response when cacheOpaque: true
   Object.defineProperty(fakeOpaque, 'type', { value: 'opaque' });
 
   const caches = setupEnv(async () => fakeOpaque);
-  const { cacheFirst } = await import('../src/sw/fetch/strategies.js');
+  const { cacheFirst } = await import('../src/sw/fetch/strategies/index.js');
 
   const request = req('https://cdn.example.com/asset.js');
   const response = await cacheFirst(request, null, { cacheOpaque: true });

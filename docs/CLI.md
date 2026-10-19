@@ -175,7 +175,7 @@ Example: `1.0.0-a1b2c3d4e5f6`
 1. **Idempotent Builds:** Re-running `nlpwa update` on unchanged assets produces the exact same version string. Dev server reloads or repeated CI runs will never broadcast spurious "Update Available" banners to users.
 2. **Rollback Friendly:** Reverting a release to a previous git commit naturally restores the earlier version string, allowing clients to roll back cleanly.
 3. **No Source File Mutation:** The source `config.js` remains untouched, keeping your git tree clean and preventing infinite re-trigger loops in bundler watch processes.
-4. **Subresource Integrity Verification:** Every staged file is hashed with SHA-256. The Service Worker validates downloaded bytes before moving them into the active cache, protecting against captive portal HTML intercepts and incomplete deployments.
+4. **Operational Transport Verification:** Every staged file is hashed with SHA-256. The Service Worker validates downloaded bytes against the same-origin manifest before moving them into the active cache, protecting against incomplete downloads, proxy glitches, captive portal HTML intercepts, and soft-404 errors.
 
 ---
 

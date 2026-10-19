@@ -7,7 +7,7 @@ import {
   cacheFirst,
   networkOnly,
   parseDurationMs,
-} from '../src/sw/fetch/strategies.js';
+} from '../src/sw/fetch/strategies/index.js';
 import { tagResponse } from '../src/sw/cache/tag.js';
 
 const text = (r) => r.text();

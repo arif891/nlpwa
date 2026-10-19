@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setupEnv, req, fakeEvent } from './helpers/fake-env.js';
-import { cacheFirst, networkFirst, networkOnly, staleWhileRevalidate } from '../src/sw/fetch/strategies.js';
+import { cacheFirst, networkFirst, networkOnly, staleWhileRevalidate } from '../src/sw/fetch/strategies/index.js';
 
 test('plugin hooks: requestWillFetch modifies outgoing network Request', async () => {
   let receivedAuthHeader = null;

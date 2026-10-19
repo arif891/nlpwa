@@ -4,7 +4,7 @@ import { setupEnv, req, fakeEvent, sleep } from './helpers/fake-env.js';
 import { createRangeResponse } from '../src/sw/fetch/range.js';
 import { isNavigationFallbackAllowed } from '../src/sw/fetch/navigation.js';
 import { cleanTrackingParams, DEFAULT_IGNORE_SEARCH_PARAMS } from '../src/sw/cache/keys.js';
-import { networkFirst, cacheFirst, staleWhileRevalidate } from '../src/sw/fetch/strategies.js';
+import { networkFirst, cacheFirst, staleWhileRevalidate } from '../src/sw/fetch/strategies/index.js';
 import { getFromRuntime, putInRuntime, matchWithAliases } from '../src/sw/cache/runtime.js';
 import { cleanRuntimeCache } from '../src/sw/cache/cleanup.js';
 import { initConfig } from '../src/sw/config/index.js';

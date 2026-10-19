@@ -7,7 +7,7 @@ import {
   networkOnly,
   staleWhileRevalidate,
   cacheOnly,
-} from './strategies.js';
+} from './strategies/index.js';
 
 /** Map strategy name → strategy function */
 const STRATEGY_FN = {

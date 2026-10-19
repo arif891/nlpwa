@@ -2,6 +2,21 @@
 
 All notable changes to `nlpwa` will be documented in this file.
 
+## [Unreleased] - 2026-10-19
+
+### Modular Architecture Restructuring & File Decomposition
+- **Fetch Strategies Decomposition**: Deconstructed monolithic `src/sw/fetch/strategies.js` (657 lines) into dedicated strategy submodules under `src/sw/fetch/strategies/` (`cache-first.js`, `network-first.js`, `network-only.js`, `stale-while-revalidate.js`, `cache-only.js`, and `context.js`).
+- **Cache Subsystem Partitioning**: Partitioned `src/sw/cache/` into dedicated functional domains:
+  - `meta/`: Low-level JSON metadata, active/staged pointers, client version pins, and Web Locks concurrency (`store.js`, `active.js`, `staged.js`, `client-pins.js`, `lock.js`).
+  - `offline/`: App shell cache, directory index resolution, clean URLs, and subpath base alias matching (`store.js`, `aliases.js`, `install.js`).
+  - `runtime/`: Dynamic route cache read/write and tracking parameter cleanup (`store.js`, `keys.js`).
+  - `eviction/`: Quota detection, byte size resolution, and multi-policy eviction (`quota.js`, `size.js`, `policies.js`, `route-cleaner.js`).
+- **SW Event Lifecycle Controllers**: Extracted all Service Worker event listeners from `src/sw/index.js` into dedicated lifecycle modules under `src/sw/events/` (`install.js`, `activate.js`, `message.js`, `push.js`, `sync.js`), reducing `src/sw/index.js` to a clean 23-line orchestrator.
+- **Update Staging Pipeline**: Decomposed `src/sw/update/stage.js` into modular components under `src/sw/update/staging/` (`verifier.js`, `fetcher.js`, `orchestrator.js`).
+- **Client Runtime Decomposition**: Refactored `src/client/register.js` into modular client components under `src/client/` (`registration.js`, `form-guard.js`, `polling.js`, `index.js`).
+- **Modular CLI Architecture**: Migrated the 555-line CLI implementation from `bin/nlpwa.js` into modular commands under `src/cli/` (`commands/`, `core/`, `ui/`, `index.js`), reducing `bin/nlpwa.js` to a clean executable shim.
+- **Shared Utilities**: Added `src/shared/async.js` for bounded concurrency mapping (`mapConcurrent`) and `src/shared/time.js` for duration parsing and TTL expiration checks.
+
 ## [0.2.0] - 2026-10-18
 
 ### Breaking Changes

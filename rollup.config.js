@@ -49,7 +49,7 @@ export default async () => {
 
   // ── Client: IIFE (<script src="/client.js"> → global NLPWAClient) ─────────
   {
-    input: 'src/client/register.js',
+    input: 'src/client/index.js',
     output: {
       file:    'out/client.js',
       format:  'iife',
@@ -62,7 +62,7 @@ export default async () => {
 
   // ── Client: ES module (import { register } from 'nlpwa/client') ───────────
   {
-    input: 'src/client/register.js',
+    input: 'src/client/index.js',
     output: {
       file:    'out/client.esm.js',
       format:  'es',

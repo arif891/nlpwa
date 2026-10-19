@@ -75,12 +75,12 @@
     "nlpwa": "./bin/nlpwa.js"
   },
   "scripts": {
-    "build": "rollup -c --environment PROD && npm run sync:example",
-    "build:dev": "rollup -c && npm run sync:example",
-    "build:prod": "rollup -c --environment PROD && npm run sync:example",
+    "build": "rollup -c --environment PROD",
+    "build:dev": "rollup -c",
+    "build:prod": "rollup -c --environment PROD",
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
-    "sync:example": "node --input-type=module -e \"import { copyFileSync } from 'node:fs'; copyFileSync('out/sw.js', 'example/sw.js'); copyFileSync('out/client.js', 'example/client.js'); console.log('[NLPWA] example/ synced with out/');\" && node ./bin/nlpwa.js update --config example/config.json --dir example --version 1.0.0 --pretty",
+    "sync:example": "node ./bin/nlpwa.js update --config example/config.json --dir example --version 1.0.0 --pretty",
     "check:drift": "git diff --exit-code example/",
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa": "node ./bin/nlpwa.js",

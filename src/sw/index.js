@@ -4,7 +4,10 @@ import { getStorageQuotaInfo, cleanRuntimeCache } from './cache/cleanup.js';
 import { handleFetch } from './fetch/index.js';
 import { checkForUpdate, getUpdateStatus } from './update/index.js';
 import { commitIfReady, sweepOrphanCaches } from './update/commit.js';
-import { getActive, getStaged } from './cache/store.js';
+import {
+  getActive, getActiveName, getStaged,
+  initClientPins, pinClient, getClientPinnedCache, pruneClientPins,
+} from './cache/store.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
 
 /**
@@ -57,6 +60,19 @@ export function initSW(userConfig = {}) {
           } catch {
             // navigationPreload not supported or disabled in browser
           }
+        }
+        await initClientPins();
+        if (self.clients && typeof self.clients.matchAll === 'function') {
+          try {
+            const activeCache = await getActiveName(config.caches.offline);
+            const allClients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+            for (const client of allClients) {
+              if (!getClientPinnedCache(client.id)) {
+                pinClient(client.id, activeCache);
+              }
+            }
+            await pruneClientPins();
+          } catch {}
         }
         await sweepOrphanCaches().catch(() => {});
         await loadConfigFromCache().catch(() => {});
@@ -123,15 +139,35 @@ export function initSW(userConfig = {}) {
         })());
         break;
 
+      case MESSAGE_TYPES.PIN_CLIENT:
+        event.waitUntil((async () => {
+          const clientId = event.source?.id;
+          if (clientId) {
+            const cacheName = event.data?.cache || (await getActiveName(config.caches.offline));
+            pinClient(clientId, cacheName);
+            reply(MESSAGE_TYPES.CLIENT_PINNED, { clientId, cache: cacheName });
+          }
+        })());
+        break;
+
       case MESSAGE_TYPES.GET_VERSION:
         event.waitUntil((async () => {
           try {
             const active = await getActive();
             const staged = await getStaged();
+            const clientId = event.source?.id;
+            const pinnedCache = clientId ? getClientPinnedCache(clientId) : null;
+            let pinnedVersion = null;
+            if (pinnedCache) {
+              const match = pinnedCache.match(/@([^-]+)/);
+              pinnedVersion = match ? match[1] : (active?.version || null);
+            }
             reply(MESSAGE_TYPES.VERSION_INFO, {
               activeVersion: active?.version || null,
               stagedVersion: staged?.complete ? staged.version : null,
               swVersion: config.version,
+              pinnedCache: pinnedCache || active?.cache || null,
+              pinnedVersion: pinnedVersion || active?.version || null,
             });
           } catch (err) {
             reply(MESSAGE_TYPES.VERSION_INFO, null, err);

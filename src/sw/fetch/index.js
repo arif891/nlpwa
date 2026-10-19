@@ -1,6 +1,7 @@
-import { ensureConfigReady } from '../config/index.js';
+import { ensureConfigReady, getConfig } from '../config/index.js';
 import { resolveStrategy } from './router.js';
 import { commitIfReady } from '../update/commit.js';
+import { initClientPins, pinClient, getClientPinnedCache, getActiveName } from '../cache/store.js';
 
 /**
  * Handle all `fetch` events from the Service Worker.
@@ -10,7 +11,8 @@ import { commitIfReady } from '../update/commit.js';
  *   - Non-HTTP(S) URLs pass through (chrome-extension://, etc.)
  *
  * Ensures runtime config is hydrated from offline cache before matching routes,
- * and switches to a staged update on navigation requests.
+ * switches to a staged update on navigation requests, and maintains per-client
+ * version pins so open tabs are isolated from subsequent updates in other tabs.
  *
  * @param {FetchEvent} event
  */
@@ -26,11 +28,23 @@ export function handleFetch(event) {
   event.respondWith(
     (async () => {
       await ensureConfigReady();
+      await initClientPins();
+
       // A staged update goes live only when a new page load starts, so one
       // page is never served half from the old version and half from the new.
       if (request.mode === 'navigate') {
         await commitIfReady(event).catch((err) => console.warn('[NLPWA] Commit failed:', err.message));
+        const activeCacheName = await getActiveName(getConfig().caches.offline);
+        if (event.resultingClientId) {
+          pinClient(event.resultingClientId, activeCacheName);
+        }
+      } else if (event.clientId && !getClientPinnedCache(event.clientId)) {
+        // Pin existing client to current active version on its first subresource fetch
+        // so mid-session commits in other tabs never break its asset versioning
+        const activeCacheName = await getActiveName(getConfig().caches.offline);
+        pinClient(event.clientId, activeCacheName);
       }
+
       const strategyFn = resolveStrategy(request);
       return strategyFn(request, event);
     })()

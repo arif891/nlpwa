@@ -146,11 +146,101 @@ export async function clearStaged() {
   _stagedPromise = Promise.resolve(null);
 }
 
+// ── Per-client version pinning ─────────────────────────────────────────────
+// Maps clientId -> cacheName to guarantee runtime client isolation so that
+// an existing tab running unhashed code is never served assets from a newly
+// committed version after another tab commits.
+
+const PINS_KEY = '/_nlpwa/client-pins.json';
+const _clientPins = new Map();
+let _pinsLoaded = false;
+
+export async function initClientPins() {
+  if (_pinsLoaded) return;
+  try {
+    const stored = await readMeta(PINS_KEY);
+    if (stored && typeof stored === 'object') {
+      for (const [clientId, cacheName] of Object.entries(stored)) {
+        if (typeof clientId === 'string' && typeof cacheName === 'string') {
+          _clientPins.set(clientId, cacheName);
+        }
+      }
+    }
+  } catch {}
+  _pinsLoaded = true;
+}
+
+export function pinClient(clientId, cacheName) {
+  if (!clientId || !cacheName) return;
+  _clientPins.set(clientId, cacheName);
+  _saveClientPins();
+}
+
+export function unpinClient(clientId) {
+  if (!clientId) return;
+  if (_clientPins.delete(clientId)) {
+    _saveClientPins();
+  }
+}
+
+export function getClientPinnedCache(clientId) {
+  if (!clientId) return null;
+  return _clientPins.get(clientId) || null;
+}
+
+export function getAllPinnedCaches() {
+  return Array.from(new Set(_clientPins.values()));
+}
+
+let _savePinsTimeout = null;
+function _saveClientPins() {
+  if (_savePinsTimeout) return;
+  _savePinsTimeout = setTimeout(async () => {
+    _savePinsTimeout = null;
+    try {
+      const obj = Object.fromEntries(_clientPins);
+      await writeMeta(PINS_KEY, obj);
+    } catch {}
+  }, 100);
+}
+
+export async function pruneClientPins() {
+  const clientsObj = typeof self !== 'undefined' && self.clients ? self.clients : null;
+  if (!clientsObj || typeof clientsObj.matchAll !== 'function') {
+    return;
+  }
+  try {
+    const clients = await clientsObj.matchAll({ includeUncontrolled: true, type: 'window' });
+    const liveIds = new Set(clients.map((c) => c.id));
+    let changed = false;
+    for (const id of _clientPins.keys()) {
+      if (!liveIds.has(id)) {
+        _clientPins.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) {
+      const obj = Object.fromEntries(_clientPins);
+      await writeMeta(PINS_KEY, obj).catch(() => {});
+    }
+  } catch {}
+}
+
 /** Forget everything (used by clearAllCaches and tests). */
 export async function resetMeta() {
   _activePromise = null;
   _stagedPromise = null;
-  await Promise.all([deleteMeta(ACTIVE_KEY), deleteMeta(STAGED_KEY)]);
+  _clientPins.clear();
+  _pinsLoaded = false;
+  if (_savePinsTimeout) {
+    clearTimeout(_savePinsTimeout);
+    _savePinsTimeout = null;
+  }
+  await Promise.all([
+    deleteMeta(ACTIVE_KEY),
+    deleteMeta(STAGED_KEY),
+    deleteMeta(PINS_KEY),
+  ]);
 }
 
 /** Drop the in-memory memo only (tests install a fresh CacheStorage per case). */
@@ -158,6 +248,12 @@ export function resetStoreMemo() {
   _activePromise = null;
   _stagedPromise = null;
   _busy = false;
+  _clientPins.clear();
+  _pinsLoaded = false;
+  if (_savePinsTimeout) {
+    clearTimeout(_savePinsTimeout);
+    _savePinsTimeout = null;
+  }
 }
 
 // ── Cooperative lock ──────────────────────────────────────────────────────

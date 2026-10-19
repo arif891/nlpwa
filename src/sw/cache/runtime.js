@@ -1,5 +1,5 @@
 import { getConfig } from '../config/index.js';
-import { openActive, getActive, getActiveName, resetMeta } from './store.js';
+import { openActive, getActive, getActiveName, getClientPinnedCache, resetMeta } from './store.js';
 import { resolvePathWithBase } from '../../shared/url.js';
 import { cleanTrackingParams } from './keys.js';
 
@@ -85,15 +85,27 @@ export async function matchWithAliases(cache, request, matchOptions, base, confi
  * @param {CacheQueryOptions} [matchOptions]
  * @returns {Promise<Response|undefined>}
  */
-export async function getFromOffline(request, matchOptions) {
+export async function getFromOffline(request, matchOptions, clientId = null) {
   const config = getConfig();
   const { caches: cacheNames, retainPreviousVersionCache, base } = config;
-  const cache = await openActive(cacheNames.offline);
+
+  let cache;
+  const pinnedName = clientId ? getClientPinnedCache(clientId) : null;
+  if (pinnedName) {
+    try {
+      cache = await caches.open(pinnedName);
+    } catch {
+      cache = await openActive(cacheNames.offline);
+    }
+  } else {
+    cache = await openActive(cacheNames.offline);
+  }
+
   let hit = await matchWithAliases(cache, request, matchOptions, base, config);
 
   if (!hit && retainPreviousVersionCache) {
     const active = await getActive();
-    if (active?.previousCache) {
+    if (active?.previousCache && active.previousCache !== pinnedName) {
       try {
         const prev = await caches.open(active.previousCache);
         hit = await matchWithAliases(prev, request, matchOptions, base, config);
@@ -246,6 +258,6 @@ export async function clearAllCaches() {
  * @param {Request|string} request
  * @returns {Promise<Response|undefined>}
  */
-export async function getFromCache(request, matchOptions) {
-  return (await getFromOffline(request, matchOptions)) ?? (await getFromRuntime(request, matchOptions));
+export async function getFromCache(request, matchOptions, clientId = null) {
+  return (await getFromOffline(request, matchOptions, clientId)) ?? (await getFromRuntime(request, matchOptions));
 }

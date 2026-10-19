@@ -26,6 +26,8 @@ export const MESSAGE_TYPES = {
   GET_STATUS:          'GET_STATUS',          // client → SW: request update status
   STATUS_INFO:         'STATUS_INFO',         // SW → client: reply with update status
   STAGING_PROGRESS:    'STAGING_PROGRESS',    // SW → client: progress during update staging
+  PIN_CLIENT:          'PIN_CLIENT',          // client → SW: attach and pin this client to an active version
+  CLIENT_PINNED:       'CLIENT_PINNED',       // SW → client: reply confirming client version pin
 };
 
 /** Runtime cache cleanup strategies */

@@ -27,6 +27,8 @@ export interface VersionInfoData {
   activeVersion: string | null;
   stagedVersion: string | null;
   swVersion: string | null;
+  pinnedCache?: string | null;
+  pinnedVersion?: string | null;
 }
 
 export interface UpdateFailedData {

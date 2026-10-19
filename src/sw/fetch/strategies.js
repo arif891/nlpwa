@@ -268,8 +268,9 @@ export async function cacheFirst(request, event, options = {}) {
   const plugins = getPlugins(options);
   const offlineName = getConfig().caches?.offline || 'offline';
   const runtimeName = getConfig().caches?.runtime || 'runtime';
+  const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
-  let offlineCached = await getFromOffline(request, matchOptions);
+  let offlineCached = await getFromOffline(request, matchOptions, clientId);
   if (offlineCached) {
     offlineCached = await runCachedResponseWillBeUsed(plugins, {
       cacheName: offlineName,
@@ -319,7 +320,7 @@ export async function cacheFirst(request, event, options = {}) {
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
       const fallbackUrl = resolveFallbackUrl(options);
-      const fallbackRes = await getFromCache(fallbackUrl);
+      const fallbackRes = await getFromCache(fallbackUrl, undefined, clientId);
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
       }
@@ -362,10 +363,11 @@ export async function networkFirst(request, event, options = {}) {
   const plugins = getPlugins(options);
   const offlineName = getConfig().caches?.offline || 'offline';
   const runtimeName = getConfig().caches?.runtime || 'runtime';
+  const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
   /** Look in offline then runtime cache; returns a tagged Response or null. */
   const lookupCache = async () => {
-    let offlineCached = await getFromOffline(request, matchOptions);
+    let offlineCached = await getFromOffline(request, matchOptions, clientId);
     if (offlineCached) {
       offlineCached = await runCachedResponseWillBeUsed(plugins, {
         cacheName: offlineName,
@@ -469,7 +471,7 @@ export async function networkFirst(request, event, options = {}) {
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
       const fallbackUrl = resolveFallbackUrl(options);
-      const fallbackRes = await getFromCache(fallbackUrl);
+      const fallbackRes = await getFromCache(fallbackUrl, undefined, clientId);
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
       }
@@ -543,11 +545,12 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   const plugins = getPlugins(options);
   const runtimeName = getConfig().caches?.runtime || 'runtime';
   const offlineName = getConfig().caches?.offline || 'offline';
+  const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
   let cached = await getFromRuntime(request, matchOptions);
   let cacheNameUsed = runtimeName;
   if (!cached) {
-    cached = await getFromOffline(request, matchOptions);
+    cached = await getFromOffline(request, matchOptions, clientId);
     cacheNameUsed = offlineName;
   }
 
@@ -601,7 +604,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
     // Navigation fallback for SPAs or offline pages
     if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
       const fallbackUrl = resolveFallbackUrl(options);
-      const fallbackRes = await getFromCache(fallbackUrl);
+      const fallbackRes = await getFromCache(fallbackUrl, undefined, clientId);
       if (fallbackRes) {
         return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
       }
@@ -642,8 +645,9 @@ export async function cacheOnly(request, event, options = {}) {
   const plugins = getPlugins(options);
   const offlineName = getConfig().caches?.offline || 'offline';
   const runtimeName = getConfig().caches?.runtime || 'runtime';
+  const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
-  let offlineCached = await getFromOffline(request, matchOptions);
+  let offlineCached = await getFromOffline(request, matchOptions, clientId);
   if (offlineCached) {
     offlineCached = await runCachedResponseWillBeUsed(plugins, {
       cacheName: offlineName,
@@ -671,7 +675,7 @@ export async function cacheOnly(request, event, options = {}) {
 
   if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
     const fallbackUrl = resolveFallbackUrl(options);
-    const fallbackRes = await getFromCache(fallbackUrl);
+    const fallbackRes = await getFromCache(fallbackUrl, undefined, clientId);
     if (fallbackRes) {
       return tagResponse(fallbackRes, CACHE_STATUS.OFFLINE_CACHE);
     }

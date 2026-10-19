@@ -1,4 +1,5 @@
 import { CACHE_NAMES, SNAPSHOT_CACHE_PATH, STRATEGIES } from '../../shared/constants.js';
+import { DEFAULT_IGNORE_SEARCH_PARAMS } from '../cache/keys.js';
 
 /**
  * Default configuration values.
@@ -82,6 +83,46 @@ export const DEFAULTS = {
   cacheOpaque: false,
 
   /**
+   * Enable Navigation Preload to begin fetching the navigation request in parallel with SW startup.
+   * Accepts a boolean (true/false) or a custom header string (e.g. 'NLPWA-Preload').
+   * Default: false
+   */
+  navigationPreload: false,
+
+  /**
+   * Navigation URL patterns allowed to receive the SPA shell fallback on navigation failure.
+   * If non-empty, only matching navigations receive the fallback.
+   * Default: []
+   */
+  navigationAllowlist: [],
+
+  /**
+   * Navigation URL patterns excluded from receiving the SPA shell fallback (e.g. ['/api/**', '/admin/**']).
+   * Matching navigations will never receive the SPA shell fallback on failure.
+   * Default: []
+   */
+  navigationDenylist: [],
+
+  /**
+   * Query parameters to strip when storing and matching cache keys to prevent cache fragmentation.
+   * Matches RegExp patterns or glob strings (e.g. [/^utm_/, /^fbclid$/, 'gclid']).
+   * Default: [/^utm_/, /^fbclid$/, /^gclid$/, /^msclkid$/, /^dclid$/, /^_hsenc$/, /^_hsmi$/, /^ref$/, /^mc_cid$/, /^mc_eid$/]
+   */
+  ignoreURLParametersMatching: DEFAULT_IGNORE_SEARCH_PARAMS,
+
+  /**
+   * Directory index filename to match when a URL path ends with a trailing slash.
+   * Default: 'index.html'
+   */
+  directoryIndex: 'index.html',
+
+  /**
+   * Whether to match clean, extensionless URLs against .html files (e.g. /about -> /about.html).
+   * Default: true
+   */
+  cleanURLs: true,
+
+  /**
    * Enable development mode (bypasses Vite internal and HMR requests to network).
    * Default: false
    */
@@ -141,4 +182,12 @@ export const DEFAULTS = {
    * Default: false (returns 503 response)
    */
   throwOnFailure: false,
+
+  /**
+   * Global plugins attached to all route strategies.
+   * Supports: cacheWillUpdate, requestWillFetch, cachedResponseWillBeUsed,
+   * fetchDidSucceed, fetchDidFail, cacheDidUpdate.
+   * Default: []
+   */
+  plugins: [],
 };

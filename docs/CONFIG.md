@@ -142,7 +142,7 @@ How each downloaded update file is checked against the hash in the update manife
 > Manifest hashes are SHA-256 digests served from the same origin (`info.json`). They verify content integrity against network transport corruption, captive portals returning 200 HTML for missing files, proxy caching glitches, and partial deployments—not a compromise of the web server origin itself.
 
 ```js
-verifyHashes: 'strict'
+verifyHashes: 'warn'
 ```
 
 ---
@@ -227,12 +227,12 @@ routes: [
 
 #### `match` — Glob pattern
 
-| Syntax | Matches | Example |
-|---|---|---|
-| `*` | Any characters except `/` | `/pages/*` matches `/pages/about` |
-| `**` | Any characters including `/` | `/assets/**` matches `/assets/img/logo.png` |
-| `?` | Any single character except `/` | `/page?` matches `/pages` |
-| Literal | Exact pathname | `/offline.html` |
+| Syntax   | Matches                               | Example                                                  |
+| -------- | ------------------------------------- | -------------------------------------------------------- |
+| `*`      | Any characters except `/`             | `/pages/*` matches `/pages/about`                        |
+| `**`     | Any characters including `/`          | `/assets/**` matches `/assets/img/logo.png`              |
+| `?`      | Any single character except `/`       | `/page?` matches `/pages`                                |
+| Literal  | Exact pathname                        | `/offline.html`                                          |
 | Full URL | External CDN or cross-origin endpoint | `https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/**` |
 
 #### Cross-Origin & CDN Asset Caching
@@ -297,13 +297,13 @@ Fallback HTML document served for navigation requests (`mode: 'navigate'`) when 
 
 #### `strategy` — Fetch strategy
 
-| Value | Description |
-|---|---|
-| `'cache-first'` | Cache → Network. Best for: static assets, CDN libraries |
-| `'network-first'` | Network → Cache fallback. Best for: HTML pages |
-| `'network-only'` | Network always. Best for: API writes |
-| `'stale-while-revalidate'` | Cache instantly, update in background. Best for: feeds |
-| `'cache-only'` | Cache only, 503 on miss (or throws if `throwOnFailure: true`). Best for: offline fallback |
+| Value                      | Description                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| `'cache-first'`            | Cache → Network. Best for: static assets, CDN libraries                                   |
+| `'network-first'`          | Network → Cache fallback. Best for: HTML pages                                            |
+| `'network-only'`           | Network always. Best for: API writes                                                      |
+| `'stale-while-revalidate'` | Cache instantly, update in background. Best for: feeds                                    |
+| `'cache-only'`             | Cache only, 503 on miss (or throws if `throwOnFailure: true`). Best for: offline fallback |
 
 See [STRATEGIES.md](STRATEGIES.md) for full strategy behaviour.
 
@@ -445,6 +445,147 @@ Must be one of the five strategy names listed above.
 
 ---
 
+### `navigationPreload` · `boolean | string` · default: `false`
+
+Enables browser [Navigation Preload](https://developer.mozilla.org/en-US/docs/Web/API/NavigationPreloadManager) (`self.registration.navigationPreload.enable()`).
+
+When enabled, the browser initiates the network request for HTML document navigation in parallel with the Service Worker booting up. This completely eliminates SW startup latency on `network-first` navigations:
+- `true`: Enables navigation preload.
+- `string`: Enables navigation preload and sets a custom header value (`Service-Worker-Navigation-Preload: <string>`).
+- `false`: Disables navigation preload.
+
+```js
+navigationPreload: true
+```
+
+---
+
+### `navigationAllowlist` & `navigationDenylist` · `Array<string | RegExp | Function>` · default: `[]`
+
+Defines URL pattern boundaries for SPA shell fallback. By default, an offline SPA fallback (e.g. `/index.html`) serves when a navigation request fails. However, navigations to server-rendered portals, admin consoles, or API endpoints should return genuine network errors (503) rather than the client-side SPA bundle.
+
+- `navigationDenylist`: Patterns that **must never** receive the offline SPA fallback. Any failed navigation matching the denylist returns an offline error (503 or throws if `throwOnFailure: true`).
+- `navigationAllowlist`: If non-empty, **only** matching navigations receive the SPA fallback.
+
+Supports glob syntax (`/api/**`, `/admin/**`), regular expressions, or custom predicate functions:
+
+```js
+navigationDenylist: [
+  '/api/**',
+  '/admin/**',
+  /^\/auth\//,
+  ({ url }) => url.pathname.endsWith('.pdf'),
+],
+navigationAllowlist: [
+  '/app/**',
+  '/dashboard',
+]
+```
+
+---
+
+### Range Request Support (HTTP 206 Partial Content)
+
+When cached audio or video is requested (such as in HTML5 `<audio>` or `<video>` elements), browsers like **Safari (iOS & macOS)** send HTTP byte range headers (e.g. `Range: bytes=0-1` or `Range: bytes=1048576-`).
+
+Standard Service Worker caches store full 200 responses. Without range handling, Safari media playback fails or stutters. NLPWA automatically parses RFC 7233 byte ranges on cached responses, constructing valid **206 Partial Content** slices with proper `Content-Range`, `Content-Length`, and `Accept-Ranges: bytes` headers (or 416 if unsatisfiable), enabling native media seeking and smooth playback across all platforms.
+
+---
+
+### Cache Key Control
+
+Fine-tune URL normalization and cache lookups to prevent query fragmentation and ensure clean URL routing.
+
+#### `ignoreURLParametersMatching` · `Array<RegExp | string>`
+Strips tracking and analytics parameters from request URLs before caching or matching in runtime cache. Stops marketing campaigns (`?utm_source=twitter&utm_medium=social`, `?fbclid=...`, `?gclid=...`) from fragmenting your cache entries.
+
+Defaults to stripping: `^utm_`, `^fbclid$`, `^gclid$`, `^msclkid$`, `^_ga$`, `^_gl$`, `^mc_eid$`, `^yclid$`.
+
+```js
+ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^ref$/]
+```
+
+#### `directoryIndex` · `string` · default: `'index.html'`
+Maps root and subdirectory requests ending with a trailing slash to their index file (e.g. `/docs/` → `/docs/index.html`).
+
+#### `cleanURLs` · `boolean` · default: `true`
+Automatically resolves extensionless paths to their `.html` counterparts (e.g. `/about` → `/about.html`).
+
+---
+
+### Plugin Lifecycle Hooks (`plugins`)
+
+Workbox-style lifecycle plugin hooks allow developers to customize cache storage and request lifecycles without forking the engine. Hooks can be passed via `plugins: [plugin, ...]` or declared directly on routes / global config.
+
+```js
+// Example: Custom Auth & Cache Invalidation Plugin
+const authAndExpiryPlugin = {
+  // 1. requestWillFetch: Attach auth token before network fetch
+  async requestWillFetch({ request }) {
+    const headers = new Headers(request.headers);
+    headers.set('Authorization', 'Bearer ' + getStoredToken());
+    return new Request(request.url, { headers });
+  },
+
+  // 2. cachedResponseWillBeUsed: Invalidate expired or revoked tokens in cache
+  async cachedResponseWillBeUsed({ cachedResponse }) {
+    if (!cachedResponse) return null;
+    const expiresHeader = cachedResponse.headers.get('X-Token-Expires');
+    if (expiresHeader && Date.now() > Number(expiresHeader)) {
+      return null; // Treated as cache miss -> re-fetches from network
+    }
+    return cachedResponse;
+  },
+
+  // 3. cacheWillUpdate: Only cache successful JSON payloads
+  async cacheWillUpdate({ response }) {
+    if (response.status === 200 && response.headers.get('content-type')?.includes('application/json')) {
+      return response;
+    }
+    return null; // Do not store error bodies or non-JSON responses
+  },
+};
+```
+
+#### Available Lifecycle Hooks
+
+| Hook | Parameters | Description |
+|---|---|---|
+| `requestWillFetch` | `{ request, event, options }` | Called before a network fetch is made. Can return a modified `Request`. |
+| `cachedResponseWillBeUsed` | `{ cacheName, request, matchOptions, cachedResponse, event, options }` | Called before a cached response is served. Return a modified `Response`, or `null` to treat as a cache miss. |
+| `cacheWillUpdate` | `{ request, response, event, cacheName, options }` | Called before a response is committed to cache. Return modified `Response`, or `null`/`false` to skip caching. |
+| `fetchDidSucceed` | `{ request, response, event, options }` | Called after a network fetch succeeds. |
+| `fetchDidFail` | `{ error, originalRequest, request, event, options }` | Called when a network fetch throws or goes offline. |
+| `cacheDidUpdate` | `{ cacheName, request, oldResponse, newResponse, event, options }` | Called after a response is committed to CacheStorage. |
+
+#### Usage Examples
+
+```js
+// Per-route configuration
+{
+  match: '/api/**',
+  strategy: 'network-first',
+  plugins: [authAndExpiryPlugin],
+}
+
+// Direct hook shortcut on a route
+{
+  match: '/ephemeral/**',
+  strategy: 'cache-first',
+  cacheWillUpdate: async ({ response }) => {
+    return response.headers.has('X-Cache-Permitted') ? response : null;
+  },
+}
+
+// Global plugins applied to all routes
+export default {
+  plugins: [globalTelemetryPlugin],
+  routes: [...],
+};
+```
+
+---
+
 ## Full Example
 
 ### `sw.js` (Service Worker Engine)
@@ -473,7 +614,7 @@ export default {
     version: '/api/update/version.json',
     info:    '/api/update/info.json',
   },
-  verifyHashes: 'strict',                        // 'strict' | 'warn' | false
+  verifyHashes: 'warn',                        // 'strict' | 'warn' | false
 
   // ── Caches ─────────────────────────────────────────────────────────────────
   caches: {

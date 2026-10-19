@@ -5,6 +5,68 @@ export type FetchStrategy =
   | 'stale-while-revalidate'
   | 'cache-only';
 
+export interface RequestWillFetchParams {
+  request: Request;
+  event?: any;
+  options?: any;
+}
+
+export interface CachedResponseWillBeUsedParams {
+  cacheName: string;
+  request: Request;
+  matchOptions?: CacheQueryOptions;
+  cachedResponse: Response;
+  event?: any;
+  options?: any;
+}
+
+export interface CacheWillUpdateParams {
+  request: Request;
+  response: Response;
+  event?: any;
+  cacheName?: string;
+  options?: any;
+}
+
+export interface FetchDidSucceedParams {
+  request: Request;
+  response: Response;
+  event?: any;
+  options?: any;
+}
+
+export interface FetchDidFailParams {
+  error: Error;
+  originalRequest: Request;
+  request: Request;
+  event?: any;
+  options?: any;
+}
+
+export interface CacheDidUpdateParams {
+  cacheName: string;
+  request: Request;
+  oldResponse?: Response;
+  newResponse: Response;
+  event?: any;
+  options?: any;
+}
+
+export interface NLPWAPlugin {
+  /** Called before a network request is made; can return a modified Request */
+  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | void> | Request | void;
+  /** Called before a cached response is used; returning null treats it as a cache miss */
+  cachedResponseWillBeUsed?: (params: CachedResponseWillBeUsedParams) => Promise<Response | null | void> | Response | null | void;
+  /** Called before writing to cache; returning null or false skips caching */
+  cacheWillUpdate?: (params: CacheWillUpdateParams) => Promise<Response | null | boolean | void> | Response | null | boolean | void;
+  /** Called after a network fetch succeeds */
+  fetchDidSucceed?: (params: FetchDidSucceedParams) => Promise<Response | void> | Response | void;
+  /** Called when a network fetch fails */
+  fetchDidFail?: (params: FetchDidFailParams) => Promise<void> | void;
+  /** Called after a cache entry has been updated */
+  cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
+}
+
 export interface RouteConfig {
   /** Glob pattern to match request URL pathname (e.g. '/api/**', '/assets/*') */
   match: string;
@@ -26,6 +88,30 @@ export interface RouteConfig {
   maxAge?: number | string;
   /** Whether to cache opaque cross-origin responses (default: false to prevent ~7MB Chrome quota padding and caching 404s) */
   cacheOpaque?: boolean;
+  /** Navigation URL patterns allowed to receive the SPA shell fallback (globs, RegExps, or predicates) */
+  navigationAllowlist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Navigation URL patterns excluded from receiving the SPA shell fallback */
+  navigationDenylist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Query parameters to ignore when matching and storing cache entries (e.g. [/^utm_/, /^fbclid$/]) */
+  ignoreURLParametersMatching?: Array<string | RegExp>;
+  /** Directory index filename when path ends with / (default: 'index.html') */
+  directoryIndex?: string;
+  /** Whether to match extensionless clean URLs against .html files (default: true) */
+  cleanURLs?: boolean;
+  /** Route-specific plugin hooks */
+  plugins?: NLPWAPlugin[];
+  /** Direct requestWillFetch hook shortcut */
+  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | void> | Request | void;
+  /** Direct cachedResponseWillBeUsed hook shortcut */
+  cachedResponseWillBeUsed?: (params: CachedResponseWillBeUsedParams) => Promise<Response | null | void> | Response | null | void;
+  /** Direct cacheWillUpdate hook shortcut */
+  cacheWillUpdate?: (params: CacheWillUpdateParams) => Promise<Response | null | boolean | void> | Response | null | boolean | void;
+  /** Direct fetchDidSucceed hook shortcut */
+  fetchDidSucceed?: (params: FetchDidSucceedParams) => Promise<Response | void> | Response | void;
+  /** Direct fetchDidFail hook shortcut */
+  fetchDidFail?: (params: FetchDidFailParams) => Promise<void> | void;
+  /** Direct cacheDidUpdate hook shortcut */
+  cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
 }
 
 export interface UpdateAPIConfigObject {
@@ -75,6 +161,18 @@ export interface NLPWAConfig {
   navigationFallback?: string;
   /** Default offline fallback page URL (for navigation) */
   offlineFallback?: string;
+  /** Enable Navigation Preload (boolean or custom header string, e.g. 'NLPWA-Preload') */
+  navigationPreload?: boolean | string;
+  /** Navigation URL patterns allowed to receive the SPA shell fallback (globs, RegExps, or predicates) */
+  navigationAllowlist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Navigation URL patterns excluded from receiving the SPA shell fallback (e.g. ['/api/**', '/admin/**']) */
+  navigationDenylist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Query parameters to ignore when matching and storing cache entries (e.g. [/^utm_/, /^fbclid$/]) */
+  ignoreURLParametersMatching?: Array<string | RegExp>;
+  /** Directory index filename when path ends with / (default: 'index.html') */
+  directoryIndex?: string;
+  /** Whether to match extensionless clean URLs against .html files (default: true) */
+  cleanURLs?: boolean;
   /** Logging verbosity: 'silent' | 'error' | 'warn' | 'info' | 'debug' (default: 'info') */
   logLevel?: 'silent' | 'error' | 'warn' | 'info' | 'debug';
   /** Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths) */
@@ -91,6 +189,20 @@ export interface NLPWAConfig {
   devBypass?: boolean;
   /** Whether fetch failures should throw/reject instead of returning a synthetic 503 response */
   throwOnFailure?: boolean;
+  /** Global plugins attached to all route strategies */
+  plugins?: NLPWAPlugin[];
+  /** Direct requestWillFetch hook shortcut */
+  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | void> | Request | void;
+  /** Direct cachedResponseWillBeUsed hook shortcut */
+  cachedResponseWillBeUsed?: (params: CachedResponseWillBeUsedParams) => Promise<Response | null | void> | Response | null | void;
+  /** Direct cacheWillUpdate hook shortcut */
+  cacheWillUpdate?: (params: CacheWillUpdateParams) => Promise<Response | null | boolean | void> | Response | null | boolean | void;
+  /** Direct fetchDidSucceed hook shortcut */
+  fetchDidSucceed?: (params: FetchDidSucceedParams) => Promise<Response | void> | Response | void;
+  /** Direct fetchDidFail hook shortcut */
+  fetchDidFail?: (params: FetchDidFailParams) => Promise<void> | void;
+  /** Direct cacheDidUpdate hook shortcut */
+  cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
 }
 
 declare const defaultConfig: NLPWAConfig;

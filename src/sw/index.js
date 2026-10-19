@@ -44,6 +44,20 @@ export function initSW(userConfig = {}) {
     event.waitUntil(
       (async () => {
         await self.clients.claim();
+        if (self.registration && 'navigationPreload' in self.registration) {
+          try {
+            if (config.navigationPreload) {
+              await self.registration.navigationPreload.enable();
+              if (typeof config.navigationPreload === 'string') {
+                await self.registration.navigationPreload.setHeaderValue(config.navigationPreload);
+              }
+            } else {
+              await self.registration.navigationPreload.disable();
+            }
+          } catch {
+            // navigationPreload not supported or disabled in browser
+          }
+        }
         await sweepOrphanCaches().catch(() => {});
         await loadConfigFromCache().catch(() => {});
       })()

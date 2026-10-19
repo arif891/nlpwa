@@ -14,6 +14,18 @@ const ALLOWED_ROUTE_KEYS = new Set([
   'maxAge',
   'cacheOpaque',
   'options',
+  'navigationAllowlist',
+  'navigationDenylist',
+  'ignoreURLParametersMatching',
+  'directoryIndex',
+  'cleanURLs',
+  'plugins',
+  'requestWillFetch',
+  'cachedResponseWillBeUsed',
+  'cacheWillUpdate',
+  'fetchDidSucceed',
+  'fetchDidFail',
+  'cacheDidUpdate',
 ]);
 
 const ALLOWED_CONFIG_KEYS = new Set([
@@ -40,6 +52,19 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'throwOnFailure',
   'dev',
   'devBypass',
+  'navigationPreload',
+  'navigationAllowlist',
+  'navigationDenylist',
+  'ignoreURLParametersMatching',
+  'directoryIndex',
+  'cleanURLs',
+  'plugins',
+  'requestWillFetch',
+  'cachedResponseWillBeUsed',
+  'cacheWillUpdate',
+  'fetchDidSucceed',
+  'fetchDidFail',
+  'cacheDidUpdate',
 ]);
 
 /**

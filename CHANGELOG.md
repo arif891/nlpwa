@@ -44,7 +44,7 @@ All notable changes to `nlpwa` will be documented in this file.
 
 #### Lock Granularity & Manifest Hashing
 - **Narrowed Concurrency Lock**: Narrowed `checkForUpdate`'s lock to only wrap actual staging writes and commits. Tier 1 and Tier 2 network roundtrips no longer hold the lock, ensuring that navigations and `commitIfReady()` are never blocked while checks are in flight.
-- **Manifest File Sizes**: The CLI and build plugin now explicitly emit file `size` in `info.json` manifests, ensuring threshold checks for `maxVerifyBytes` do not rely on missing or stripped `Content-Length` headers. Documented that files over `maxVerifyBytes` (20 MB default) bypass in-memory SHA-256 hashing even under `verifyHashes: 'strict'` to prevent low-end device OOM crashes.
+- **Manifest File Sizes**: The CLI and build plugin now explicitly emit file `size` in `info.json` manifests, ensuring threshold checks for `maxVerifyBytes` do not rely on missing or stripped `Content-Length` headers. Documented that files over `maxVerifyBytes` (20 MB default) bypass in-memory SHA-256 hashing even under `verifyHashes: 'warn'` to prevent low-end device OOM crashes.
 
 #### Package Exports
 - **Trimmed Duplicate Exports**: Removed duplicate `"./config"` export in `package.json` in favor of `"./config.json"`.

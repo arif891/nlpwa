@@ -33,19 +33,27 @@ export function handleFetch(event) {
 
       // A staged update goes live only when a new page load starts, so one
       // page is never served half from the old version and half from the new.
+      let pinPromise = null;
       if (request.mode === 'navigate') {
         await commitIfReady(event).catch((err) => logger.warn('[NLPWA] Commit failed:', err.message));
         const activeCacheName = await getActiveName(getConfig().caches.offline);
         const activeSnapshot = await getActive();
         if (event.resultingClientId) {
-          pinClient(event.resultingClientId, activeCacheName, activeSnapshot?.version || null);
+          pinPromise = pinClient(event.resultingClientId, activeCacheName, activeSnapshot?.version || null);
         }
       } else if (event.clientId && !getClientPinnedCache(event.clientId)) {
         // Pin existing client to current active version on its first subresource fetch
         // so mid-session commits in other tabs never break its asset versioning
         const activeCacheName = await getActiveName(getConfig().caches.offline);
         const activeSnapshot = await getActive();
-        pinClient(event.clientId, activeCacheName, activeSnapshot?.version || null);
+        pinPromise = pinClient(event.clientId, activeCacheName, activeSnapshot?.version || null);
+      }
+
+      if (pinPromise) {
+        if (event && typeof event.waitUntil === 'function') {
+          event.waitUntil(pinPromise);
+        }
+        await pinPromise;
       }
 
       const strategyFn = resolveStrategy(request);

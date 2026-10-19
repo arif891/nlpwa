@@ -17,6 +17,7 @@ import {
   getAllPinnedCaches,
   pruneClientPins,
   cleanupCaches,
+  resetClientPinsMemo,
 } from '../src/sw/cache/store.js';
 import { getFromOffline } from '../src/sw/cache/offline/store.js';
 import { handleMessage } from '../src/sw/events/message.js';
@@ -327,5 +328,74 @@ test('client pinning: PIN_CLIENT message validates cacheName prefix', async () =
 
   assert.ok(unpinReply);
   assert.equal(getClientPinnedCache('tab-attacker'), null, 'Client should be unpinned');
+});
+
+test('client pinning: pin is durable across SW restart before subresource fetch, preventing version skew', async () => {
+  const server = makeServer('1.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app v1',
+    '/index.html': '<html>v1</html>',
+  });
+  setupEnv(server.fetch);
+  globalThis.self.clients = {
+    matchAll: async () => [{ id: 'tab-persisted', postMessage: () => {} }],
+  };
+  await precacheFiles();
+
+  const v1Active = await getActive();
+  const v1Cache = v1Active.cache;
+
+  // 1. Tab navigates to / (resultingClientId: 'tab-persisted')
+  let responded;
+  const waitUntilPromises = [];
+  const navEvent = {
+    request: asNavigation(req('/'), 'tab-persisted'),
+    resultingClientId: 'tab-persisted',
+    respondWith: (p) => { responded = p; },
+    waitUntil: (p) => { waitUntilPromises.push(p); },
+  };
+  handleFetch(navEvent);
+  await responded;
+  await Promise.all(waitUntilPromises);
+
+  // Verify tab was pinned in memory
+  assert.equal(getClientPinnedCache('tab-persisted'), v1Cache);
+
+  // 2. A new version 2.0.0 is deployed, staged, and committed
+  server.set('2.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app v2',
+    '/index.html': '<html>v2</html>',
+  });
+  await stageUpdate(await fetchServerInfo());
+  await commitStaged();
+
+  const v2Active = await getActive();
+  assert.equal(v2Active.version, '2.0.0');
+
+  // 3. Simulate SW termination and restart:
+  // Clear all in-memory memos (as happens when a Service Worker process is killed)
+  resetClientPinsMemo();
+
+  // In memory, pin is now null
+  assert.equal(getClientPinnedCache('tab-persisted'), null);
+
+  // 4. Tab makes a subresource fetch for /app.js (with clientId: 'tab-persisted')
+  let subResponded;
+  const subWaitUntil = [];
+  const subEvent = {
+    request: req('/app.js'),
+    clientId: 'tab-persisted',
+    respondWith: (p) => { subResponded = p; },
+    waitUntil: (p) => { subWaitUntil.push(p); },
+  };
+  handleFetch(subEvent);
+  const response = await subResponded;
+  await Promise.all(subWaitUntil);
+
+  // Because pin was persisted to disk immediately, SW reloaded it during initClientPins()
+  // and served /app.js from v1Cache ('app v1'), NOT v2!
+  assert.equal(await response.text(), 'app v1', 'Must serve app v1 from pinned cache, not app v2');
+  assert.equal(getClientPinnedCache('tab-persisted'), v1Cache, 'Client must remain pinned to v1 cache');
 });
 

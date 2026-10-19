@@ -108,6 +108,7 @@ export {
   getAllPinnedCaches,
   pruneClientPins,
   flushClientPins,
+  resetClientPinsMemo,
   tryAcquire,
   release,
   withLock,

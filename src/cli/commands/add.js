@@ -48,8 +48,8 @@ export async function cmdAdd(args) {
   const plugin = AVAILABLE_PLUGINS[pluginName];
   if (!plugin) {
     console.error(`  ${c.red}Unknown plugin "${pluginName}".${c.reset}`);
-    console.log(`\nAvailable plugins: ${Object.keys(AVAILABLE_PLUGINS).join(', ')}\n`);
-    return;
+    console.error(`\nAvailable plugins: ${Object.keys(AVAILABLE_PLUGINS).join(', ')}\n`);
+    process.exit(1);
   }
 
   const targetDir = resolve(args.dir ?? '.');
@@ -74,7 +74,7 @@ export async function cmdAdd(args) {
 
   if (missing.length > 0) {
     console.error(`\n${c.red}Add failed:${c.reset} missing files. Run \`npm run build\` first.\n`);
-    return;
+    process.exit(1);
   }
 
   console.log(`\n${c.green}✓ Plugin "${pluginName}" added successfully!${c.reset}\n`);

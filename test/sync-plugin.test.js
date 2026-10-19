@@ -99,7 +99,7 @@ test('sync queue: replayAll succeeds on ok response and empties queue', async ()
   ]);
 });
 
-test('sync queue: replayAll stops loop on network error and updates retryCount', async () => {
+test('sync queue: replayAll stops loop on network error and preserves retryCount without discarding', async () => {
   const queue = new SyncQueue('replay-network-fail');
   await queue.push(new Request('https://example.com/api/fail1', { method: 'POST' }));
   await queue.push(new Request('https://example.com/api/fail2', { method: 'POST' }));
@@ -117,21 +117,34 @@ test('sync queue: replayAll stops loop on network error and updates retryCount',
   assert.equal(result.failedCount, 1);
   assert.equal(result.remainingCount, 2);
 
+  // Network failures do NOT increment retryCount toward eviction
   const items = await queue.getAll();
-  assert.equal(items[0].retryCount, 1);
+  assert.equal(items[0].retryCount, 0);
 });
 
-test('sync queue: drops request after exceeding maxRetries', async () => {
+test('sync queue: drops request after exceeding maxRetries on server errors', async () => {
   const queue = new SyncQueue('max-retries', { maxRetries: 2 });
   await queue.push(new Request('https://example.com/api/fail-perm', { method: 'POST' }));
 
-  // First failure
-  await queue.replayAll({ fetchImpl: async () => { throw new Error('Offline'); } });
+  // First server failure (HTTP 500)
+  await queue.replayAll({ fetchImpl: async () => new Response('Internal Server Error', { status: 500 }) });
   assert.equal(await queue.size(), 1);
 
-  // Second failure -> exceeds maxRetries (2) -> discarded
-  await queue.replayAll({ fetchImpl: async () => { throw new Error('Offline'); } });
+  // Second server failure -> exceeds maxRetries (2) -> discarded
+  await queue.replayAll({ fetchImpl: async () => new Response('Internal Server Error', { status: 500 }) });
   assert.equal(await queue.size(), 0);
+});
+
+test('sync queue: preserves 401/403 auth errors without discarding user edits', async () => {
+  const queue = new SyncQueue('auth-error');
+  await queue.push(new Request('https://example.com/api/auth-edit', { method: 'POST' }));
+
+  await queue.replayAll({ fetchImpl: async () => new Response('Unauthorized', { status: 401 }) });
+  assert.equal(await queue.size(), 1);
+
+  const items = await queue.getAll();
+  assert.equal(items[0].authRequired, true);
+  assert.equal(items[0].lastStatus, 401);
 });
 
 test('sync plugin: fetchDidFail captures failed POST and ignores GET', async () => {

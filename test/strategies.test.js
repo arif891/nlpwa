@@ -41,6 +41,27 @@ test('networkFirst: network failure with empty cache gives the offline 503', asy
   assert.equal(res.headers.get('X-Cache-Status'), 'offline-fallback');
 });
 
+test('networkFirst: fallbackOn5xx: true serves cached copy when server returns 500', async () => {
+  const caches = setupEnv(async () => new Response('Internal Server Error', { status: 500 }));
+  await (await caches.open('runtime')).put(req('/page'), new Response('cached resilient'));
+
+  const event = fakeEvent();
+  const res = await networkFirst(req('/page'), event, { fallbackOn5xx: true });
+  assert.equal(res.status, 200);
+  assert.equal(await text(res), 'cached resilient');
+  assert.equal(res.headers.get('X-Cache-Status'), 'runtime-cache');
+});
+
+test('networkFirst: default behavior returns 500 response as-is without falling back', async () => {
+  const caches = setupEnv(async () => new Response('Internal Server Error', { status: 500 }));
+  await (await caches.open('runtime')).put(req('/page'), new Response('cached copy'));
+
+  const event = fakeEvent();
+  const res = await networkFirst(req('/page'), event, { fallbackOn5xx: false });
+  assert.equal(res.status, 500);
+  assert.equal(await text(res), 'Internal Server Error');
+});
+
 test('staleWhileRevalidate: cache miss performs exactly one network request', async () => {
   let calls = 0;
   const caches = setupEnv(async () => { calls++; return new Response('body'); });

@@ -10,9 +10,11 @@ export async function initClientPins() {
   try {
     const stored = await readMeta(PINS_KEY);
     if (stored && typeof stored === 'object') {
-      for (const [clientId, cacheName] of Object.entries(stored)) {
-        if (typeof clientId === 'string' && typeof cacheName === 'string') {
-          _clientPins.set(clientId, cacheName);
+      for (const [clientId, val] of Object.entries(stored)) {
+        if (typeof val === 'string') {
+          _clientPins.set(clientId, { cache: val, version: null });
+        } else if (val && typeof val === 'object' && typeof val.cache === 'string') {
+          _clientPins.set(clientId, { cache: val.cache, version: val.version || null });
         }
       }
     }
@@ -20,48 +22,62 @@ export async function initClientPins() {
   _pinsLoaded = true;
 }
 
-export function pinClient(clientId, cacheName) {
-  if (!clientId || !cacheName) return;
-  _clientPins.set(clientId, cacheName);
-  _saveClientPins();
+export function pinClient(clientId, cacheName, version = null) {
+  if (!clientId || !cacheName) return Promise.resolve();
+  _clientPins.set(clientId, { cache: cacheName, version: version || null });
+  return _saveClientPins();
 }
 
 export function unpinClient(clientId) {
-  if (!clientId) return;
+  if (!clientId) return Promise.resolve();
   if (_clientPins.delete(clientId)) {
-    _saveClientPins();
+    return _saveClientPins();
   }
+  return Promise.resolve();
 }
 
 export function getClientPinnedCache(clientId) {
   if (!clientId) return null;
-  return _clientPins.get(clientId) || null;
+  const pin = _clientPins.get(clientId);
+  return typeof pin === 'string' ? pin : (pin?.cache || null);
+}
+
+export function getClientPinnedVersion(clientId) {
+  if (!clientId) return null;
+  const pin = _clientPins.get(clientId);
+  return typeof pin === 'object' ? (pin?.version || null) : null;
 }
 
 export function getAllPinnedCaches() {
-  return Array.from(new Set(_clientPins.values()));
+  const caches = [];
+  for (const pin of _clientPins.values()) {
+    const c = typeof pin === 'string' ? pin : pin?.cache;
+    if (c) caches.push(c);
+  }
+  return Array.from(new Set(caches));
 }
 
-function _saveClientPins() {
-  if (_savePinsTimeout) return;
-  _savePinsTimeout = setTimeout(async () => {
-    _savePinsTimeout = null;
-    try {
-      const obj = Object.fromEntries(_clientPins);
-      await writeMeta(PINS_KEY, obj);
-    } catch {}
-  }, 100);
-}
+let _savePromise = null;
 
-async function _flushClientPins() {
+export async function flushClientPins() {
   if (_savePinsTimeout) {
     clearTimeout(_savePinsTimeout);
     _savePinsTimeout = null;
   }
-  try {
-    const obj = Object.fromEntries(_clientPins);
-    await writeMeta(PINS_KEY, obj);
-  } catch {}
+  const obj = Object.fromEntries(_clientPins);
+  _savePromise = writeMeta(PINS_KEY, obj).catch(() => {}).finally(() => {
+    _savePromise = null;
+  });
+  return _savePromise;
+}
+
+function _saveClientPins() {
+  if (_savePinsTimeout) return _savePromise || Promise.resolve();
+  _savePinsTimeout = setTimeout(() => {
+    _savePinsTimeout = null;
+    flushClientPins();
+  }, 100);
+  return _savePromise || Promise.resolve();
 }
 
 export async function pruneClientPins() {
@@ -80,7 +96,7 @@ export async function pruneClientPins() {
       }
     }
     if (changed) {
-      await _flushClientPins();
+      await flushClientPins();
     }
   } catch {}
 }
@@ -92,6 +108,7 @@ export function resetClientPinsMemo() {
     clearTimeout(_savePinsTimeout);
     _savePinsTimeout = null;
   }
+  _savePromise = null;
 }
 
 export { PINS_KEY };

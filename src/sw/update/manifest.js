@@ -4,9 +4,11 @@ import { openActive, getActiveSnapshotPaths, setActiveSnapshotPaths } from '../c
 export { getActiveSnapshotPaths, setActiveSnapshotPaths };
 
 let _lastVersionETag = null;
+let _lastVersionValue = null;
 
 export function resetManifestMemo() {
   _lastVersionETag = null;
+  _lastVersionValue = null;
 }
 
 /**
@@ -36,21 +38,22 @@ export async function fetchServerVersion() {
   });
 
   if (response.status === 304) {
-    return { notModified: true };
+    return { notModified: true, version: _lastVersionValue || undefined };
   }
 
   if (!response.ok) {
     throw new Error(`[NLPWA] Version check failed: HTTP ${response.status} ${response.statusText}`);
   }
 
-  const etag = response.headers?.get('ETag');
-  if (etag) {
-    _lastVersionETag = etag;
-  }
-
   const data = await response.json();
   if (typeof data.version !== 'string' || !data.version) {
     throw new Error('[NLPWA] Version check response missing valid "version"');
+  }
+
+  const etag = response.headers?.get('ETag');
+  if (etag) {
+    _lastVersionETag = etag;
+    _lastVersionValue = data.version;
   }
 
   return data;

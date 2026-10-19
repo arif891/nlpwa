@@ -77,6 +77,9 @@ export async function cacheFirst(request, event, options = {}) {
       // Cached copy has expired: attempt to refresh from network
       try {
         const response = await performFetch(request, event, options, plugins);
+        if (options.fallbackOn5xx && response.status >= 500 && response.status < 600) {
+          return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+        }
         safePutInRuntime(request, response, event, options);
         return tagResponse(response, CACHE_STATUS.NETWORK);
       } catch {

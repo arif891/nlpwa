@@ -2,7 +2,7 @@ import { ensureConfigReady, getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
 import { resolveStrategy } from './router.js';
 import { commitIfReady } from '../update/commit.js';
-import { initClientPins, pinClient, getClientPinnedCache, getActiveName } from '../cache/store.js';
+import { initClientPins, pinClient, getClientPinnedCache, getActiveName, getActive } from '../cache/store.js';
 
 /**
  * Handle all `fetch` events from the Service Worker.
@@ -36,14 +36,16 @@ export function handleFetch(event) {
       if (request.mode === 'navigate') {
         await commitIfReady(event).catch((err) => logger.warn('[NLPWA] Commit failed:', err.message));
         const activeCacheName = await getActiveName(getConfig().caches.offline);
+        const activeSnapshot = await getActive();
         if (event.resultingClientId) {
-          pinClient(event.resultingClientId, activeCacheName);
+          pinClient(event.resultingClientId, activeCacheName, activeSnapshot?.version || null);
         }
       } else if (event.clientId && !getClientPinnedCache(event.clientId)) {
         // Pin existing client to current active version on its first subresource fetch
         // so mid-session commits in other tabs never break its asset versioning
         const activeCacheName = await getActiveName(getConfig().caches.offline);
-        pinClient(event.clientId, activeCacheName);
+        const activeSnapshot = await getActive();
+        pinClient(event.clientId, activeCacheName, activeSnapshot?.version || null);
       }
 
       const strategyFn = resolveStrategy(request);

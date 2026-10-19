@@ -94,6 +94,13 @@ export async function networkFirst(request, event, options = {}) {
       response = await networkPromise;
     }
 
+    if (options.fallbackOn5xx && response.status >= 500 && response.status < 600) {
+      const cached = await lookupCache();
+      if (cached) {
+        return cached;
+      }
+    }
+
     safePutInRuntime(request, response, event, options);
     return tagResponse(response, fromPreload ? CACHE_STATUS.PRELOAD : CACHE_STATUS.NETWORK);
   } catch (err) {

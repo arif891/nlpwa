@@ -1,14 +1,8 @@
 /**
- * Compute the delta between a new server manifest and the currently cached one.
+ * Validate that a manifest path is safe from traversal, absolute URLs, or backslashes.
  *
- * The delta drives the update: only files that actually changed are fetched.
- * Because the server always returns the full file list, this automatically
- * handles any size of version jump (v1 → v100) in one pass.
- *
- * @param {Array<{ path: string, hash: string }>} newFiles   from server manifest
- * @param {Array<{ path: string, hash: string }>|null} oldFiles  from cached manifest
- *                                                               (null = fresh install)
- * @returns {{ added: string[], modified: string[], removed: string[] }}
+ * @param {string} path
+ * @returns {boolean}
  */
 export function isSafePath(path) {
   if (typeof path !== 'string' || !path) return false;
@@ -23,6 +17,18 @@ export function isSafePath(path) {
   return true;
 }
 
+/**
+ * Compute the delta between a new server manifest and the currently cached one.
+ *
+ * The delta drives the update: only files that actually changed are fetched.
+ * Because the server always returns the full file list, this automatically
+ * handles any size of version jump (v1 → v100) in one pass.
+ *
+ * @param {Array<{ path: string, hash: string }>} newFiles   from server manifest
+ * @param {Array<{ path: string, hash: string }>|null} oldFiles  from cached manifest
+ *                                                               (null = fresh install)
+ * @returns {{ added: string[], modified: string[], removed: string[] }}
+ */
 export function computeDiff(newFiles, oldFiles) {
   const safeNewFiles = (newFiles ?? []).filter(f => isSafePath(f?.path));
   const safeOldFiles = (oldFiles ?? []).filter(f => isSafePath(f?.path));

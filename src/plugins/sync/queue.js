@@ -137,31 +137,25 @@ export class SyncQueue {
           const newRetryCount = (item.retryCount || 0) + 1;
           const maxRetries = item.maxRetries || this.maxRetries;
 
-          if (newRetryCount >= maxRetries || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) {
+          if (response.status === 401 || response.status === 403) {
+            // Auth error: do NOT discard user data! Flag authRequired so app can prompt re-login
+            await withStore('readwrite', (store) => {
+              store.put({ ...item, authRequired: true, lastStatus: response.status });
+            });
+          } else if (newRetryCount >= maxRetries || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) {
             // Discard client fatal errors or exceeded retries
             await this.remove(item.id);
           } else {
             await withStore('readwrite', (store) => {
-              store.put({ ...item, retryCount: newRetryCount });
+              store.put({ ...item, retryCount: newRetryCount, lastStatus: response.status });
             });
           }
 
           if (onReplayFail) onReplayFail(item, response);
         }
       } catch (err) {
-        // Network error (offline or timeout): update retry count and abort replay loop to avoid flood
+        // Network error (offline or timeout): do NOT count network outage against maxRetries eviction
         failedCount++;
-        const newRetryCount = (item.retryCount || 0) + 1;
-        const maxRetries = item.maxRetries || this.maxRetries;
-
-        if (newRetryCount >= maxRetries) {
-          await this.remove(item.id);
-        } else {
-          await withStore('readwrite', (store) => {
-            store.put({ ...item, retryCount: newRetryCount });
-          });
-        }
-
         if (onReplayFail) onReplayFail(item, err);
         break; // Stop FIFO replay when network is demonstrably down
       }

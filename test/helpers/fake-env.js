@@ -37,6 +37,7 @@ class FakeCacheStorage {
     if (!this.stores.has(name)) this.stores.set(name, new FakeCache());
     return this.stores.get(name);
   }
+  async has(name) { return this.stores.has(name); }
   async delete(name) { return this.stores.delete(name); }
   async keys() { return [...this.stores.keys()]; }
 }

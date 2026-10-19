@@ -461,4 +461,61 @@ test('update: supports ETag and If-None-Match 304 on version check', async () =>
   assert.equal(reqHeaders[1], '"etag-v1"');
 });
 
+test('update: 304 on version check preserves staged update and does not discard staging cache', async () => {
+  const v1 = { '/config.json': cfg(), '/app.js': 'app v1' };
+  const v2 = { '/config.json': cfg(), '/app.js': 'app v2' };
+  const server = makeServer('1.0.0', v1);
+  const messages = fakeSelf();
+
+  let versionEtag = null;
+  setupEnv(async (r) => {
+    const url = new URL(r.url);
+    if (url.pathname === '/api/update/version.json') {
+      const ifNoneMatch = r.headers.get('if-none-match');
+      if (ifNoneMatch && ifNoneMatch === versionEtag) {
+        return new Response(null, { status: 304, headers: { ETag: versionEtag } });
+      }
+      return new Response(JSON.stringify({ version: server.version }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ETag: versionEtag },
+      });
+    }
+    return server.fetch(r);
+  });
+
+  // 1. Initial install at v1.0.0
+  versionEtag = '"etag-v1"';
+  await precacheFiles();
+  assert.equal((await getActive()).version, '1.0.0');
+
+  // 2. Deploy v2.0.0 to server with new ETag
+  server.set('2.0.0', v2);
+  versionEtag = '"etag-v2"';
+
+  const check1 = await checkForUpdate();
+  assert.equal(check1.updated, true);
+  assert.equal(check1.version, '2.0.0');
+
+  const staged = await getStaged();
+  assert.ok(staged, 'Update must be staged');
+  assert.equal(staged.version, '2.0.0');
+  assert.equal(staged.complete, true);
+
+  // 3. Subsequent poll (e.g. tab focus) returns 304 Not Modified
+  messages.length = 0;
+  const check2 = await checkForUpdate();
+
+  // Must NOT discard staged update! Must report update ready / staged
+  assert.equal(check2.updated, true);
+  assert.equal(check2.staged, true);
+  assert.equal(check2.version, '2.0.0');
+
+  const stagedAfter304 = await getStaged();
+  assert.ok(stagedAfter304, 'Staged record must NOT be deleted by a 304');
+  assert.equal(stagedAfter304.version, '2.0.0');
+  assert.equal(stagedAfter304.complete, true);
+  assert.ok(messages.some((m) => m.type === 'UPDATE_READY'));
+  assert.ok(!messages.some((m) => m.type === 'NO_UPDATE'));
+});
+
 

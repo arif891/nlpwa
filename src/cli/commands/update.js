@@ -123,9 +123,10 @@ export async function cmdUpdate(args) {
   writeFileSync(versionOut, versionJson, 'utf8');
   writeFileSync(infoOut, infoJson, 'utf8');
 
-  // Also sync to workspace root api/ directory if it exists and targetDir is different
+  // Sync to workspace root api/ directory ONLY if explicitly requested via --sync-root-api
+  const shouldSyncRootApi = Boolean(args['sync-root-api'] || args.syncRootApi);
   const rootApiDir = resolve(process.cwd(), 'api');
-  if (targetDir !== process.cwd() && existsSync(rootApiDir)) {
+  if (shouldSyncRootApi && targetDir !== process.cwd() && existsSync(rootApiDir)) {
     const rootVersionOut = getApiDiskPath(process.cwd(), versionEndpoint);
     const rootInfoOut = getApiDiskPath(process.cwd(), infoEndpoint);
     mkdirSync(dirname(rootVersionOut), { recursive: true });

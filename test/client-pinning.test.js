@@ -12,10 +12,14 @@ import {
   pinClient,
   unpinClient,
   getClientPinnedCache,
+  getClientPinnedVersion,
   getAllPinnedCaches,
   pruneClientPins,
   cleanupCaches,
 } from '../src/sw/cache/store.js';
+import { getFromOffline } from '../src/sw/cache/offline/store.js';
+import { handleMessage } from '../src/sw/events/message.js';
+import { MESSAGE_TYPES } from '../src/shared/constants.js';
 
 const cfg = (extra = {}) => JSON.stringify({
   routes: [{ match: '**', strategy: 'cache-first' }],
@@ -185,4 +189,51 @@ test('client pinning: pruneClientPins drops pins for clients no longer in self.c
 
   assert.equal(getClientPinnedCache('client-alive'), 'offline@1.0.0-1');
   assert.equal(getClientPinnedCache('client-closed'), null, 'closed client pin should be pruned');
+});
+
+test('client pinning: stores and returns full content-hash or prerelease pinnedVersion without truncation', async () => {
+  const server = makeServer('1.0.0-a1b2c3d4e5f6', { '/config.json': cfg(), '/app.js': 'app v1' });
+  setupEnv(server.fetch);
+  await precacheFiles();
+
+  // Pin a client to a full content-hash version
+  pinClient('tab-content-hash', 'offline@1.0.0-a1b2c3d4e5f6-m1q7', '1.0.0-a1b2c3d4e5f6');
+  assert.equal(getClientPinnedVersion('tab-content-hash'), '1.0.0-a1b2c3d4e5f6');
+
+  // Query via GET_VERSION message handler
+  const handler = handleMessage({ version: '1', caches: { offline: 'offline' } });
+  let replyData = null;
+  const event = {
+    data: { type: MESSAGE_TYPES.GET_VERSION },
+    source: { id: 'tab-content-hash' },
+    ports: [{ postMessage: (msg) => { replyData = msg.data; } }],
+    waitUntil: (p) => p,
+  };
+
+  handler(event);
+  await new Promise(r => setTimeout(r, 10));
+
+  assert.ok(replyData);
+  assert.equal(replyData.pinnedVersion, '1.0.0-a1b2c3d4e5f6', 'pinnedVersion must not be truncated to 1.0.0');
+});
+
+test('client pinning: getFromOffline falls back to active cache if pinned cache is missing/evicted', async () => {
+  const server = makeServer('1.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app active v1',
+  });
+  setupEnv(server.fetch);
+  await precacheFiles();
+
+  // Pin a client to a cache name that does NOT exist in CacheStorage
+  pinClient('tab-evicted', 'offline@non-existent-cache', '0.9.0');
+
+  // getFromOffline must safely check cacheExists and fall back to the active cache without throwing or creating an empty cache
+  const hit = await getFromOffline('/app.js', {}, 'tab-evicted');
+  assert.ok(hit, 'Must successfully hit in active cache');
+  assert.equal(await hit.text(), 'app active v1');
+
+  // CacheStorage must not contain a zombie empty cache
+  const storedKeys = await caches.keys();
+  assert.equal(storedKeys.includes('offline@non-existent-cache'), false);
 });

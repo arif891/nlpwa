@@ -94,7 +94,7 @@ export function initSW(userConfig = {}) {
       case MESSAGE_TYPES.APPLY_UPDATE:
         // Client asked to switch to the staged update now, then it will reload.
         event.waitUntil((async () => {
-          const applied = await commitIfReady().catch(() => false);
+          const applied = await commitIfReady(event).catch(() => false);
           reply(MESSAGE_TYPES.APPLY_UPDATE_RESULT, { applied });
         })());
         break;

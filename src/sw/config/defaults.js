@@ -53,10 +53,17 @@ export const DEFAULTS = {
   /**
    * Maximum file size in bytes for in-memory SHA-256 hash verification during staging.
    * Files larger than this threshold (e.g. WASM binaries, on-device AI models)
-   * skip in-memory clone & buffer to avoid memory spikes and crashes on low-end devices.
+   * can skip in-memory clone & buffer to avoid memory spikes and crashes on low-end devices
+   * if allowOversizedUnverified is set to true.
    * Default: 20 * 1024 * 1024 (20 MB)
    */
   maxVerifyBytes: 20 * 1024 * 1024,
+
+  /**
+   * Explicit opt-in to allow files larger than maxVerifyBytes to skip
+   * in-memory SHA-256 verification in strict mode. Default: false.
+   */
+  allowOversizedUnverified: false,
 
   /**
    * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).

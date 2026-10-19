@@ -61,6 +61,7 @@ export function isUserEditing() {
  * @param {boolean}  [options.reloadOnUpdateApplied] automatically reload when another tab applies update
  * @param {boolean}  [options.checkOnFocus]          check for update when tab regains focus (default: true)
  * @param {boolean}  [options.checkOnRegister]       check for update on initial registration (default: true)
+ * @param {boolean}  [options.persistentStorage]     request persistent storage via navigator.storage.persist() (default: false)
  * @param {number}   [options.focusThrottleMs]       min ms between focus-triggered checks (default: 1 hour)
  * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
  */
@@ -210,6 +211,17 @@ export async function register(swUrl = '/sw.js', options = {}) {
     } catch {
       // Periodic sync permission is granted by browser only for installed PWAs; ignore failure
     }
+  }
+
+  // ── Persistent Storage (if requested and supported) ────────────────────────
+  if (options.persistentStorage && typeof navigator !== 'undefined' && navigator.storage?.persist) {
+    navigator.storage.persist().then((persisted) => {
+      if (persisted) {
+        console.log('[NLPWA] Storage is persistent; browser will not evict cached resources under storage pressure.');
+      } else {
+        console.log('[NLPWA] Storage is best-effort; persistent storage permission was not granted.');
+      }
+    }).catch(() => {});
   }
 
   // ── Initial update check on registration ──────────────────────────────────

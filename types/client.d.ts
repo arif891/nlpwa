@@ -118,6 +118,8 @@ export interface RegisterOptions {
   pollIntervalMs?: number;
   /** Enable Periodic Background Sync if supported (default: true) */
   periodicSync?: boolean;
+  /** Request persistent storage via navigator.storage.persist() (default: false) */
+  persistentStorage?: boolean;
 }
 
 export interface RegistrationHandle {

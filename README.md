@@ -110,7 +110,7 @@ export default {
   },
 
   // Verify SHA-256 hashes against update manifest ('strict' | 'warn' | false)
-  verifyHashes: 'warn',
+  verifyHashes: 'strict',
 
   // App shell files to track and offline-cache
   precache: [

@@ -89,6 +89,7 @@ export function updateActiveConfig(runtimeConfig = {}) {
     base: _config.base,
     verifyHashes: _config.verifyHashes,
     maxVerifyBytes: _config.maxVerifyBytes,
+    allowOversizedUnverified: _config.allowOversizedUnverified,
     caches: _config.caches,
     snapshotCachePath: _config.snapshotCachePath,
 

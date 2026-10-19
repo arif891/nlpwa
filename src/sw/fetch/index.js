@@ -29,7 +29,7 @@ export function handleFetch(event) {
       // A staged update goes live only when a new page load starts, so one
       // page is never served half from the old version and half from the new.
       if (request.mode === 'navigate') {
-        await commitIfReady().catch((err) => console.warn('[NLPWA] Commit failed:', err.message));
+        await commitIfReady(event).catch((err) => console.warn('[NLPWA] Commit failed:', err.message));
       }
       const strategyFn = resolveStrategy(request);
       return strategyFn(request, event);

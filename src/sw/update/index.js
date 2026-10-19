@@ -50,8 +50,18 @@ export async function getUpdateStatus() {
 }
 
 async function runUpdateCheck({ force = false } = {}) {
-  const config = getConfig();
   _currentStatus = 'checking';
+  try {
+    return await _doUpdateCheck({ force });
+  } finally {
+    if (_currentStatus === 'checking') {
+      _currentStatus = 'idle';
+    }
+  }
+}
+
+async function _doUpdateCheck({ force = false } = {}) {
+  const config = getConfig();
 
   // ── Tier 1: lightweight version check ────────────────────────────────────
   let serverVersion;

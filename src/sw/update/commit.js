@@ -17,10 +17,18 @@ import { MESSAGE_TYPES } from '../../shared/constants.js';
  *
  * @returns {Promise<boolean>} true if a staged update was committed
  */
-export async function commitStaged() {
+export async function commitStaged(event) {
   const config = getConfig();
   const staged = await getStaged();
   if (!staged?.complete) return false;
+
+  // Crash window guard: if worker crashed after setActive but before clearStaged,
+  // the staged cache is already the active cache. Discard stale staged pointer.
+  const previousActive = await getActive();
+  if (previousActive?.cache === staged.cache) {
+    await clearStaged();
+    return false;
+  }
 
   setUpdateStatus('applying');
 
@@ -30,10 +38,10 @@ export async function commitStaged() {
     console.warn('[NLPWA] Staged cache is missing its snapshot, discarding.');
     await clearStaged();
     await caches.delete(staged.cache);
+    setUpdateStatus('idle');
     return false;
   }
 
-  const previousActive = await getActive();
   await setActive({
     cache: staged.cache,
     version: staged.version,
@@ -42,45 +50,77 @@ export async function commitStaged() {
   });
   await clearStaged();
 
-  // Everything below is cleanup after the switch; the new version is already live.
+  // Load the newly committed version's configuration immediately so navigation
+  // requests resolve against the new version's routes and settings.
   await loadConfigFromCache();
   const currentConfig = getConfig();
-  const shouldClearRuntime = Boolean(
-    staged.clearRuntime ||
-    config.clearRuntimeOnUpdate ||
-    currentConfig.clearRuntimeOnUpdate
-  );
 
-  if (shouldClearRuntime) {
-    await caches.delete(currentConfig.caches.runtime);
+  // If the new version opted out of previous cache retention, update pointer
+  if (!currentConfig.retainPreviousVersionCache && previousActive?.cache) {
+    await setActive({
+      cache: staged.cache,
+      version: staged.version,
+      swVersion: staged.swVersion,
+    });
+  }
+
+  // Defer heavy disk cleanup and window messaging to event.waitUntil so the navigation
+  // response is never blocked, preserving instant first-paint performance.
+  const cleanupPromise = (async () => {
+    try {
+      const shouldClearRuntime = Boolean(
+        staged.clearRuntime ||
+        config.clearRuntimeOnUpdate ||
+        currentConfig.clearRuntimeOnUpdate
+      );
+
+      if (shouldClearRuntime) {
+        await caches.delete(currentConfig.caches.runtime);
+      } else {
+        await evictFromRuntime(staged.evict ?? []);
+      }
+      await evictByRoute();
+
+      const keep = [staged.cache];
+      if (currentConfig.retainPreviousVersionCache && previousActive?.cache) {
+        keep.push(previousActive.cache);
+      }
+      await cleanupCaches({
+        base: currentConfig.caches.offline,
+        runtime: currentConfig.caches.runtime,
+        keep,
+      });
+
+      if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+        self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+          clients.forEach((c) => c.postMessage({ type: MESSAGE_TYPES.UPDATE_APPLIED, version: staged.version }));
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[NLPWA] Post-commit cleanup failed:', err?.message || err);
+    } finally {
+      setUpdateStatus('idle');
+    }
+  })();
+
+  if (event && typeof event.waitUntil === 'function') {
+    event.waitUntil(cleanupPromise);
   } else {
-    await evictFromRuntime(staged.evict ?? []);
-  }
-  await evictByRoute();
-
-  const keep = [staged.cache];
-  if (config.retainPreviousVersionCache && previousActive?.cache) {
-    keep.push(previousActive.cache);
-  }
-  await cleanupCaches({ base: config.caches.offline, runtime: config.caches.runtime, keep });
-
-  if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
-    self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
-      clients.forEach((c) => c.postMessage({ type: MESSAGE_TYPES.UPDATE_APPLIED, version: staged.version }));
-    }).catch(() => {});
+    await cleanupPromise;
   }
 
   console.log(`[NLPWA] Switched to v${staged.version}`);
-  setUpdateStatus('idle');
   return true;
 }
 
 /**
  * Commit only if no update is currently being staged. Never waits: a page
  * navigation must not be held up by a download, it just tries again next time.
+ *
+ * @param {ExtendableEvent} [event]
  */
-export async function commitIfReady() {
-  return withLock(() => commitStaged(), false);
+export async function commitIfReady(event) {
+  return withLock(() => commitStaged(event), false);
 }
 
 /** Delete offline caches left behind by interrupted or superseded updates. */

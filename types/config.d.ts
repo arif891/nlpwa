@@ -141,6 +141,8 @@ export interface NLPWAConfig {
   verifyHashes?: 'strict' | 'warn' | false;
   /** Maximum file size in bytes for in-memory SHA-256 hash verification during staging (default: 20MB) */
   maxVerifyBytes?: number;
+  /** Explicit opt-in to allow files exceeding maxVerifyBytes to skip in-memory verification in strict mode (default: false) */
+  allowOversizedUnverified?: boolean;
   /** Cache storage names */
   caches?: {
     offline?: string;

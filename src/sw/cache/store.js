@@ -65,12 +65,47 @@ let _activePromise = null;
 
 export function getActive() {
   if (!_activePromise) {
-    _activePromise = readMeta(ACTIVE_KEY).catch(() => {
+    _activePromise = (async () => {
+      const record = await readMeta(ACTIVE_KEY).catch(() => null);
+      if (!record || !record.cache) return null;
+
+      // Pointer-validity check: verify that the cache referenced actually exists in CacheStorage
+      // and is non-empty. If the browser evicted it, discard the stale pointer.
+      try {
+        if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+          const names = await caches.keys();
+          if (!names.includes(record.cache)) {
+            console.warn(`[NLPWA] Active cache "${record.cache}" was evicted by the browser. Clearing stale active pointer.`);
+            await deleteMeta(ACTIVE_KEY);
+            return null;
+          }
+          const cache = await caches.open(record.cache);
+          const keys = await cache.keys();
+          if (keys.length === 0) {
+            console.warn(`[NLPWA] Active cache "${record.cache}" is empty (likely evicted by the browser). Clearing stale active pointer.`);
+            await deleteMeta(ACTIVE_KEY);
+            return null;
+          }
+          if (record.previousCache && !names.includes(record.previousCache)) {
+            delete record.previousCache;
+            await writeMeta(ACTIVE_KEY, record);
+          }
+        }
+      } catch (err) {
+        console.warn('[NLPWA] Could not verify active cache validity:', err?.message || err);
+      }
+      return record;
+    })().catch(() => {
       _activePromise = null;
       return null;
     });
   }
   return _activePromise;
+}
+
+export async function clearActive() {
+  await deleteMeta(ACTIVE_KEY);
+  _activePromise = Promise.resolve(null);
 }
 
 export async function getActiveName(baseName) {

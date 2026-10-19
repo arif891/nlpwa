@@ -22,19 +22,21 @@ async function mapLimit(items, limit, fn) {
 }
 
 /** Is `path` already in the staging cache with the expected content? */
-async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, fetchUrl = path) {
+async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, fetchUrl = path, allowOversizedUnverified = false) {
   const hit = (await cache.match(fetchUrl)) || (fetchUrl !== path ? await cache.match(path) : null);
   if (!hit) return false;
   if (!expected || verify === false) return true;
   const size = fileSize ?? Number(hit.headers?.get?.('content-length') || hit.headers?.get?.('x-nlpwa-content-length') || 0);
   if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
-    return true;
+    if (allowOversizedUnverified || verify === 'warn') {
+      return true;
+    }
   }
   return hashMatches(await sha256Hex(await hit.arrayBuffer()), expected);
 }
 
 /** Fetch a file fresh from the network and check it against its manifest hash. */
-async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null) {
+async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, allowOversizedUnverified = false) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? AbortSignal.timeout(30000)
     : undefined;
@@ -44,11 +46,13 @@ async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 
   if (expected && verify !== false) {
     const size = fileSize ?? Number(response.headers?.get?.('content-length') || response.headers?.get?.('x-nlpwa-content-length') || 0);
     if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
-      console.warn(
-        `[NLPWA] ${path}: File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold ` +
-        `(${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB). Skipping in-memory hash verification to prevent memory spikes on low-end devices.`
-      );
-      return response;
+      if (allowOversizedUnverified || verify === 'warn') {
+        console.warn(
+          `[NLPWA] ${path}: File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold ` +
+          `(${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB). Skipping in-memory hash verification (opt-in allowOversizedUnverified).`
+        );
+        return response;
+      }
     }
     const actual = await sha256Hex(await response.clone().arrayBuffer());
     if (!hashMatches(actual, expected)) {
@@ -87,6 +91,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const config = getConfig();
   const verify = config.verifyHashes ?? 'strict';
   const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
+  const allowOversizedUnverified = Boolean(config.allowOversizedUnverified);
   const files = manifest.files.filter((f) => isSafePath(f?.path));
 
   const diff = computeDiff(files, activeSnapshot?.files ?? null);
@@ -157,7 +162,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
     const fetchUrl = resolvePathWithBase(path, config.base);
     try {
-      if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size, fetchUrl)) {
+      if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size, fetchUrl, allowOversizedUnverified)) {
         stats.reused++;
         notifyProgress(path);
         return;
@@ -175,7 +180,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
           return;
         }
       }
-      const fetchedRes = await fetchVerified(fetchUrl, hash, verify, maxVerifyBytes, size);
+      const fetchedRes = await fetchVerified(fetchUrl, hash, verify, maxVerifyBytes, size, allowOversizedUnverified);
       const copyForPath = fetchUrl !== path ? fetchedRes.clone() : null;
       await putWithQuotaRecovery(fetchUrl, fetchedRes);
       if (copyForPath) {

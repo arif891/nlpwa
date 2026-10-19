@@ -35,6 +35,7 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'updateAPI',
   'verifyHashes',
   'maxVerifyBytes',
+  'allowOversizedUnverified',
   'caches',
   'snapshotCachePath',
   'precache',
@@ -117,6 +118,10 @@ export function validateConfig(config) {
 
   if (config.maxVerifyBytes !== undefined && (typeof config.maxVerifyBytes !== 'number' || config.maxVerifyBytes < 0)) {
     errors.push('config.maxVerifyBytes must be a non-negative number');
+  }
+
+  if (config.allowOversizedUnverified !== undefined && typeof config.allowOversizedUnverified !== 'boolean') {
+    errors.push('config.allowOversizedUnverified must be a boolean');
   }
 
   if (config.networkTimeoutMs !== undefined && (typeof config.networkTimeoutMs !== 'number' || config.networkTimeoutMs < 0)) {

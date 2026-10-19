@@ -595,6 +595,20 @@ test('store: withLock uses Web Locks API when available and handles contention',
     lockAcquired = true;
     const busyResult = await withLock(async () => 'should not run', 'fallback-val');
     assert.equal(busyResult, 'fallback-val');
+
+    // 3. Error propagation: if fn throws inside Web Locks, it must NOT execute twice
+    lockAcquired = false;
+    let callCount = 0;
+    await assert.rejects(
+      async () => {
+        await withLock(async () => {
+          callCount++;
+          throw new Error('deliberate failure in fn');
+        }, 'fallback-val');
+      },
+      /deliberate failure in fn/
+    );
+    assert.equal(callCount, 1, 'fn must execute exactly once and not be called a second time in fallback');
   } finally {
     if (origNavDesc) {
       Object.defineProperty(globalThis, 'navigator', origNavDesc);

@@ -34,18 +34,23 @@ export async function withLock(fn, fallback = false) {
       : null;
 
   if (nav?.locks?.request && typeof nav.locks.request === 'function') {
+    let ran = false;
     try {
       return await nav.locks.request('nlpwa-operation-lock', { ifAvailable: true }, async (lock) => {
         if (!lock) return getFallback();
         if (!tryAcquire()) return getFallback();
+        ran = true;
         try {
           return await fn();
         } finally {
           release();
         }
       });
-    } catch {
-      // Fall through to in-memory locking if Web Locks throws or is unsupported
+    } catch (err) {
+      if (ran) {
+        throw err;
+      }
+      // Fall through to in-memory locking only if Web Locks API itself threw or is unsupported
     }
   }
 

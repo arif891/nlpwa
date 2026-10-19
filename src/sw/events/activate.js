@@ -44,7 +44,7 @@ export function handleActivate(config) {
             const allClients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
             for (const client of allClients) {
               if (!getClientPinnedCache(client.id)) {
-                pinClient(client.id, activeCache, activeSnapshot?.version || null);
+                await pinClient(client.id, activeCache, activeSnapshot?.version || null);
               }
             }
             await pruneClientPins();

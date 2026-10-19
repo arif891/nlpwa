@@ -5,16 +5,18 @@ export { getActiveSnapshotPaths, setActiveSnapshotPaths };
 
 let _lastVersionETag = null;
 let _lastVersionValue = null;
+let _lastMinVersion = null;
 
 export function resetManifestMemo() {
   _lastVersionETag = null;
   _lastVersionValue = null;
+  _lastMinVersion = null;
 }
 
 /**
  * Fetch lightweight app version from the server (Tier 1 check).
  *
- * @returns {Promise<{ version?: string, notModified?: boolean }>}
+ * @returns {Promise<{ version?: string, minVersion?: string, notModified?: boolean }>}
  */
 export async function fetchServerVersion() {
   const config = getConfig();
@@ -38,7 +40,11 @@ export async function fetchServerVersion() {
   });
 
   if (response.status === 304) {
-    return { notModified: true, version: _lastVersionValue || undefined };
+    return {
+      notModified: true,
+      version: _lastVersionValue || undefined,
+      minVersion: _lastMinVersion || undefined,
+    };
   }
 
   if (!response.ok) {
@@ -54,6 +60,7 @@ export async function fetchServerVersion() {
   if (etag) {
     _lastVersionETag = etag;
     _lastVersionValue = data.version;
+    _lastMinVersion = data.minVersion || data.minSupportedVersion || null;
   }
 
   return data;

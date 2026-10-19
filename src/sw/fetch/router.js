@@ -37,9 +37,12 @@ export function isManifestFile(requestUrl, config = getConfig()) {
   if (!isSameOrigin) return false;
 
   let pathname = requestUrl.pathname;
-  if (config.base && pathname.startsWith(config.base)) {
-    pathname = pathname.slice(config.base.length);
-    if (!pathname.startsWith('/')) pathname = '/' + pathname;
+  if (config.base) {
+    const cleanBase = config.base.replace(/\/+$/, '');
+    if (cleanBase && (pathname === cleanBase || pathname.startsWith(cleanBase + '/'))) {
+      pathname = pathname.slice(cleanBase.length);
+      if (!pathname.startsWith('/')) pathname = '/' + pathname;
+    }
   }
 
   // 1. Runtime config file is always an app shell asset
@@ -86,9 +89,12 @@ export function matchRoute(requestUrl, routes = [], config = {}) {
     : true;
 
   let appPathname = requestUrl.pathname;
-  if (config.base && appPathname.startsWith(config.base)) {
-    appPathname = appPathname.slice(config.base.length);
-    if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
+  if (config.base) {
+    const cleanBase = config.base.replace(/\/+$/, '');
+    if (cleanBase && (appPathname === cleanBase || appPathname.startsWith(cleanBase + '/'))) {
+      appPathname = appPathname.slice(cleanBase.length);
+      if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
+    }
   }
 
   for (const route of routes) {

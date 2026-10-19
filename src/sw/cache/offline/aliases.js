@@ -75,6 +75,17 @@ export async function matchWithAliases(cache, request, matchOptions, base, confi
         ?? (await cache.match(cleanBase, matchOptions))
         ?? (await cache.match(`/${cleanIndex}`, matchOptions));
     }
+    if (cleanBase) {
+      if (pathname.startsWith(cleanBase + '/')) {
+        const withoutBase = pathname.slice(cleanBase.length);
+        hit = await cache.match(withoutBase, matchOptions);
+        if (hit) return hit;
+      } else {
+        const withBase = `${cleanBase}${pathname.startsWith('/') ? pathname : '/' + pathname}`;
+        hit = await cache.match(withBase, matchOptions);
+        if (hit) return hit;
+      }
+    }
   }
   return undefined;
 }

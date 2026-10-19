@@ -29,7 +29,12 @@ export function nlpwaPlugin(options?: RollupPluginOptions): Plugin;
 export default nlpwaPlugin;
 
 declare module 'virtual:nlpwa-version' {
-  /** The application version resolved at build time */
+  /**
+   * The application base semver version resolved at build time (e.g. '1.0.0').
+   * Note: When `deriveVersion: true` (the default), runtime manifests append a
+   * content hash suffix (e.g. '1.0.0-a1b2c3d4e5f6'). For the exact runtime
+   * content-hashed version of the active Service Worker, use `NLPWAClient.getVersion()`.
+   */
   export const APP_VERSION: string;
   /** The base semver version from config */
   export const BASE_VERSION: string;

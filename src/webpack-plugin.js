@@ -112,8 +112,18 @@ export class NlpwaWebpackPlugin {
       mkdirSync(dirname(versionOut), { recursive: true });
       mkdirSync(dirname(infoOut), { recursive: true });
 
-      writeFileSync(versionOut, JSON.stringify({ version: appVersion }, null, jsonIndent), 'utf8');
-      writeFileSync(infoOut, JSON.stringify({ version: appVersion, files }, null, jsonIndent), 'utf8');
+      const versionPayload = {
+        version: appVersion,
+        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+      };
+      const infoPayload = {
+        version: appVersion,
+        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+        files,
+      };
+
+      writeFileSync(versionOut, JSON.stringify(versionPayload, null, jsonIndent), 'utf8');
+      writeFileSync(infoOut, JSON.stringify(infoPayload, null, jsonIndent), 'utf8');
 
       console.log(`[NLPWA] Emitted ${cleanConfigPath} and update API (v${appVersion}, ${files.length} tracked offline files)`);
     });

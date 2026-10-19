@@ -52,6 +52,13 @@ export interface CacheDidUpdateParams {
   options?: any;
 }
 
+export interface CacheKeyWillBeUsedParams {
+  request: Request | string;
+  mode: 'read' | 'write';
+  event?: any;
+  options?: any;
+}
+
 export interface NLPWAPlugin {
   /** Called before a network request is made; can return a modified Request */
   requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | void> | Request | void;
@@ -65,6 +72,8 @@ export interface NLPWAPlugin {
   fetchDidFail?: (params: FetchDidFailParams) => Promise<void> | void;
   /** Called after a cache entry has been updated */
   cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
+  /** Called to customize or rewrite cache keys on read and write */
+  cacheKeyWillBeUsed?: (params: CacheKeyWillBeUsedParams) => Promise<Request | string> | Request | string;
 }
 
 export interface RouteConfig {
@@ -86,6 +95,8 @@ export interface RouteConfig {
   throwOnFailure?: boolean;
   /** Maximum age before runtime cache entry is considered stale (e.g. '7d', '24h', 3600000) */
   maxAge?: number | string;
+  /** Whether to fall back to cached response when network returns a 5xx HTTP error */
+  fallbackOn5xx?: boolean;
   /** Whether to cache opaque cross-origin responses (default: false to prevent ~7MB Chrome quota padding and caching 404s) */
   cacheOpaque?: boolean;
   /** Navigation URL patterns allowed to receive the SPA shell fallback (globs, RegExps, or predicates) */
@@ -112,6 +123,10 @@ export interface RouteConfig {
   fetchDidFail?: (params: FetchDidFailParams) => Promise<void> | void;
   /** Direct cacheDidUpdate hook shortcut */
   cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
+  /** Direct cacheKeyWillBeUsed hook shortcut */
+  cacheKeyWillBeUsed?: (params: CacheKeyWillBeUsedParams) => Promise<Request | string> | Request | string;
+  /** Called after background stale-while-revalidate revalidation completes */
+  onRevalidated?: (params: { request: Request; response: Response; cachedResponse: Response; event?: any }) => void;
 }
 
 export interface UpdateAPIConfigObject {
@@ -123,28 +138,31 @@ export interface UpdateAPIConfigObject {
   timeoutMs?: number;
 }
 
-export interface UpdateAPIEndpointEntry {
-  type: 'version' | 'info';
-  endpoint: string;
-}
-
-export type UpdateAPIConfig = UpdateAPIConfigObject | UpdateAPIEndpointEntry[];
+export type UpdateAPIConfig = UpdateAPIConfigObject;
 
 export interface NLPWAConfig {
   /** Service Worker / App version */
   version?: string;
   /** App version override when distinct from SW version */
   appVersion?: string;
+  /** Minimum required version; clients below this version are prompted/forced to update */
+  minVersion?: string;
   /** Path to runtime config.json file (default: '/config.json') */
   configPath?: string;
   /** Two-tier update check endpoints */
   updateAPI?: UpdateAPIConfig;
+  /** Timeout in milliseconds for update check requests (default: 15000) */
+  updateTimeoutMs?: number;
   /** Hash verification mode for update downloads */
   verifyHashes?: 'strict' | 'warn' | false;
   /** Maximum file size in bytes for in-memory SHA-256 hash verification during staging (default: 20MB) */
   maxVerifyBytes?: number;
   /** Explicit opt-in to allow files exceeding maxVerifyBytes to skip in-memory verification in strict mode (default: false) */
   allowOversizedUnverified?: boolean;
+  /** Glob patterns of files to exclude from SHA-256 hash verification during staging */
+  skipVerifyGlobs?: string[];
+  /** Default fallbackOn5xx behavior across routes */
+  fallbackOn5xx?: boolean;
   /** Cache storage names */
   caches?: {
     offline?: string;
@@ -207,6 +225,8 @@ export interface NLPWAConfig {
   fetchDidFail?: (params: FetchDidFailParams) => Promise<void> | void;
   /** Direct cacheDidUpdate hook shortcut */
   cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
+  /** Direct cacheKeyWillBeUsed hook shortcut */
+  cacheKeyWillBeUsed?: (params: CacheKeyWillBeUsedParams) => Promise<Request | string> | Request | string;
 }
 
 declare const defaultConfig: NLPWAConfig;

@@ -114,8 +114,15 @@ export async function cmdUpdate(args) {
   mkdirSync(dirname(versionOut), { recursive: true });
   mkdirSync(dirname(infoOut), { recursive: true });
 
-  const versionPayload = { version: newVersion };
-  const infoPayload = { version: newVersion, files };
+  const versionPayload = {
+    version: newVersion,
+    ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+  };
+  const infoPayload = {
+    version: newVersion,
+    ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+    files,
+  };
 
   const versionJson = JSON.stringify(versionPayload, null, jsonIndent);
   const infoJson = JSON.stringify(infoPayload, null, jsonIndent);

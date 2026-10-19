@@ -1,9 +1,11 @@
 import { getFromCache } from '../../cache/runtime.js';
 import { tagResponse, CACHE_STATUS } from '../../cache/tag.js';
 import { getConfig } from '../../config/index.js';
+import { resolveMaxAgeMs } from '../../../shared/time.js';
 import { isNavigationFallbackAllowed } from '../navigation.js';
 import { getPlugins, runFetchDidSucceed } from '../plugins.js';
 import {
+  serveCached,
   performFetch,
   safePutInRuntime,
   getShouldThrow,
@@ -29,8 +31,25 @@ export async function networkFirst(request, event, options = {}) {
   const timeoutMs = options.networkTimeoutMs ?? getConfig().networkTimeoutMs ?? 0;
   const plugins = getPlugins(options);
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
+  const maxAgeMs = resolveMaxAgeMs(options);
 
-  const lookupCache = () => lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event });
+  const lookupCache = async () => {
+    const cached = await lookupTaggedCache({
+      request,
+      matchOptions,
+      clientId,
+      plugins,
+      options,
+      event,
+      maxAgeMs,
+    });
+    if (!cached) return null;
+    if (cached instanceof Response) return cached;
+    if (cached.response) {
+      return serveCached(request, cached.response, CACHE_STATUS.RUNTIME_CACHE);
+    }
+    return null;
+  };
 
   // Navigation preload optimization: parallel fetch started by the browser during SW startup
   let preloadPromise = null;

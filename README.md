@@ -313,9 +313,12 @@ npm run test:e2e
 - `out/client.js` — Client IIFE (`window.NLPWAClient`)
 - `out/client.esm.js` — Client ES module (`import { register } from 'nlpwa/client'`)
 - `out/config.json` — Runtime configuration starter
+- `out/plugins/sync.js` — Background Sync plugin ES module (`import { initSync } from 'nlpwa/sync'`)
+- `out/plugins/sync.client.esm.js` — Background Sync Client ES module (`import { initSyncClient } from 'nlpwa/sync/client'`)
 - `out/plugins/sync.sw.js` — Standalone Background Sync SW plugin
 - `out/plugins/sync.client.js` — Standalone Background Sync Client SDK
 - `out/rollup-plugin.js` — Rollup/Vite plugin (`import nlpwa from 'nlpwa/vite'`)
+- `out/webpack-plugin.js` — Webpack/Next.js/Rspack plugin (`import { NlpwaWebpackPlugin } from 'nlpwa/webpack'`)
 
 ---
 

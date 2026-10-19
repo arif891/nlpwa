@@ -155,11 +155,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
         const hit = (await activeCache.match(fetchUrl)) || (fetchUrl !== path ? await activeCache.match(path) : null);
         if (hit) {
-          const copyForPath = fetchUrl !== path ? hit.clone() : null;
           await putWithQuotaRecovery(fetchUrl, hit);
-          if (copyForPath) {
-            await putWithQuotaRecovery(path, copyForPath);
-          }
           stats.copied++;
           notifyProgress(path);
           return;
@@ -174,11 +170,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         allowOversizedUnverified,
         skipVerify,
       });
-      const copyForPath = fetchUrl !== path ? fetchedRes.clone() : null;
       await putWithQuotaRecovery(fetchUrl, fetchedRes);
-      if (copyForPath) {
-        await putWithQuotaRecovery(path, copyForPath);
-      }
       stats.fetched++;
       notifyProgress(path);
     } catch (err) {

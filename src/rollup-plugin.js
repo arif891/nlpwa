@@ -164,8 +164,18 @@ export function nlpwaPlugin(options = {}) {
       mkdirSync(dirname(versionOut), { recursive: true });
       mkdirSync(dirname(infoOut), { recursive: true });
 
-      writeFileSync(versionOut, JSON.stringify({ version: appVersion }, null, jsonIndent), 'utf8');
-      writeFileSync(infoOut, JSON.stringify({ version: appVersion, files }, null, jsonIndent), 'utf8');
+      const versionPayload = {
+        version: appVersion,
+        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+      };
+      const infoPayload = {
+        version: appVersion,
+        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+        files,
+      };
+
+      writeFileSync(versionOut, JSON.stringify(versionPayload, null, jsonIndent), 'utf8');
+      writeFileSync(infoOut, JSON.stringify(infoPayload, null, jsonIndent), 'utf8');
 
       cachedContentHash = computeManifestHash(files, runtimeConfig);
 

@@ -23,6 +23,129 @@ export async function createRangeResponse(request, response) {
     return response;
   }
 
+  const lengthHeader = response.headers.get('content-length') || response.headers.get('x-nlpwa-content-length');
+  const knownTotal = lengthHeader ? parseInt(lengthHeader, 10) : NaN;
+
+  // If Content-Length (or X-NLPWA-Content-Length) is known and body is a ReadableStream, stream-slice it
+  // to avoid loading large media (e.g. 150MB video) entirely into memory via arrayBuffer().
+  if (
+    !Number.isNaN(knownTotal) &&
+    knownTotal > 0 &&
+    typeof ReadableStream !== 'undefined' &&
+    response.body &&
+    typeof response.body.getReader === 'function'
+  ) {
+    const startStr = match[1];
+    const endStr = match[2];
+
+    if (!startStr && !endStr) {
+      return response;
+    }
+
+    let start;
+    let end;
+
+    if (!startStr) {
+      // Suffix range: bytes=-500 (last 500 bytes)
+      const suffix = parseInt(endStr, 10);
+      if (Number.isNaN(suffix) || suffix <= 0) {
+        return new Response(null, {
+          status: 416,
+          statusText: 'Range Not Satisfiable',
+          headers: {
+            'Content-Range': `bytes */${knownTotal}`,
+          },
+        });
+      }
+      start = Math.max(0, knownTotal - suffix);
+      end = knownTotal - 1;
+    } else {
+      start = parseInt(startStr, 10);
+      end = endStr ? parseInt(endStr, 10) : knownTotal - 1;
+    }
+
+    if (
+      Number.isNaN(start) ||
+      Number.isNaN(end) ||
+      start < 0 ||
+      start >= knownTotal ||
+      end < start
+    ) {
+      return new Response(null, {
+        status: 416,
+        statusText: 'Range Not Satisfiable',
+        headers: {
+          'Content-Range': `bytes */${knownTotal}`,
+        },
+      });
+    }
+
+    end = Math.min(end, knownTotal - 1);
+    const contentLength = end - start + 1;
+
+    let reader;
+    try {
+      reader = response.clone().body.getReader();
+    } catch {
+      reader = null;
+    }
+
+    if (reader) {
+      const stream = new ReadableStream({
+        async start(controller) {
+          let bytesRead = 0;
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunkLen = value.byteLength;
+              const chunkStart = bytesRead;
+              const chunkEnd = bytesRead + chunkLen - 1;
+              bytesRead += chunkLen;
+
+              if (chunkEnd < start) {
+                continue;
+              }
+              if (chunkStart > end) {
+                await reader.cancel().catch(() => {});
+                break;
+              }
+
+              const sliceFrom = Math.max(0, start - chunkStart);
+              const sliceTo = Math.min(chunkLen, end - chunkStart + 1);
+              const slice = value.subarray ? value.subarray(sliceFrom, sliceTo) : value.slice(sliceFrom, sliceTo);
+              controller.enqueue(slice);
+
+              if (bytesRead > end) {
+                await reader.cancel().catch(() => {});
+                break;
+              }
+            }
+            controller.close();
+          } catch (err) {
+            controller.error(err);
+          }
+        },
+        async cancel() {
+          try {
+            await reader.cancel();
+          } catch {}
+        },
+      });
+
+      const headers = new Headers(response.headers);
+      headers.set('Content-Range', `bytes ${start}-${end}/${knownTotal}`);
+      headers.set('Content-Length', String(contentLength));
+      headers.set('Accept-Ranges', 'bytes');
+
+      return new Response(stream, {
+        status: 206,
+        statusText: 'Partial Content',
+        headers,
+      });
+    }
+  }
+
   let arrayBuffer;
   try {
     arrayBuffer = await response.clone().arrayBuffer();

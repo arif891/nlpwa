@@ -13,6 +13,14 @@ export interface UpdateAppliedData {
 export interface UpdatePromptData {
   version?: string;
   updateApplied?: boolean;
+  reason?: 'editing' | 'deferred' | string;
+}
+
+export interface UpdateRequiredData {
+  minVersion: string;
+  activeVersion?: string | null;
+  targetVersion?: string | null;
+  unpinnedClients?: string[];
 }
 
 export interface StagingProgressData {
@@ -98,6 +106,8 @@ export interface RegisterOptions {
   onUpdateReady?: (data: UpdateReadyData) => void;
   /** Called when the SW signals that the app is already up to date */
   onNoUpdate?: (data: NoUpdateData) => void;
+  /** Called when the active or pinned version is below minimum supported version required by the server */
+  onUpdateRequired?: (data: UpdateRequiredData) => void;
   /** Called when an update fails to stage or verify */
   onUpdateFailed?: (data: UpdateFailedData) => void;
   /** Called when an update is committed/applied (in this tab or another tab) */
@@ -159,6 +169,14 @@ export function onUpdateReady(callback?: (data: UpdateReadyData) => void): () =>
  * @returns Unsubscribe function
  */
 export function onNoUpdate(callback?: (data: NoUpdateData) => void): () => void;
+
+/**
+ * Register a handler to be called when the server requires an immediate update due to minVersion.
+ *
+ * @param callback Callback receiving minVersion requirement details
+ * @returns Unsubscribe function
+ */
+export function onUpdateRequired(callback?: (data: UpdateRequiredData) => void): () => void;
 
 /**
  * Register a handler to be called when the SW signals that an update failed to stage or verify.
@@ -246,6 +264,7 @@ export interface NLPWAClientAPI {
   unregister: typeof unregister;
   onUpdateReady: typeof onUpdateReady;
   onNoUpdate: typeof onNoUpdate;
+  onUpdateRequired: typeof onUpdateRequired;
   onUpdateFailed: typeof onUpdateFailed;
   onUpdateApplied: typeof onUpdateApplied;
   onStagingProgress: typeof onStagingProgress;

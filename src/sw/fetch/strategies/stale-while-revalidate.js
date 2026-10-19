@@ -90,6 +90,9 @@ export async function staleWhileRevalidate(request, event, options = {}) {
     // falling back to the expired cached entry if network fails (offline).
     try {
       const response = await performFetch(request, event, options, plugins);
+      if (options.fallbackOn5xx && response.status >= 500 && response.status < 600) {
+        return serveCached(request, cached, CACHE_STATUS.STALE);
+      }
       await safePutInRuntime(request, response, event, options);
       return tagResponse(response, CACHE_STATUS.NETWORK);
     } catch {

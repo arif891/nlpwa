@@ -13,5 +13,4 @@ export type {
   FetchStrategy,
   UpdateAPIConfig,
   UpdateAPIConfigObject,
-  UpdateAPIEndpointEntry,
 } from './config.d.ts';

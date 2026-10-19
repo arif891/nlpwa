@@ -1,8 +1,10 @@
 import { getFromCache } from '../../cache/runtime.js';
 import { tagResponse, CACHE_STATUS } from '../../cache/tag.js';
+import { resolveMaxAgeMs } from '../../../shared/time.js';
 import { isNavigationFallbackAllowed } from '../navigation.js';
 import { getPlugins } from '../plugins.js';
 import {
+  serveCached,
   getShouldThrow,
   resolveFallbackUrl,
   lookupTaggedCache,
@@ -25,9 +27,21 @@ export async function cacheOnly(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const plugins = getPlugins(options);
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
+  const maxAgeMs = resolveMaxAgeMs(options);
 
-  const cached = await lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event });
-  if (cached) return cached;
+  const cached = await lookupTaggedCache({
+    request,
+    matchOptions,
+    clientId,
+    plugins,
+    options,
+    event,
+    maxAgeMs,
+  });
+  if (cached instanceof Response) return cached;
+  if (cached && cached.response) {
+    return serveCached(request, cached.response, CACHE_STATUS.RUNTIME_CACHE);
+  }
 
   if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
     const fallbackUrl = resolveFallbackUrl(options);

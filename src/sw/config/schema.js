@@ -36,6 +36,7 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'verifyHashes',
   'maxVerifyBytes',
   'allowOversizedUnverified',
+  'skipVerifyGlobs',
   'caches',
   'snapshotCachePath',
   'precache',
@@ -122,6 +123,10 @@ export function validateConfig(config) {
 
   if (config.allowOversizedUnverified !== undefined && typeof config.allowOversizedUnverified !== 'boolean') {
     errors.push('config.allowOversizedUnverified must be a boolean');
+  }
+
+  if (config.skipVerifyGlobs !== undefined && (!Array.isArray(config.skipVerifyGlobs) || config.skipVerifyGlobs.some(g => typeof g !== 'string'))) {
+    errors.push('config.skipVerifyGlobs must be an array of string glob patterns');
   }
 
   if (config.networkTimeoutMs !== undefined && (typeof config.networkTimeoutMs !== 'number' || config.networkTimeoutMs < 0)) {

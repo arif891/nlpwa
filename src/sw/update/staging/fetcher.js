@@ -13,7 +13,8 @@ export async function fetchVerified({
   verify,
   maxVerifyBytes = 20 * 1024 * 1024,
   fileSize = null,
-  allowOversizedUnverified = false,
+  allowOversizedUnverified = true,
+  skipVerify = false,
 } = {}) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? AbortSignal.timeout(30000)
@@ -23,11 +24,20 @@ export async function fetchVerified({
 
   if (expected && verify !== false) {
     const size = fileSize ?? Number(response.headers?.get?.('content-length') || response.headers?.get?.('x-nlpwa-content-length') || 0);
-    if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+    if (skipVerify) {
+      logger.warn(
+        `[NLPWA] ${path}: marked skipVerify in manifest. Skipping in-memory hash verification; storing directly.`
+      );
+      return response;
+    }
+
+    const isOversized = (maxVerifyBytes > 0 && size > maxVerifyBytes);
+    if (isOversized) {
       if (allowOversizedUnverified || verify === 'warn') {
+        const mb = (size / (1024 * 1024)).toFixed(1);
+        const limitMb = (maxVerifyBytes / (1024 * 1024)).toFixed(1);
         logger.warn(
-          `[NLPWA] ${path}: File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold ` +
-          `(${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB). Skipping in-memory hash verification (opt-in allowOversizedUnverified).`
+          `[NLPWA] ${path}: File size (${mb} MB) exceeds maxVerifyBytes threshold (${limitMb} MB). Skipping in-memory hash verification to prevent memory exhaustion; storing directly.`
         );
         return response;
       }

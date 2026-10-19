@@ -60,10 +60,17 @@ export const DEFAULTS = {
   maxVerifyBytes: 20 * 1024 * 1024,
 
   /**
-   * Explicit opt-in to allow files larger than maxVerifyBytes to skip
-   * in-memory SHA-256 verification in strict mode. Default: false.
+   * Allow files larger than maxVerifyBytes to skip in-memory SHA-256 verification
+   * with a warning instead of failing staging.
+   * Default: true (ensures large WASM binaries, videos, models do not block updates).
    */
-  allowOversizedUnverified: false,
+  allowOversizedUnverified: true,
+
+  /**
+   * Glob patterns of files to exempt from in-memory hash verification (e.g. ['**\/*.wasm']).
+   * Default: []
+   */
+  skipVerifyGlobs: [],
 
   /**
    * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).

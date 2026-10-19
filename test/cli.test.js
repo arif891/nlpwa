@@ -223,5 +223,31 @@ test('cli add: installs sync plugin into target directory', () => {
   assert.match(clientFile, /NLPWASyncClient/);
 });
 
+test('cli update: marks oversized files and skipVerifyGlobs with skipVerify: true in info.json', () => {
+  const root = makeProject();
+  writeFileSync(join(root, 'dist', 'model.wasm'), Buffer.alloc(100, 'w'));
+  writeFileSync(
+    join(root, 'config.json'),
+    JSON.stringify({
+      version: '1.0.0',
+      maxVerifyBytes: 50,
+      skipVerifyGlobs: ['**/*.wasm'],
+      precache: ['/index.html', '/model.wasm'],
+    }),
+  );
+
+  const res = runUpdate(root);
+  assert.equal(res.status, 0, res.stderr);
+
+  const info = JSON.parse(readFileSync(join(root, 'dist/api/update/info.json'), 'utf8'));
+  const wasmEntry = info.files.find((f) => f.path === '/model.wasm');
+  assert.ok(wasmEntry, 'model.wasm must be in info.json');
+  assert.equal(wasmEntry.skipVerify, true, 'model.wasm should have skipVerify: true');
+
+  const htmlEntry = info.files.find((f) => f.path === '/index.html');
+  assert.ok(htmlEntry);
+  assert.equal(htmlEntry.skipVerify, undefined, 'normal files should not have skipVerify: true');
+});
+
 
 

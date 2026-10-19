@@ -185,14 +185,14 @@ test('a new version discards an older partial staging cache', async () => {
   assert.equal((await caches.keys()).includes(stale), false);
 });
 
-test('stage: skips in-memory hash verification for files exceeding maxVerifyBytes threshold when allowOversizedUnverified is true', async () => {
+test('stage: skips in-memory hash verification for files exceeding maxVerifyBytes threshold by default without failing', async () => {
   const server = makeServer('1.0.0', {
     ...v1,
     '/model.wasm': 'wasm-binary-bytes-data',
   });
-  // maxVerifyBytes configured to 10 bytes, while model.wasm is > 10 bytes, with explicit opt-in
-  setupEnv(server.fetch, { maxVerifyBytes: 10, allowOversizedUnverified: true });
-  // Intentionally mismatch hash in server manifest
+  // maxVerifyBytes configured to 10 bytes, while model.wasm is > 10 bytes.
+  // allowOversizedUnverified defaults to true, so it stores with a warning instead of failing
+  setupEnv(server.fetch, { maxVerifyBytes: 10 });
   server.lie.set('/model.wasm', hash8('tampered-or-different'));
 
   const result = await stageUpdate(await fetchServerInfo());
@@ -201,18 +201,36 @@ test('stage: skips in-memory hash verification for files exceeding maxVerifyByte
   assert.equal(await commitStaged(), true);
 });
 
-test('stage: strict mode enforces hash verification on oversized files when allowOversizedUnverified is false', async () => {
+test('stage: strict mode enforces hash verification on oversized files when allowOversizedUnverified is explicitly false', async () => {
   const server = makeServer('1.0.0', {
     ...v1,
     '/model.wasm': 'wasm-binary-bytes-data',
   });
-  // allowOversizedUnverified defaults to false
-  setupEnv(server.fetch, { maxVerifyBytes: 10 });
+  // Explicit opt-out requires strict failure on oversized files
+  setupEnv(server.fetch, { maxVerifyBytes: 10, allowOversizedUnverified: false });
   server.lie.set('/model.wasm', hash8('tampered-or-different'));
 
   const result = await stageUpdate(await fetchServerInfo());
   assert.equal(result.status, 'incomplete');
   assert.ok(result.failed.includes('/model.wasm'));
+});
+
+test('stage: skips in-memory hash verification when file is annotated with skipVerify in manifest', async () => {
+  const server = makeServer('1.0.0', {
+    ...v1,
+    '/model.wasm': 'wasm-binary-bytes-data',
+  });
+  setupEnv(server.fetch, { allowOversizedUnverified: false }); // even if allowOversizedUnverified is false
+  const manifest = await fetchServerInfo();
+  // Annotate /model.wasm with skipVerify: true as produced by the CLI
+  const wasmEntry = manifest.files.find((f) => f.path === '/model.wasm');
+  if (wasmEntry) wasmEntry.skipVerify = true;
+  server.lie.set('/model.wasm', hash8('tampered-or-different'));
+
+  const result = await stageUpdate(manifest);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.failed.length, 0);
+  assert.equal(await commitStaged(), true);
 });
 
 test('stage: recovers from QuotaExceededError by triggering cleanRuntimeCache and retrying', async () => {

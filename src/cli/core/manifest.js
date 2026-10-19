@@ -140,6 +140,14 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
   const missing = [];
   let allDiskFiles = null;
 
+  const maxVerifyBytes = runtimeConfig.maxVerifyBytes ?? (20 * 1024 * 1024);
+  const skipVerifyGlobs = Array.isArray(runtimeConfig.skipVerifyGlobs) ? runtimeConfig.skipVerifyGlobs : [];
+
+  const shouldSkipVerify = (fileUrl, fileSize) => {
+    if (maxVerifyBytes > 0 && fileSize > maxVerifyBytes) return true;
+    return skipVerifyGlobs.some((g) => matchGlob(g.startsWith('/') ? g : '/' + g, fileUrl));
+  };
+
   for (const urlPath of trackedUrlPaths) {
     if (typeof urlPath !== 'string') continue;
     const isGlob = urlPath.includes('*') || urlPath.includes('?');
@@ -158,10 +166,13 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
         if (matchGlob(normPattern, fileUrlPath)) {
           matchedCount++;
           if (!filesMap.has(fileUrlPath)) {
+            const fileSize = statSync(diskFile).size;
+            const skipVerify = shouldSkipVerify(fileUrlPath, fileSize);
             filesMap.set(fileUrlPath, {
               path: fileUrlPath,
               hash: hashFile(diskFile),
-              size: statSync(diskFile).size,
+              size: fileSize,
+              ...(skipVerify ? { skipVerify: true } : {}),
             });
           }
         }
@@ -181,10 +192,13 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
 
       const diskPath = resolve(targetDir, relPath);
       if (existsSync(diskPath)) {
+        const fileSize = statSync(diskPath).size;
+        const skipVerify = shouldSkipVerify(urlPath, fileSize);
         filesMap.set(urlPath, {
           path: urlPath,
           hash: hashFile(diskPath),
-          size: statSync(diskPath).size,
+          size: fileSize,
+          ...(skipVerify ? { skipVerify: true } : {}),
         });
       } else {
         missing.push({ path: urlPath, diskPath });

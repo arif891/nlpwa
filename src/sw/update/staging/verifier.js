@@ -14,13 +14,16 @@ export async function isAlreadyStaged({
   maxVerifyBytes = 20 * 1024 * 1024,
   fileSize = null,
   fetchUrl = path,
-  allowOversizedUnverified = false,
+  allowOversizedUnverified = true,
+  skipVerify = false,
 } = {}) {
   const hit = (await cache.match(fetchUrl)) || (fetchUrl !== path ? await cache.match(path) : null);
   if (!hit) return false;
   if (!expected || verify === false) return true;
   const size = fileSize ?? Number(hit.headers?.get?.('content-length') || hit.headers?.get?.('x-nlpwa-content-length') || 0);
-  if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
+  if (skipVerify) return true;
+  const isOversized = (maxVerifyBytes > 0 && size > maxVerifyBytes);
+  if (isOversized) {
     if (allowOversizedUnverified || verify === 'warn') {
       return true;
     }

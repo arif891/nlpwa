@@ -27,7 +27,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const config = getConfig();
   const verify = config.verifyHashes ?? 'strict';
   const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
-  const allowOversizedUnverified = Boolean(config.allowOversizedUnverified);
+  const allowOversizedUnverified = config.allowOversizedUnverified ?? true;
   const files = manifest.files.filter((f) => isSafePath(f?.path));
 
   const diff = computeDiff(files, activeSnapshot?.files ?? null);
@@ -134,7 +134,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     }
   };
 
-  await mapConcurrent(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
+  await mapConcurrent(files, FETCH_CONCURRENCY, async ({ path, hash, size, skipVerify }) => {
     const fetchUrl = resolvePathWithBase(path, config.base);
     try {
       if (await isAlreadyStaged({
@@ -146,6 +146,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         fileSize: size,
         fetchUrl,
         allowOversizedUnverified,
+        skipVerify,
       })) {
         stats.reused++;
         notifyProgress(path);
@@ -171,6 +172,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         maxVerifyBytes,
         fileSize: size,
         allowOversizedUnverified,
+        skipVerify,
       });
       const copyForPath = fetchUrl !== path ? fetchedRes.clone() : null;
       await putWithQuotaRecovery(fetchUrl, fetchedRes);

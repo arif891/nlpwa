@@ -5,6 +5,8 @@ import {
   readMeta,
   writeMeta,
   deleteMeta,
+  getMinVersion,
+  setMinVersion,
 } from './store.js';
 import {
   getActive,
@@ -33,7 +35,9 @@ import {
   getAllPinnedCaches,
   pruneClientPins,
   flushClientPins,
+  unpinClientsBelowVersion,
   resetClientPinsMemo,
+  PIN_GRACE_PERIOD_MS,
   PINS_KEY,
 } from './client-pins.js';
 import {
@@ -54,6 +58,7 @@ export async function resetMeta() {
     deleteMeta(ACTIVE_KEY),
     deleteMeta(STAGED_KEY),
     deleteMeta(PINS_KEY),
+    deleteMeta('/_nlpwa/min-version.json'),
   ]);
 }
 
@@ -97,6 +102,7 @@ export {
   openActive,
   getActiveSnapshotPaths,
   setActiveSnapshotPaths,
+  resetActiveMemo,
   getStaged,
   setStaged,
   clearStaged,
@@ -108,7 +114,11 @@ export {
   getAllPinnedCaches,
   pruneClientPins,
   flushClientPins,
+  unpinClientsBelowVersion,
   resetClientPinsMemo,
+  PIN_GRACE_PERIOD_MS,
+  getMinVersion,
+  setMinVersion,
   tryAcquire,
   release,
   withLock,

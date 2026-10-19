@@ -233,6 +233,29 @@ export class SyncClient {
   }
 
   /**
+   * Get requests that were flagged authRequired (redirected to login or 401/403).
+   *
+   * @param {string} [queueName]
+   * @returns {Promise<Array<Object>>}
+   */
+  async getAuthRequired(queueName = this.defaultQueue) {
+    const localQueue = new SyncQueue(queueName);
+    return localQueue.getAuthRequired();
+  }
+
+  /**
+   * Retry requests that were flagged authRequired after user re-authenticates.
+   *
+   * @param {string} [queueName]
+   * @param {number} [id]
+   * @returns {Promise<number>}
+   */
+  async retryAuthRequired(queueName = this.defaultQueue, id) {
+    const localQueue = new SyncQueue(queueName);
+    return localQueue.retryAuthRequired(id);
+  }
+
+  /**
    * Automatically replay queue when browser regains network connectivity or tab becomes visible.
    * Essential for Safari / Firefox which lack native Background Sync API.
    *

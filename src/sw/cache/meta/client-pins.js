@@ -1,4 +1,5 @@
 import { readMeta, writeMeta, deleteMeta } from './store.js';
+import { compare } from '../../../shared/version.js';
 
 const PINS_KEY = '/_nlpwa/client-pins.json';
 const _clientPins = new Map();
@@ -12,9 +13,13 @@ export async function initClientPins() {
     if (stored && typeof stored === 'object') {
       for (const [clientId, val] of Object.entries(stored)) {
         if (typeof val === 'string') {
-          _clientPins.set(clientId, { cache: val, version: null });
+          _clientPins.set(clientId, { cache: val, version: null, pinnedAt: 0 });
         } else if (val && typeof val === 'object' && typeof val.cache === 'string') {
-          _clientPins.set(clientId, { cache: val.cache, version: val.version || null });
+          _clientPins.set(clientId, {
+            cache: val.cache,
+            version: val.version || null,
+            pinnedAt: val.pinnedAt || 0,
+          });
         }
       }
     }
@@ -54,9 +59,9 @@ export async function flushClientPins() {
   return _pendingWrite;
 }
 
-export function pinClient(clientId, cacheName, version = null) {
+export function pinClient(clientId, cacheName, version = null, pinnedAt = Date.now()) {
   if (!clientId || !cacheName) return Promise.resolve();
-  _clientPins.set(clientId, { cache: cacheName, version: version || null });
+  _clientPins.set(clientId, { cache: cacheName, version: version || null, pinnedAt });
   return flushClientPins();
 }
 
@@ -89,7 +94,9 @@ export function getAllPinnedCaches() {
   return Array.from(new Set(caches));
 }
 
-export async function pruneClientPins() {
+export const PIN_GRACE_PERIOD_MS = 30000;
+
+export async function pruneClientPins(graceMs = PIN_GRACE_PERIOD_MS) {
   const clientsObj = typeof self !== 'undefined' && self.clients ? self.clients : null;
   if (!clientsObj || typeof clientsObj.matchAll !== 'function') {
     return;
@@ -97,9 +104,15 @@ export async function pruneClientPins() {
   try {
     const clients = await clientsObj.matchAll({ includeUncontrolled: true, type: 'window' });
     const liveIds = new Set(clients.map((c) => c.id));
+    const now = Date.now();
     let changed = false;
-    for (const id of _clientPins.keys()) {
+    for (const [id, pin] of _clientPins.entries()) {
       if (!liveIds.has(id)) {
+        // Protect recently created pins from being prematurely pruned before the tab appears in clients.matchAll
+        const pinnedAt = typeof pin === 'object' ? (pin?.pinnedAt || 0) : 0;
+        if (now - pinnedAt < graceMs) {
+          continue;
+        }
         _clientPins.delete(id);
         changed = true;
       }
@@ -108,6 +121,28 @@ export async function pruneClientPins() {
       await flushClientPins();
     }
   } catch {}
+}
+
+/**
+ * Remove pins for any clients that are pinned to a version below minVersion.
+ *
+ * @param {string} minVersion
+ * @returns {Promise<Array<string>>} List of unpinned client IDs
+ */
+export async function unpinClientsBelowVersion(minVersion) {
+  if (!minVersion) return [];
+  const unpinned = [];
+  for (const [id, pin] of _clientPins.entries()) {
+    const v = typeof pin === 'object' ? (pin?.version || null) : null;
+    if (v && compare(v, minVersion) < 0) {
+      _clientPins.delete(id);
+      unpinned.push(id);
+    }
+  }
+  if (unpinned.length > 0) {
+    await flushClientPins();
+  }
+  return unpinned;
 }
 
 export function resetClientPinsMemo() {

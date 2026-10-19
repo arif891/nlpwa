@@ -30,6 +30,7 @@ export const MESSAGE_TYPES = {
   CLIENT_PINNED:       'CLIENT_PINNED',       // SW → client: reply confirming client version pin
   UNPIN_CLIENT:        'UNPIN_CLIENT',        // client → SW: remove client pin
   CLIENT_UNPINNED:     'CLIENT_UNPINNED',     // SW → client: reply confirming client version unpin
+  UPDATE_REQUIRED:     'UPDATE_REQUIRED',     // SW → client: active/pinned version is below minimum supported version
 };
 
 /** Runtime cache cleanup strategies */

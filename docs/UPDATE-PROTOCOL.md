@@ -50,14 +50,22 @@ Fetched **only** if Tier 1 reports a different version (or the SW engine version
 }
 ```
 
-### Fields
-
 | Field          | Type     | Required | Description                                                                                                       |
 | -------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
 | `version`      | `string` | ✅        | Semantic version with content digest (derived deterministically from manifest hash, e.g. `1.0.0-a1b2c3d4e5f6`)    |
+| `minVersion`   | `string` | ❌        | Minimum supported app version (e.g. `2.0.0`). Active or pinned tabs below this version receive `UPDATE_REQUIRED` and are forced to reload/unpin. |
 | `files`        | `array`  | ✅        | List of tracked offline files and their hashes                                                                    |
 | `files[].path` | `string` | ✅        | URL pathname starting with `/`                                                                                    |
 | `files[].hash` | `string` | ✅        | Stable content hash (32-character prefix or full 64-character SHA-256 hex string; minimum 32 characters required) |
+
+> [!IMPORTANT]
+> **Enforcing `minVersion` for Breaking Backend Changes:**
+> Client version pinning ensures that open tabs never experience mid-session asset corruption. However, in long-lived sessions (tabs left open for days on mobile devices), a tab pinned to `v1` may eventually call backend APIs that have evolved to `v3`.
+>
+> By specifying `"minVersion": "2.0.0"` in either `version.json` (Tier 1) or `info.json` (Tier 2):
+> 1. The Service Worker immediately drops version pins for any client pinned to a version below `minVersion`.
+> 2. The Service Worker broadcasts `UPDATE_REQUIRED` to all connected client windows.
+> 3. The client SDK (`NLPWAClient.register()`) triggers `onUpdateRequired` (or automatically reloads the page by default) so users are cleanly migrated to the supported version.
 
 ---
 
@@ -271,11 +279,12 @@ Failures during staging never corrupt the running application:
 | Type               | Payload                                                                          | Meaning                                                      |
 | ------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | `UPDATE_READY`     | `{ type, version }`                                                              | Staged update is complete; client should prompt user         |
+| `UPDATE_REQUIRED`  | `{ type, minVersion, activeVersion, targetVersion, unpinnedClients }`             | Current version is below minimum supported; force update     |
 | `UPDATE_APPLIED`   | `{ type, version, applied }`                                                     | Staged update has been switched to active; client may reload |
 | `NO_UPDATE`        | `{ type, version }`                                                              | Version check ran; client is already up to date              |
 | `STAGING_PROGRESS` | `{ type, loaded, total, percent, file }`                                         | Staging download and verification progress                   |
 | `UPDATE_FAILED`    | `{ type, version, failed, error, persistent, hasHashMismatch }`                  | Staging or hash verification failed                          |
-| `VERSION_INFO`     | `{ type, version, activeVersion, stagedVersion }`                                | Reply with current active & staged versions                  |
+| `VERSION_INFO`     | `{ type, version, activeVersion, stagedVersion, minVersion, updateRequired }`    | Reply with current active, staged, & minVersion info         |
 | `STATUS_INFO`      | `{ type, status, activeVersion, stagedVersion, percent }`                        | Reply with current update lifecycle status                   |
 | `CACHE_INFO`       | `{ type, data: { quota, usage, runtimeEntries, runtimeBytes, largestEntries } }` | Reply with storage quota & cache metrics                     |
 | `RUNTIME_CLEANED`  | `{ type, data: { evictedCount, evictedUrls, freedBytes, remainingEntries } }`    | Reply with cache cleanup summary                             |
@@ -344,3 +353,38 @@ Updates are checked through complementary triggers:
 
 A concurrency lock prevents two update runs from overlapping regardless of
 which trigger fires.
+
+---
+
+## Integrity Models: Operational vs. Cryptographic (Ed25519)
+
+NLPWA distinguishes clearly between **Operational Integrity** (built-in by default) and **Cryptographic Tamper-Evidence** (opt-in architectural layer):
+
+### 1. Operational Integrity (Built-in Default)
+- **Mechanism:** During update staging, downloaded assets are verified against the SHA-256 hashes published in `info.json`.
+- **What it solves:**
+  - **Network truncation:** Incomplete downloads over spotty Wi-Fi / cellular connections are rejected and retried.
+  - **Soft-404 / SPA fallbacks:** CDNs or static hosts returning `200 OK` with HTML `index.html` for missing chunks are blocked before overwriting JavaScript bundles.
+  - **Captive portals:** Wi-Fi login walls intercepting bundle requests are caught before corrupting the cache.
+  - **Partial multi-CDN deployments:** Updates are only staged if every file matches its expected digest.
+- **Limitation:** Hashes and the `skipVerify` flag arrive from same-origin `info.json`. If an adversary compromises the host origin or CDN credentials, they can overwrite both files and `info.json`.
+
+### 2. Cryptographic Tamper-Evidence (Ed25519 Detached Signatures Roadmap)
+- **The Core Insight:** The Service Worker engine script itself (`sw.js`) is byte-checked directly by the browser (bypassing HTTP caches every 24 hours or on navigation). Because `sw.js` is an authenticated trust anchor, you can embed an **Ed25519 Public Key** into `sw.js` at build time.
+- **Workflow:**
+  1. Build / CI pipeline runs `nlpwa update --sign --key /path/to/ed25519-private.pem`.
+  2. The CLI computes a detached cryptographic signature of `info.json` and embeds it as `"signature": "<base64>"` (or writes `info.json.sig`).
+  3. When the Service Worker fetches `info.json`, it verifies the signature using the browser's built-in Web Crypto API:
+     ```js
+     const verified = await crypto.subtle.verify(
+       { name: 'Ed25519' },
+       embeddedPublicKey,
+       signatureBytes,
+       manifestBytes
+     );
+     ```
+  4. If verification fails, the staging update is completely aborted before downloading a single asset.
+- **Advantage over Workbox / Subresource Integrity (SRI):**
+  - Standard SRI requires annotating every single `<script integrity="...">` tag in the HTML entry point.
+  - Ed25519 manifest signing gives end-to-end cryptographic tamper-evidence against compromised CDNs, compromised reverse proxies, or man-in-the-middle attacks, with zero HTML plumbing and zero performance overhead.
+

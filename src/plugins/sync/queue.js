@@ -41,9 +41,10 @@ export class SyncQueue {
    * @param {Object} [options]
    * @param {boolean} [options.includeDeadLetter=false] Include dead-letter items
    * @param {boolean} [options.deadLetterOnly=false] Return only dead-letter items
+   * @param {boolean} [options.excludeAuthRequired=false] Exclude items awaiting re-authentication
    * @returns {Promise<Array<Object>>}
    */
-  async getAll({ includeDeadLetter = false, deadLetterOnly = false } = {}) {
+  async getAll({ includeDeadLetter = false, deadLetterOnly = false, excludeAuthRequired = false } = {}) {
     return withStore('readwrite', (store) => {
       return new Promise((resolve, reject) => {
         const index = store.index('queueName');
@@ -63,6 +64,9 @@ export class SyncQueue {
               if (deadLetterOnly) {
                 if (item.deadLetter) valid.push(item);
               } else if (includeDeadLetter || !item.deadLetter) {
+                if (excludeAuthRequired && item.authRequired) {
+                  continue;
+                }
                 valid.push(item);
               }
             }
@@ -127,6 +131,45 @@ export class SyncQueue {
   }
 
   /**
+   * Retrieve all items currently requiring authentication in this queue.
+   * @returns {Promise<Array<Object>>}
+   */
+  async getAuthRequired() {
+    const items = await this.getAll({ includeDeadLetter: true });
+    return items.filter((item) => Boolean(item.authRequired));
+  }
+
+  /**
+   * Reset the authRequired flag on an item or all items so they can be replayed after login.
+   * @param {number} [id] If omitted, resets all authRequired items in this queue.
+   * @returns {Promise<number>} Number of reset items
+   */
+  async retryAuthRequired(id) {
+    return withStore('readwrite', (store) => {
+      return new Promise((resolve, reject) => {
+        const index = store.index('queueName');
+        const req = index.getAll(IDBKeyRange.only(this.name));
+        req.onsuccess = () => {
+          const items = req.result || [];
+          let count = 0;
+          for (const item of items) {
+            if (item.authRequired && (id === undefined || item.id === id)) {
+              store.put({
+                ...item,
+                authRequired: false,
+                retryCount: 0,
+              });
+              count++;
+            }
+          }
+          resolve(count);
+        };
+        req.onerror = () => reject(req.error);
+      });
+    });
+  }
+
+  /**
    * Count pending active items in this queue.
    * @returns {Promise<number>}
    */
@@ -185,10 +228,11 @@ export class SyncQueue {
    * @param {Function} [options.fetchImpl] Fetch implementation (defaults to globalThis.fetch)
    * @param {(item: Object, response: Response) => void} [options.onReplaySuccess]
    * @param {(item: Object, error: Error|Response) => void} [options.onReplayFail]
+   * @param {boolean} [options.includeAuthRequired=false] Whether to retry items flagged authRequired
    * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number }>}
    */
-  async replayAll({ fetchImpl = globalThis.fetch, onReplaySuccess, onReplayFail } = {}) {
-    const items = await this.getAll();
+  async replayAll({ fetchImpl = globalThis.fetch, onReplaySuccess, onReplayFail, includeAuthRequired = false } = {}) {
+    const items = await this.getAll({ excludeAuthRequired: !includeAuthRequired });
     let successCount = 0;
     let failedCount = 0;
 
@@ -197,16 +241,14 @@ export class SyncQueue {
       try {
         const response = await fetchImpl(req);
 
-        // Check for redirects (e.g. session-expired redirect to login page returning 200 HTML)
+        // Check for redirects (e.g. session-expired redirect to login page)
         const isRedirected = Boolean(
           response.redirected ||
           response.type === 'opaqueredirect' ||
           (response.status >= 300 && response.status < 400)
         );
-        const contentType = response.headers?.get ? (response.headers.get('content-type') || '') : '';
-        const isHtmlRedirect = contentType.includes('text/html') && (item.url?.includes('/api/') || item.method !== 'GET');
 
-        if (isRedirected || isHtmlRedirect) {
+        if (isRedirected) {
           // Session expired or redirected to login: do NOT discard user data!
           failedCount++;
           await withStore('readwrite', (store) => {

@@ -7,6 +7,7 @@ import { tagResponse, CACHE_STATUS } from '../../cache/tag.js';
 import { getConfig } from '../../config/index.js';
 import { logger } from '../../logger.js';
 import { createRangeResponse } from '../range.js';
+import { isResponseExpired } from '../../../shared/time.js';
 import {
   getPlugins,
   runRequestWillFetch,
@@ -187,12 +188,12 @@ export function resolveFallbackUrl(options = {}) {
 }
 
 /**
- * Look in offline then runtime cache; returns a tagged Response or null.
+ * Look in offline then runtime cache; returns a tagged Response, expired descriptor, or null.
  *
  * @param {Object} params
- * @returns {Promise<Response|null>}
+ * @returns {Promise<Response|{ expired: true, response: Response }|null>}
  */
-export async function lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event }) {
+export async function lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event, maxAgeMs }) {
   let cacheKey = request;
   try {
     cacheKey = await runCacheKeyWillBeUsed(plugins, { request, mode: 'read', event, options });
@@ -226,7 +227,12 @@ export async function lookupTaggedCache({ request, matchOptions, clientId, plugi
       event,
       options,
     });
-    if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+    if (runtimeCached) {
+      if (maxAgeMs && isResponseExpired(runtimeCached, maxAgeMs)) {
+        return { expired: true, response: runtimeCached };
+      }
+      return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+    }
   }
 
   return null;

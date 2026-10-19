@@ -253,3 +253,60 @@ test('sync queue: clearOnLogout / clearAll purges all requests across all queues
   assert.equal(await q2.size(), 0);
 });
 
+test('sync queue: legitimate HTML response (e.g. HTMX) with 200 OK succeeds and is removed without flagging authRequired', async () => {
+  const queue = new SyncQueue('htmx-test');
+  await queue.push(new Request('https://example.com/api/comments', { method: 'POST', body: 'comment text' }));
+
+  // Mock HTMX endpoint returning HTML fragment with 200 OK and redirected = false
+  const htmxResponse = new Response('<div id="comment-42">New comment</div>', {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+  Object.defineProperty(htmxResponse, 'redirected', { value: false });
+
+  const result = await queue.replayAll({ fetchImpl: async () => htmxResponse });
+
+  assert.equal(result.successCount, 1, 'HTMX 200 HTML response must succeed');
+  assert.equal(result.failedCount, 0);
+  assert.equal(await queue.size(), 0, 'Completed HTMX mutation must be dequeued');
+});
+
+test('sync queue: authRequired items are excluded from default replayAll and can be resumed with retryAuthRequired', async () => {
+  const queue = new SyncQueue('auth-retry-test');
+  const id = await queue.push(new Request('https://example.com/api/protected-action', { method: 'POST' }));
+
+  // Simulate first replay getting a login redirect
+  const redirectResponse = new Response('<html>Login</html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+  Object.defineProperty(redirectResponse, 'redirected', { value: true });
+
+  await queue.replayAll({ fetchImpl: async () => redirectResponse });
+
+  const authItems = await queue.getAuthRequired();
+  assert.equal(authItems.length, 1);
+  assert.equal(authItems[0].authRequired, true);
+
+  // Subsequent background replayAll must SKIP this item (excludeAuthRequired: true by default)
+  let fetchCalled = false;
+  const secondResult = await queue.replayAll({
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return new Response('ok');
+    },
+  });
+
+  assert.equal(fetchCalled, false, 'authRequired item must NOT be retried until re-authenticated');
+  assert.equal(secondResult.successCount, 0);
+
+  // User logs in and application calls retryAuthRequired
+  const resetCount = await queue.retryAuthRequired(id);
+  assert.equal(resetCount, 1);
+
+  // Now replayAll will retry the mutation
+  const thirdResult = await queue.replayAll({
+    fetchImpl: async () => new Response('created', { status: 201 }),
+  });
+  assert.equal(thirdResult.successCount, 1);
+  assert.equal(await queue.size(), 0);
+});
+
+

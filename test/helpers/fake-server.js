@@ -5,15 +5,19 @@ import { createHash } from 'node:crypto';
 export const hash32 = (body) => createHash('sha256').update(body).digest('hex').slice(0, 32);
 export const hash8 = hash32;
 
-export function makeServer(version, files) {
-  const state = { version, files: { ...files }, calls: [], broken: new Set(), lie: new Map() };
-  state.set = (v, f) => { state.version = v; state.files = { ...f }; };
+export function makeServer(version, files, minVersion = null) {
+  const state = { version, minVersion, files: { ...files }, calls: [], broken: new Set(), lie: new Map() };
+  state.set = (v, f, m = null) => { state.version = v; state.files = { ...f }; if (m) state.minVersion = m; };
   state.fetch = async (r) => {
     const path = new URL(r.url).pathname;
     state.calls.push(path);
-    if (path === '/api/update/version' || path === '/api/update/version.json') return Response.json({ version: state.version });
+    if (path === '/api/update/version' || path === '/api/update/version.json') {
+      const body = { version: state.version };
+      if (state.minVersion) body.minVersion = state.minVersion;
+      return Response.json(body);
+    }
     if (path === '/api/update/info' || path === '/api/update/info.json') {
-      return Response.json({
+      const body = {
         version: state.version,
         // `lie` lets a test advertise a hash that doesn't match the served bytes
         files: Object.entries(state.files).map(([p, body]) => ({
@@ -21,7 +25,9 @@ export function makeServer(version, files) {
           hash: state.lie.get(p) ?? hash8(body),
           size: Buffer.byteLength(String(body)),
         })),
-      });
+      };
+      if (state.minVersion) body.minVersion = state.minVersion;
+      return Response.json(body);
     }
     if (state.broken.has(path)) return new Response('nope', { status: 404 });
     if (path in state.files) {

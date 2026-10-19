@@ -126,6 +126,18 @@ export async function register(swUrl = '/sw.js', options = {}) {
     }
   });
 
+  // ── Update-required handler (minVersion enforcement) ───────────────────────
+  const unsubscribeUpdateRequired = onUpdateRequired((data) => {
+    if (typeof options.onUpdateRequired === 'function') {
+      options.onUpdateRequired(data);
+    } else if (options.forceReloadOnRequired !== false) {
+      logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${data?.minVersion}). Reloading application.`);
+      if (typeof window !== 'undefined' && window.location?.reload) {
+        window.location.reload();
+      }
+    }
+  });
+
   // ── Polling & background sync ─────────────────────────────────────────────
   const cleanupFocus = setupFocusPolling({
     options,
@@ -169,6 +181,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
     if (unsubscribeApplied) unsubscribeApplied();
     if (unsubscribeNoUpdate) unsubscribeNoUpdate();
     if (unsubscribeUpdateFailed) unsubscribeUpdateFailed();
+    if (unsubscribeUpdateRequired) unsubscribeUpdateRequired();
     if (intervalTimer) clearInterval(intervalTimer);
     if (cleanupFocus) cleanupFocus();
     if (initialCheckControllerListener) {
@@ -223,3 +236,26 @@ export function onUpdateApplied(callback) {
     }
   });
 }
+
+/**
+ * Register a listener for when an update is strictly required (active/pinned version < minVersion).
+ *
+ * @param {(data: { minVersion: string, activeVersion: string, targetVersion?: string, unpinnedClients?: string[] }) => void} callback
+ * @returns {Function} unsubscribe function
+ */
+export function onUpdateRequired(callback) {
+  return onSWMessage(MESSAGE_TYPES.UPDATE_REQUIRED, (data) => {
+    if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+      document.dispatchEvent(
+        new CustomEvent('nlpwa:update-required', {
+          bubbles: true,
+          detail: data,
+        })
+      );
+    }
+    if (typeof callback === 'function') {
+      callback(data);
+    }
+  });
+}
+

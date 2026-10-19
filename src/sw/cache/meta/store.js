@@ -44,3 +44,19 @@ export async function deleteMeta(key) {
   const cache = await caches.open(META_CACHE);
   await cache.delete(key);
 }
+
+const MIN_VERSION_KEY = '/_nlpwa/min-version.json';
+
+export async function getMinVersion() {
+  const data = await readMeta(MIN_VERSION_KEY).catch(() => null);
+  return data?.minVersion || null;
+}
+
+export async function setMinVersion(minVersion) {
+  if (minVersion) {
+    await writeMeta(MIN_VERSION_KEY, { minVersion });
+  } else {
+    await deleteMeta(MIN_VERSION_KEY);
+  }
+}
+

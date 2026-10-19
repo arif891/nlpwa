@@ -1,20 +1,15 @@
-import { getFromCache, getFromOffline, getFromRuntime } from '../../cache/runtime.js';
+import { getFromCache } from '../../cache/runtime.js';
 import { tagResponse, CACHE_STATUS } from '../../cache/tag.js';
-import { getConfig } from '../../config/index.js';
-import { logger } from '../../logger.js';
-import { resolveMaxAgeMs, isResponseExpired } from '../../../shared/time.js';
+import { resolveMaxAgeMs } from '../../../shared/time.js';
 import { isNavigationFallbackAllowed } from '../navigation.js';
-import {
-  getPlugins,
-  runCachedResponseWillBeUsed,
-  runCacheKeyWillBeUsed,
-} from '../plugins.js';
+import { getPlugins } from '../plugins.js';
 import {
   serveCached,
   performFetch,
   safePutInRuntime,
   getShouldThrow,
   resolveFallbackUrl,
+  lookupTaggedCache,
 } from './context.js';
 
 /**
@@ -33,60 +28,36 @@ import {
 export async function cacheFirst(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const plugins = getPlugins(options);
-  const offlineName = getConfig().caches?.offline || 'offline';
-  const runtimeName = getConfig().caches?.runtime || 'runtime';
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
-
-  let cacheKey = request;
-  try {
-    cacheKey = await runCacheKeyWillBeUsed(plugins, { request, mode: 'read', event, options });
-  } catch (err) {
-    logger.warn('[NLPWA] cacheKeyWillBeUsed error:', err?.message || err);
-  }
-
-  let offlineCached = await getFromOffline(cacheKey, matchOptions, clientId);
-  if (offlineCached) {
-    offlineCached = await runCachedResponseWillBeUsed(plugins, {
-      cacheName: offlineName,
-      request: cacheKey,
-      matchOptions,
-      cachedResponse: offlineCached,
-      event,
-      options,
-    });
-    if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
-  }
-
   const maxAgeMs = resolveMaxAgeMs(options);
-  let runtimeCached = await getFromRuntime(cacheKey, matchOptions);
-  if (runtimeCached) {
-    runtimeCached = await runCachedResponseWillBeUsed(plugins, {
-      cacheName: runtimeName,
-      request: cacheKey,
-      matchOptions,
-      cachedResponse: runtimeCached,
-      event,
-      options,
-    });
-    if (runtimeCached) {
-      const expired = maxAgeMs ? isResponseExpired(runtimeCached, maxAgeMs) : false;
-      if (!expired) {
-        return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
-      }
 
-      // Cached copy has expired: attempt to refresh from network
-      try {
-        const response = await performFetch(request, event, options, plugins);
-        if (options.fallbackOn5xx && response.status >= 500 && response.status < 600) {
-          return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
-        }
-        safePutInRuntime(request, response, event, options);
-        return tagResponse(response, CACHE_STATUS.NETWORK);
-      } catch {
-        // Network failed while refreshing expired asset: serve stale cached copy
-        return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+  const cached = await lookupTaggedCache({
+    request,
+    matchOptions,
+    clientId,
+    plugins,
+    options,
+    event,
+    maxAgeMs,
+  });
+
+  if (cached && !(cached instanceof Response) && cached.expired) {
+    // Cached copy in runtime has expired: attempt to refresh from network
+    try {
+      const response = await performFetch(request, event, options, plugins);
+      if (options.fallbackOn5xx && response.status >= 500 && response.status < 600) {
+        return serveCached(request, cached.response, CACHE_STATUS.RUNTIME_CACHE);
       }
+      safePutInRuntime(request, response, event, options);
+      return tagResponse(response, CACHE_STATUS.NETWORK);
+    } catch {
+      // Network failed while refreshing expired asset: serve stale cached copy
+      return serveCached(request, cached.response, CACHE_STATUS.RUNTIME_CACHE);
     }
+  }
+
+  if (cached instanceof Response) {
+    return cached;
   }
 
   try {

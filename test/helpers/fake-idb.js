@@ -35,6 +35,12 @@ class FakeIDBCursor {
       this.store.records.delete(item.id);
     }
   }
+  update(val) {
+    const item = this.items[this.index];
+    if (item && item.id != null) {
+      this.store.records.set(item.id, { ...val, id: item.id });
+    }
+  }
 }
 
 class FakeIDBIndex {

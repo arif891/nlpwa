@@ -187,7 +187,7 @@ test('client pinning: pruneClientPins drops pins for clients no longer in self.c
     matchAll: async () => [{ id: 'client-alive' }],
   };
 
-  await pruneClientPins();
+  await pruneClientPins(0);
 
   assert.equal(getClientPinnedCache('client-alive'), 'offline@1.0.0-1');
   assert.equal(getClientPinnedCache('client-closed'), null, 'closed client pin should be pruned');
@@ -251,9 +251,9 @@ test('client pinning: commitStaged prunes dead client pins across updates so old
 
   const v1Cache = (await getActive()).cache;
 
-  // Pin two tabs to v1
-  pinClient('tab-closed-1', v1Cache, '1.0.0');
-  pinClient('tab-closed-2', v1Cache, '1.0.0');
+  // Pin two tabs to v1 with timestamp past grace period
+  await pinClient('tab-closed-1', v1Cache, '1.0.0', Date.now() - 60000);
+  await pinClient('tab-closed-2', v1Cache, '1.0.0', Date.now() - 60000);
   assert.ok(getAllPinnedCaches().includes(v1Cache));
 
   // Stage and commit v2
@@ -397,5 +397,31 @@ test('client pinning: pin is durable across SW restart before subresource fetch,
   // and served /app.js from v1Cache ('app v1'), NOT v2!
   assert.equal(await response.text(), 'app v1', 'Must serve app v1 from pinned cache, not app v2');
   assert.equal(getClientPinnedCache('tab-persisted'), v1Cache, 'Client must remain pinned to v1 cache');
+});
+
+test('client pinning: pruneClientPins honors grace period and does NOT drop newly navigating tabs', async () => {
+  const server = makeServer('1.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app v1',
+  });
+  setupEnv(server.fetch);
+  await precacheFiles();
+  const v1Cache = (await getActive()).cache;
+
+  // Simulate a tab that navigated 2 seconds ago (still transitioning, not yet in matchAll)
+  await pinClient('tab-transitioning', v1Cache, '1.0.0', Date.now() - 2000);
+
+  // matchAll returns empty (browser hasn't exposed the window client yet)
+  globalThis.self.clients = { matchAll: async () => [] };
+
+  // Run pruneClientPins with default 30s grace period
+  await pruneClientPins();
+
+  // Pin must be PRESERVED due to grace period!
+  assert.equal(getClientPinnedCache('tab-transitioning'), v1Cache, 'Must preserve pin within grace period');
+
+  // Once grace period expires, pruning removes it
+  await pruneClientPins(1000); // 1s grace period, pin is 2s old
+  assert.equal(getClientPinnedCache('tab-transitioning'), null, 'Must prune pin once grace period has elapsed');
 });
 

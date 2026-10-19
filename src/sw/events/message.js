@@ -10,7 +10,9 @@ import {
   unpinClient,
   getClientPinnedCache,
   getClientPinnedVersion,
+  getMinVersion,
 } from '../cache/store.js';
+import { compare } from '../../shared/version.js';
 
 /**
  * Service Worker postMessage event handler.
@@ -125,12 +127,21 @@ export function handleMessage(config) {
                 pinnedVersion = active?.version || null;
               }
             }
+            const minVersion = await getMinVersion();
+            const resolvedPinnedVersion = pinnedVersion || active?.version || null;
+            const updateRequired = Boolean(minVersion && (
+              (resolvedPinnedVersion && compare(resolvedPinnedVersion, minVersion) < 0) ||
+              (active?.version && compare(active.version, minVersion) < 0)
+            ));
+
             reply(MESSAGE_TYPES.VERSION_INFO, {
               activeVersion: active?.version || null,
               stagedVersion: staged?.complete ? staged.version : null,
               swVersion: config.version,
               pinnedCache: pinnedCache || active?.cache || null,
-              pinnedVersion: pinnedVersion || active?.version || null,
+              pinnedVersion: resolvedPinnedVersion,
+              minVersion: minVersion || null,
+              updateRequired,
             });
           } catch (err) {
             reply(MESSAGE_TYPES.VERSION_INFO, null, err);

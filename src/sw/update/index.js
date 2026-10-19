@@ -1,11 +1,12 @@
 import { getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
-import { getStaged, clearStaged, withLock } from '../cache/store.js';
+import { getStaged, clearStaged, withLock, setMinVersion, unpinClientsBelowVersion } from '../cache/store.js';
 import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
 import { setUpdateStatus, getUpdateStatus, getCurrentStatus } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
+import { compare } from '../../shared/version.js';
 
 export { setUpdateStatus, getUpdateStatus };
 
@@ -61,8 +62,9 @@ async function _doUpdateCheck({ force = false } = {}) {
 
   // ── Tier 1: lightweight version check ────────────────────────────────────
   let serverVersion;
+  let versionRes;
   try {
-    const versionRes = await fetchServerVersion();
+    versionRes = await fetchServerVersion();
     if (versionRes?.notModified) {
       serverVersion = versionRes.version ?? active?.version;
     } else {
@@ -70,6 +72,24 @@ async function _doUpdateCheck({ force = false } = {}) {
     }
   } catch (err) {
     logger.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
+  }
+
+  // Check minimum supported version from Tier 1 if present
+  const tier1Min = versionRes?.minVersion || versionRes?.minSupportedVersion;
+  if (tier1Min) {
+    await setMinVersion(tier1Min);
+    const unpinned = await unpinClientsBelowVersion(tier1Min);
+    const activeBelow = Boolean(active?.version && compare(active.version, tier1Min) < 0);
+    if (activeBelow || unpinned.length > 0) {
+      logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${tier1Min}). Update required.`);
+      await broadcast({
+        type: MESSAGE_TYPES.UPDATE_REQUIRED,
+        minVersion: tier1Min,
+        activeVersion: active?.version || null,
+        targetVersion: serverVersion || null,
+        unpinnedClients: unpinned,
+      });
+    }
   }
 
   // A complete update is already staged and waiting for the next navigation.
@@ -116,6 +136,24 @@ async function _doUpdateCheck({ force = false } = {}) {
   } catch (err) {
     logger.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
     return { updated: false };
+  }
+
+  // Check minimum supported version from Tier 2 manifest
+  const tier2Min = serverManifest?.minVersion || serverManifest?.minSupportedVersion || tier1Min;
+  if (tier2Min) {
+    await setMinVersion(tier2Min);
+    const unpinned = await unpinClientsBelowVersion(tier2Min);
+    const activeBelow = Boolean(active?.version && compare(active.version, tier2Min) < 0);
+    if ((activeBelow || unpinned.length > 0) && !tier1Min) {
+      logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${tier2Min}). Update required.`);
+      await broadcast({
+        type: MESSAGE_TYPES.UPDATE_REQUIRED,
+        minVersion: tier2Min,
+        activeVersion: active?.version || null,
+        targetVersion: serverManifest.version,
+        unpinnedClients: unpinned,
+      });
+    }
   }
 
   if (isCurrent(serverManifest.version)) {

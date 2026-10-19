@@ -12,6 +12,10 @@
  * This module has no dependency on config so config/index.js can use it.
  */
 
+import { createLogger } from '../../shared/logger.js';
+
+const logger = createLogger();
+
 export let META_CACHE = 'nlpwa-meta';
 
 /**
@@ -75,14 +79,14 @@ export function getActive() {
         if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
           const names = await caches.keys();
           if (!names.includes(record.cache)) {
-            console.warn(`[NLPWA] Active cache "${record.cache}" was evicted by the browser. Clearing stale active pointer.`);
+            logger.warn(`[NLPWA] Active cache "${record.cache}" was evicted by the browser. Clearing stale active pointer.`);
             await deleteMeta(ACTIVE_KEY);
             return null;
           }
           const cache = await caches.open(record.cache);
           const keys = await cache.keys();
           if (keys.length === 0) {
-            console.warn(`[NLPWA] Active cache "${record.cache}" is empty (likely evicted by the browser). Clearing stale active pointer.`);
+            logger.warn(`[NLPWA] Active cache "${record.cache}" is empty (likely evicted by the browser). Clearing stale active pointer.`);
             await deleteMeta(ACTIVE_KEY);
             return null;
           }
@@ -92,11 +96,11 @@ export function getActive() {
           }
         }
       } catch (err) {
-        console.warn('[NLPWA] Could not verify active cache validity:', err?.message || err);
+        logger.warn('[NLPWA] Could not verify active cache validity:', err?.message || err);
       }
       return record;
     })().catch(() => {
-      _activePromise = null;
+      _activePromise = Promise.resolve(null);
       return null;
     });
   }
@@ -204,6 +208,17 @@ function _saveClientPins() {
   }, 100);
 }
 
+async function _flushClientPins() {
+  if (_savePinsTimeout) {
+    clearTimeout(_savePinsTimeout);
+    _savePinsTimeout = null;
+  }
+  try {
+    const obj = Object.fromEntries(_clientPins);
+    await writeMeta(PINS_KEY, obj);
+  } catch {}
+}
+
 export async function pruneClientPins() {
   const clientsObj = typeof self !== 'undefined' && self.clients ? self.clients : null;
   if (!clientsObj || typeof clientsObj.matchAll !== 'function') {
@@ -220,8 +235,7 @@ export async function pruneClientPins() {
       }
     }
     if (changed) {
-      const obj = Object.fromEntries(_clientPins);
-      await writeMeta(PINS_KEY, obj).catch(() => {});
+      await _flushClientPins();
     }
   } catch {}
 }
@@ -331,7 +345,7 @@ export async function cleanupCaches({ base, runtime, keep }) {
       .filter((name) => name !== runtime && name !== META_CACHE && !keepSet.has(name))
       .filter((name) => name === base || name.startsWith(`${base}@`))
       .map((name) => {
-        console.log(`[NLPWA] Removed old cache: ${name}`);
+        logger.log(`[NLPWA] Removed old cache: ${name}`);
         return caches.delete(name);
       })
   );

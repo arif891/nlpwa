@@ -1,4 +1,5 @@
 import { getConfig } from '../config/index.js';
+import { logger } from '../logger.js';
 import { openActive, getActive, getActiveName, getClientPinnedCache, resetMeta } from './store.js';
 import { resolvePathWithBase } from '../../shared/url.js';
 import { cleanTrackingParams } from './keys.js';
@@ -248,7 +249,7 @@ export async function clearAllCaches() {
     caches.delete(cacheNames.runtime),
   ]);
   await resetMeta();
-  console.log('[NLPWA] All caches cleared (SW version change)');
+  logger.log('[NLPWA] All caches cleared (SW version change)');
 }
 
 /**

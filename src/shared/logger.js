@@ -18,10 +18,13 @@ const LOG_LEVELS = {
  *   debug: (...args: any[]) => void,
  * }}
  */
-export function createLogger(getConfigFn) {
+export function createLogger(getConfigFnOrLevel) {
   function getLevel() {
     try {
-      const config = typeof getConfigFn === 'function' ? getConfigFn() : null;
+      if (typeof getConfigFnOrLevel === 'string' && getConfigFnOrLevel in LOG_LEVELS) {
+        return LOG_LEVELS[getConfigFnOrLevel];
+      }
+      const config = typeof getConfigFnOrLevel === 'function' ? getConfigFnOrLevel() : getConfigFnOrLevel;
       const level = config?.logLevel;
       if (typeof level === 'string' && level in LOG_LEVELS) {
         return LOG_LEVELS[level];

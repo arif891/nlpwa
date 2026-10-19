@@ -1,4 +1,5 @@
 import { ensureConfigReady, getConfig } from '../config/index.js';
+import { logger } from '../logger.js';
 import { resolveStrategy } from './router.js';
 import { commitIfReady } from '../update/commit.js';
 import { initClientPins, pinClient, getClientPinnedCache, getActiveName } from '../cache/store.js';
@@ -33,7 +34,7 @@ export function handleFetch(event) {
       // A staged update goes live only when a new page load starts, so one
       // page is never served half from the old version and half from the new.
       if (request.mode === 'navigate') {
-        await commitIfReady(event).catch((err) => console.warn('[NLPWA] Commit failed:', err.message));
+        await commitIfReady(event).catch((err) => logger.warn('[NLPWA] Commit failed:', err.message));
         const activeCacheName = await getActiveName(getConfig().caches.offline);
         if (event.resultingClientId) {
           pinClient(event.resultingClientId, activeCacheName);

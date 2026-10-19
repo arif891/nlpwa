@@ -7,6 +7,7 @@ import {
   CACHE_STATUS,
 } from '../cache/index.js';
 import { getConfig } from '../config/index.js';
+import { logger } from '../logger.js';
 import { createRangeResponse } from './range.js';
 import { isNavigationFallbackAllowed } from './navigation.js';
 import {
@@ -118,7 +119,7 @@ function safePutInRuntime(request, response, event, options = {}) {
   try {
     toCache = response.clone();
   } catch (err) {
-    console.warn('[NLPWA] Could not clone response for runtime cache:', err?.message || err);
+    logger.warn('[NLPWA] Could not clone response for runtime cache:', err?.message || err);
     return Promise.resolve();
   }
 
@@ -136,7 +137,7 @@ function safePutInRuntime(request, response, event, options = {}) {
         options,
       });
     } catch (err) {
-      console.warn('[NLPWA] cacheWillUpdate error:', err?.message || err);
+      logger.warn('[NLPWA] cacheWillUpdate error:', err?.message || err);
       return;
     }
 
@@ -163,7 +164,7 @@ function safePutInRuntime(request, response, event, options = {}) {
         options,
       });
     } catch (err) {
-      console.warn('[NLPWA] Runtime cache write failed:', err?.message || err);
+      logger.warn('[NLPWA] Runtime cache write failed:', err?.message || err);
     }
   })();
 
@@ -351,6 +352,47 @@ export async function cacheFirst(request, event, options = {}) {
  * Best for: HTML pages, user data — content that should be fresh when online.
  *
  * Response header: X-Cache-Status: network | preload | offline-cache | runtime-cache | offline-fallback
+/** Look in offline then runtime cache; returns a tagged Response or null. */
+async function lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event }) {
+  const offlineName = getConfig().caches?.offline || 'offline';
+  const runtimeName = getConfig().caches?.runtime || 'runtime';
+
+  let offlineCached = await getFromOffline(request, matchOptions, clientId);
+  if (offlineCached) {
+    offlineCached = await runCachedResponseWillBeUsed(plugins, {
+      cacheName: offlineName,
+      request,
+      matchOptions,
+      cachedResponse: offlineCached,
+      event,
+      options,
+    });
+    if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+  }
+
+  let runtimeCached = await getFromRuntime(request, matchOptions);
+  if (runtimeCached) {
+    runtimeCached = await runCachedResponseWillBeUsed(plugins, {
+      cacheName: runtimeName,
+      request,
+      matchOptions,
+      cachedResponse: runtimeCached,
+      event,
+      options,
+    });
+    if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+  }
+
+  return null;
+}
+
+/**
+ * Fetch from network first. On network failure or timeout, fall back to cache.
+ * Write successful responses to the runtime cache asynchronously.
+ *
+ * Best for: API data, HTML pages that must stay fresh.
+ *
+ * Response header: X-Cache-Status: network | offline-cache | runtime-cache | offline-fallback
  *
  * @param {Request} request
  * @param {FetchEvent} [event]
@@ -361,40 +403,9 @@ export async function networkFirst(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const timeoutMs = options.networkTimeoutMs ?? getConfig().networkTimeoutMs ?? 0;
   const plugins = getPlugins(options);
-  const offlineName = getConfig().caches?.offline || 'offline';
-  const runtimeName = getConfig().caches?.runtime || 'runtime';
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
-  /** Look in offline then runtime cache; returns a tagged Response or null. */
-  const lookupCache = async () => {
-    let offlineCached = await getFromOffline(request, matchOptions, clientId);
-    if (offlineCached) {
-      offlineCached = await runCachedResponseWillBeUsed(plugins, {
-        cacheName: offlineName,
-        request,
-        matchOptions,
-        cachedResponse: offlineCached,
-        event,
-        options,
-      });
-      if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
-    }
-
-    let runtimeCached = await getFromRuntime(request, matchOptions);
-    if (runtimeCached) {
-      runtimeCached = await runCachedResponseWillBeUsed(plugins, {
-        cacheName: runtimeName,
-        request,
-        matchOptions,
-        cachedResponse: runtimeCached,
-        event,
-        options,
-      });
-      if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
-    }
-
-    return null;
-  };
+  const lookupCache = () => lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event });
 
   // Navigation preload optimization: parallel fetch started by the browser during SW startup
   let preloadPromise = null;
@@ -643,35 +654,10 @@ export async function staleWhileRevalidate(request, event, options = {}) {
 export async function cacheOnly(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const plugins = getPlugins(options);
-  const offlineName = getConfig().caches?.offline || 'offline';
-  const runtimeName = getConfig().caches?.runtime || 'runtime';
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
-  let offlineCached = await getFromOffline(request, matchOptions, clientId);
-  if (offlineCached) {
-    offlineCached = await runCachedResponseWillBeUsed(plugins, {
-      cacheName: offlineName,
-      request,
-      matchOptions,
-      cachedResponse: offlineCached,
-      event,
-      options,
-    });
-    if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
-  }
-
-  let runtimeCached = await getFromRuntime(request, matchOptions);
-  if (runtimeCached) {
-    runtimeCached = await runCachedResponseWillBeUsed(plugins, {
-      cacheName: runtimeName,
-      request,
-      matchOptions,
-      cachedResponse: runtimeCached,
-      event,
-      options,
-    });
-    if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
-  }
+  const cached = await lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event });
+  if (cached) return cached;
 
   if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
     const fallbackUrl = resolveFallbackUrl(options);
@@ -682,7 +668,7 @@ export async function cacheOnly(request, event, options = {}) {
   }
 
   if (getShouldThrow(options)) {
-    throw new TypeError('Failed to fetch: not available in offline cache.');
+    throw new Error('Failed to fetch: not available in offline cache.');
   }
 
   return tagResponse(

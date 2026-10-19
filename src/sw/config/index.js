@@ -3,11 +3,13 @@ import { validateConfig } from './schema.js';
 import { openActive, setMetaCacheName } from '../cache/store.js';
 import { setActiveSnapshotPaths } from '../update/manifest.js';
 import { resolvePathWithBase, resolveUpdateEndpoints } from '../../shared/url.js';
+import { createLogger } from '../../shared/logger.js';
 
 export { resolvePathWithBase, resolveUpdateEndpoints };
 
 /** Singleton config instance, set by initConfig() */
 let _config = null;
+const logger = createLogger(() => _config);
 
 function normalizeRoutes(routes) {
   if (!Array.isArray(routes)) return routes;
@@ -45,7 +47,7 @@ export function initConfig(userConfig = {}) {
 
   const errors = validateConfig(merged);
   if (errors.length > 0) {
-    console.error('[NLPWA] Config errors:\n' + errors.map(e => `  • ${e}`).join('\n'));
+    logger.error('[NLPWA] Config errors:\n' + errors.map(e => `  • ${e}`).join('\n'));
   }
 
   _config = Object.freeze(merged);
@@ -115,7 +117,7 @@ export function ensureConfigReady() {
   if (!_configReadyPromise) {
     _configReadyPromise = loadConfigFromCache().catch((err) => {
       _configReadyPromise = null;
-      console.warn('[NLPWA] Config load failed, will retry:', err?.message || err);
+      logger.warn('[NLPWA] Config load failed, will retry:', err?.message || err);
       return null;
     });
   }
@@ -130,41 +132,41 @@ export function ensureConfigReady() {
  * @returns {Promise<Object|null>}
  */
 export async function loadConfigFromCache() {
-  const promise = (async () => {
-    const config = _config || initConfig();
-    const baseName = config.caches?.offline || 'offline';
-    const configPath = resolvePathWithBase(config.configPath || '/config.json', config.base);
+  const config = _config || initConfig();
+  const baseName = config.caches?.offline || 'offline';
+  const configPath = resolvePathWithBase(config.configPath || '/config.json', config.base);
 
-    try {
-      const cache = await openActive(baseName);
-      const response = await cache.match(configPath);
-      if (!response) return null;
-
-      const runtimeJson = await response.json();
-      updateActiveConfig(runtimeJson);
-      console.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
-
-      try {
-        const snapRes = await cache.match('/_nlpwa/snapshot.json');
-        if (snapRes) {
-          const snapData = await snapRes.json();
-          if (Array.isArray(snapData?.files)) {
-            setActiveSnapshotPaths(snapData.files.map((f) => f.path));
-          }
-        }
-      } catch {
-        // snapshot may not exist yet
-      }
-
-      return runtimeJson;
-    } catch (err) {
-      console.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
+  try {
+    const cache = await openActive(baseName);
+    const response = await cache.match(configPath);
+    if (!response) {
+      _configReadyPromise = Promise.resolve(null);
       return null;
     }
-  })();
 
-  _configReadyPromise = promise;
-  return promise;
+    const runtimeJson = await response.json();
+    updateActiveConfig(runtimeJson);
+    logger.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
+
+    try {
+      const snapRes = await cache.match('/_nlpwa/snapshot.json');
+      if (snapRes) {
+        const snapData = await snapRes.json();
+        if (Array.isArray(snapData?.files)) {
+          setActiveSnapshotPaths(snapData.files.map((f) => f.path));
+        }
+      }
+    } catch {
+      // snapshot may not exist yet
+    }
+
+    _configReadyPromise = Promise.resolve(runtimeJson);
+    return runtimeJson;
+  } catch (err) {
+    logger.warn(`[NLPWA] Could not load config from offline cache: ${err.message}`);
+    _configReadyPromise = null;
+    return null;
+  }
 }
 
 /**

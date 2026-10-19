@@ -203,3 +203,96 @@ test('client: register() calls navigator.storage.persist() when persistentStorag
     }
   }
 });
+
+test('logger: respects logLevel hierarchy and silent mode', async () => {
+  const { createLogger } = await import('../src/shared/logger.js');
+  const logged = [];
+  const origLog = console.log;
+  const origWarn = console.warn;
+  const origError = console.error;
+  const origDebug = console.debug;
+
+  console.log = (...args) => logged.push({ level: 'log', args });
+  console.warn = (...args) => logged.push({ level: 'warn', args });
+  console.error = (...args) => logged.push({ level: 'error', args });
+  console.debug = (...args) => logged.push({ level: 'debug', args });
+
+  try {
+    // 1. Silent mode
+    const silentLogger = createLogger('silent');
+    silentLogger.error('e');
+    silentLogger.warn('w');
+    silentLogger.log('l');
+    silentLogger.debug('d');
+    assert.equal(logged.length, 0, 'silent logger must not output any logs');
+
+    // 2. Warn mode
+    const warnLogger = createLogger('warn');
+    warnLogger.error('err');
+    warnLogger.warn('wrn');
+    warnLogger.log('info-log');
+    assert.deepEqual(logged.map((x) => x.level), ['error', 'warn']);
+
+    // 3. Dynamic config object or getter
+    logged.length = 0;
+    let currentConfig = { logLevel: 'error' };
+    const dynamicLogger = createLogger(() => currentConfig);
+    dynamicLogger.warn('suppressed');
+    dynamicLogger.error('visible');
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0].level, 'error');
+  } finally {
+    console.log = origLog;
+    console.warn = origWarn;
+    console.error = origError;
+    console.debug = origDebug;
+  }
+});
+
+test('url: resolveUpdateEndpoints surfaces timeoutMs from config and updateAPI', async () => {
+  const { resolveUpdateEndpoints } = await import('../src/shared/url.js');
+
+  const ep1 = resolveUpdateEndpoints({ updateTimeoutMs: 12000 });
+  assert.equal(ep1.timeoutMs, 12000);
+
+  const ep2 = resolveUpdateEndpoints({ updateAPI: { version: '/v', info: '/i', timeoutMs: 8000 } });
+  assert.equal(ep2.timeoutMs, 8000);
+
+  const ep3 = resolveUpdateEndpoints({ updateTimeoutMs: 5000, updateAPI: { timeoutMs: 9000 } });
+  assert.equal(ep3.timeoutMs, 5000, 'top-level updateTimeoutMs takes precedence');
+});
+
+test('strategies: cacheOnly throws Error instead of TypeError when throwOnFailure is true', async () => {
+  const { cacheOnly } = await import('../src/sw/fetch/strategies.js');
+  setupEnv(() => new Response('ok'));
+
+  await assert.rejects(
+    async () => {
+      await cacheOnly(req('/not-cached.js'), undefined, { throwOnFailure: true });
+    },
+    (err) => {
+      assert.ok(err instanceof Error, 'must be an Error');
+      assert.equal(err.name, 'Error', 'must have name Error, not TypeError');
+      return true;
+    }
+  );
+});
+
+test('cleanup: concurrent cleanRuntimeCache calls serialize and do not race', async () => {
+  const { cleanRuntimeCache } = await import('../src/sw/cache/cleanup.js');
+  const server = makeServer('1.0.0', v1);
+  setupEnv(server.fetch);
+
+  // Run three concurrent cleanups simultaneously
+  const results = await Promise.all([
+    cleanRuntimeCache({ strategy: 'lru' }),
+    cleanRuntimeCache({ strategy: 'lru' }),
+    cleanRuntimeCache({ strategy: 'lru' }),
+  ]);
+
+  assert.equal(results.length, 3);
+  for (const r of results) {
+    assert.equal(r.success, true);
+  }
+});
+

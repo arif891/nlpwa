@@ -1,4 +1,5 @@
 import { getConfig } from '../config/index.js';
+import { logger } from '../logger.js';
 
 /**
  * Collect all active plugins for a given route/options context.
@@ -155,7 +156,7 @@ export async function runFetchDidFail(plugins, params) {
       try {
         await plugin.fetchDidFail(params);
       } catch (err) {
-        console.warn('[NLPWA] fetchDidFail plugin error:', err?.message || err);
+        logger.warn('[NLPWA] fetchDidFail plugin error:', err?.message || err);
       }
     }
   }
@@ -181,7 +182,7 @@ export async function runCacheDidUpdate(plugins, params) {
       try {
         await plugin.cacheDidUpdate(params);
       } catch (err) {
-        console.warn('[NLPWA] cacheDidUpdate plugin error:', err?.message || err);
+        logger.warn('[NLPWA] cacheDidUpdate plugin error:', err?.message || err);
       }
     }
   }

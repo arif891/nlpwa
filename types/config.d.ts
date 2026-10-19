@@ -119,6 +119,8 @@ export interface UpdateAPIConfigObject {
   version: string;
   /** Full manifest check returning { version: string, files: Array<{ path: string, hash: string }> } */
   info: string;
+  /** Request timeout in milliseconds */
+  timeoutMs?: number;
 }
 
 export interface UpdateAPIEndpointEntry {

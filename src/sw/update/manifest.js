@@ -8,11 +8,12 @@ import { openActive } from '../cache/store.js';
  */
 export async function fetchServerVersion() {
   const config = getConfig();
-  const { versionEndpoint } = getUpdateEndpoints();
+  const endpoints = getUpdateEndpoints();
+  const versionEndpoint = endpoints.versionEndpoint;
 
-  const timeoutMs = config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
-  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(timeoutMs)
+  const baseTimeout = endpoints.timeoutMs ?? config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && baseTimeout > 0
+    ? AbortSignal.timeout(baseTimeout)
     : undefined;
 
   const response = await fetch(versionEndpoint, {
@@ -41,10 +42,12 @@ export async function fetchServerVersion() {
  */
 export async function fetchServerInfo() {
   const config = getConfig();
-  const { infoEndpoint } = getUpdateEndpoints();
+  const endpoints = getUpdateEndpoints();
+  const infoEndpoint = endpoints.infoEndpoint;
 
-  const timeoutMs = config.updateTimeoutMs ? config.updateTimeoutMs * 2 : (config.updateAPI?.timeoutMs ? config.updateAPI.timeoutMs * 2 : 30000);
-  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+  const baseTimeout = endpoints.timeoutMs ?? config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
+  const timeoutMs = baseTimeout > 0 ? baseTimeout * 2 : 0;
+  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && timeoutMs > 0
     ? AbortSignal.timeout(timeoutMs)
     : undefined;
 

@@ -177,7 +177,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
     onVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
       const now = Date.now();
-      if (now - lastCheckAt > throttleMs) {
+      if (now - lastCheckAt >= throttleMs) {
         lastCheckAt = now;
         requestUpdateCheck();
       }

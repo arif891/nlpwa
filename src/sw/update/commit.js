@@ -1,4 +1,5 @@
 import { getConfig, loadConfigFromCache } from '../config/index.js';
+import { logger } from '../logger.js';
 import { evictFromRuntime } from '../cache/runtime.js';
 import { evictByRoute } from '../cache/evict.js';
 import {
@@ -35,7 +36,7 @@ export async function commitStaged(event) {
   // A complete cache always contains its snapshot. If not, discard it.
   const cache = await caches.open(staged.cache);
   if (!(await cache.match(getSnapshotPath()))) {
-    console.warn('[NLPWA] Staged cache is missing its snapshot, discarding.');
+    logger.warn('[NLPWA] Staged cache is missing its snapshot, discarding.');
     await clearStaged();
     await caches.delete(staged.cache);
     setUpdateStatus('idle');
@@ -100,7 +101,7 @@ export async function commitStaged(event) {
         }).catch(() => {});
       }
     } catch (err) {
-      console.warn('[NLPWA] Post-commit cleanup failed:', err?.message || err);
+      logger.warn('[NLPWA] Post-commit cleanup failed:', err?.message || err);
     } finally {
       setUpdateStatus('idle');
     }
@@ -112,7 +113,7 @@ export async function commitStaged(event) {
     await cleanupPromise;
   }
 
-  console.log(`[NLPWA] Switched to v${staged.version}`);
+  logger.log(`[NLPWA] Switched to v${staged.version}`);
   return true;
 }
 

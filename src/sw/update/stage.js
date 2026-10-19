@@ -1,4 +1,5 @@
 import { getConfig } from '../config/index.js';
+import { logger } from '../logger.js';
 import { openActive, getStaged, setStaged } from '../cache/store.js';
 import { computeDiff, isSafePath } from './diff.js';
 import { writeSnapshot } from './manifest.js';
@@ -22,7 +23,20 @@ async function mapLimit(items, limit, fn) {
 }
 
 /** Is `path` already in the staging cache with the expected content? */
-async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, fetchUrl = path, allowOversizedUnverified = false) {
+async function isAlreadyStaged(cacheOrOptions, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, fetchUrl = path, allowOversizedUnverified = false) {
+  let cache = cacheOrOptions;
+  if (cacheOrOptions && typeof cacheOrOptions === 'object' && !('match' in cacheOrOptions) && 'cache' in cacheOrOptions) {
+    ({
+      cache,
+      path,
+      expected,
+      verify,
+      maxVerifyBytes = 20 * 1024 * 1024,
+      fileSize = null,
+      fetchUrl = path,
+      allowOversizedUnverified = false,
+    } = cacheOrOptions);
+  }
   const hit = (await cache.match(fetchUrl)) || (fetchUrl !== path ? await cache.match(path) : null);
   if (!hit) return false;
   if (!expected || verify === false) return true;
@@ -36,7 +50,18 @@ async function isAlreadyStaged(cache, path, expected, verify, maxVerifyBytes = 2
 }
 
 /** Fetch a file fresh from the network and check it against its manifest hash. */
-async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, allowOversizedUnverified = false) {
+async function fetchVerified(pathOrOptions, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, allowOversizedUnverified = false) {
+  let path = pathOrOptions;
+  if (pathOrOptions && typeof pathOrOptions === 'object' && 'path' in pathOrOptions) {
+    ({
+      path,
+      expected,
+      verify,
+      maxVerifyBytes = 20 * 1024 * 1024,
+      fileSize = null,
+      allowOversizedUnverified = false,
+    } = pathOrOptions);
+  }
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? AbortSignal.timeout(30000)
     : undefined;
@@ -47,7 +72,7 @@ async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 
     const size = fileSize ?? Number(response.headers?.get?.('content-length') || response.headers?.get?.('x-nlpwa-content-length') || 0);
     if (maxVerifyBytes > 0 && size > maxVerifyBytes) {
       if (allowOversizedUnverified || verify === 'warn') {
-        console.warn(
+        logger.warn(
           `[NLPWA] ${path}: File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold ` +
           `(${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB). Skipping in-memory hash verification (opt-in allowOversizedUnverified).`
         );
@@ -58,7 +83,7 @@ async function fetchVerified(path, expected, verify, maxVerifyBytes = 20 * 1024 
     if (!hashMatches(actual, expected)) {
       const detail = `hash mismatch (expected ${expected}, got ${actual.slice(0, expected.length)})`;
       if (verify === 'strict') throw new Error(detail);
-      console.warn(`[NLPWA] ${path}: ${detail} - storing anyway (verifyHashes: 'warn')`);
+      logger.warn(`[NLPWA] ${path}: ${detail} - storing anyway (verifyHashes: 'warn')`);
     }
   }
   return response;
@@ -129,7 +154,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     } catch (err) {
       const isQuota = err.name === 'QuotaExceededError' || /quota/i.test(err.message || '');
       if (isQuota) {
-        console.warn(`[NLPWA] QuotaExceededError while staging ${path}. Freeing runtime cache space...`);
+        logger.warn(`[NLPWA] QuotaExceededError while staging ${path}. Freeing runtime cache space...`);
         const cleaned = await cleanRuntimeCache({ strategy: 'all' }).catch(() => null);
         if (cleaned && (cleaned.freedBytes > 0 || cleaned.evictedCount > 0)) {
           await next.put(path, retryCopy);
@@ -146,7 +171,8 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     processedCount++;
     if (activeSnapshot && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
       self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
-        const percent = totalFiles > 0 ? Math.round((processedCount / totalFiles) * 100) : 100;
+        const rawPercent = totalFiles > 0 ? Math.floor((processedCount / totalFiles) * 100) : 100;
+        const percent = processedCount >= totalFiles ? 100 : Math.min(99, rawPercent);
         clients.forEach((c) => c.postMessage({
           type: MESSAGE_TYPES.STAGING_PROGRESS,
           version: manifest.version,
@@ -192,7 +218,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       failed.push(path);
       failedDetails[path] = err.message;
       notifyProgress(path);
-      console.warn(`[NLPWA] Staging failed: ${fetchUrl} - ${err.message}`);
+      logger.warn(`[NLPWA] Staging failed: ${fetchUrl} - ${err.message}`);
     }
   });
 
@@ -218,7 +244,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     if (retryCount >= MAX_RETRY_ATTEMPTS) {
       const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), 3600000);
       nextRetryAt = Date.now() + backoffMs;
-      console.warn(
+      logger.warn(
         `[NLPWA] Staging incomplete: ${failed.length} file(s) failed after ${retryCount} attempts: ` +
         `${failed.join(', ')}. Active version remains live.`
       );
@@ -226,13 +252,13 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
 
     if (isSameFiles && retryCount >= 2) {
       if (hasHashMismatch) {
-        console.error(
+        logger.error(
           `[NLPWA] Persistent hash mismatch on ${failed.join(', ')} across ${retryCount} attempts. ` +
           `A CDN, proxy, or host minification may be altering file contents in transit. ` +
           `Consider setting verifyHashes: 'warn' or false in your nlpwa config if this transformation is expected.`
         );
       } else {
-        console.warn(
+        logger.warn(
           `[NLPWA] Repeated staging failure on the same file(s): ${failed.join(', ')} (${retryCount} attempts).`
         );
       }
@@ -276,7 +302,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     clearRuntime: forceRefetch,
   });
 
-  console.log(
+  logger.log(
     `[NLPWA] Staged v${manifest.version}: ${stats.fetched} fetched, ${stats.copied} copied, ` +
     `${stats.reused} reused`
   );

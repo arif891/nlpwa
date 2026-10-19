@@ -1,4 +1,5 @@
 import { getConfig } from '../config/index.js';
+import { logger } from '../logger.js';
 import { matchGlob } from '../../shared/glob.js';
 import { CLEANUP_STRATEGIES } from '../../shared/constants.js';
 
@@ -203,16 +204,12 @@ export function resolveByteSize(bytesVal, mbVal, kbVal) {
  *   quota: Object
  * }>}
  */
-let _cleanupPromise = null;
+let _cleanupQueue = Promise.resolve();
 
 export async function cleanRuntimeCache(options = {}) {
-  while (_cleanupPromise) {
-    try {
-      await _cleanupPromise;
-    } catch {
-      // Continue to next run if previous cleanup failed
-    }
-  }
+  const prev = _cleanupQueue;
+  let runResolver;
+  _cleanupQueue = new Promise((resolve) => { runResolver = resolve; });
 
   const run = async () => {
     const strategy = options.strategy || CLEANUP_STRATEGIES.LRU;
@@ -248,15 +245,15 @@ export async function cleanRuntimeCache(options = {}) {
       }
     }
 
-  const toEvictSet = new Set();
-  let remainingBytes = totalBytes;
+    const toEvictSet = new Set();
+    let remainingBytes = totalBytes;
 
-  const markForEviction = (item) => {
-    if (!toEvictSet.has(item)) {
-      toEvictSet.add(item);
-      remainingBytes = Math.max(0, remainingBytes - item.size);
-    }
-  };
+    const markForEviction = (item) => {
+      if (!toEvictSet.has(item)) {
+        toEvictSet.add(item);
+        remainingBytes = Math.max(0, remainingBytes - item.size);
+      }
+    };
 
   // 1. Filter: individual item size thresholds
   if (maxItemBytes != null) {
@@ -386,7 +383,7 @@ export async function cleanRuntimeCache(options = {}) {
   const finalRemainingBytes = Math.max(0, totalBytes - freedBytes);
   const updatedQuota = await getStorageQuotaInfo();
 
-  console.log(
+  logger.log(
     `[NLPWA] Runtime cache cleaned (${strategy}): ${evicted.length} evicted, ` +
     `${(freedBytes / 1024).toFixed(1)} KB freed, ${finalRemainingEntries} remaining`
   );
@@ -403,10 +400,10 @@ export async function cleanRuntimeCache(options = {}) {
   };
   };
 
-  _cleanupPromise = run();
   try {
-    return await _cleanupPromise;
+    await prev.catch(() => {});
+    return await run();
   } finally {
-    _cleanupPromise = null;
+    runResolver();
   }
 }

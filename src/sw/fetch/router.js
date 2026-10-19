@@ -1,5 +1,5 @@
 import { getConfig } from '../config/index.js';
-import { matchGlob } from '../../shared/glob.js';
+import { matchGlob, globToRegex } from '../../shared/glob.js';
 import { STRATEGIES } from '../../shared/constants.js';
 import {
   cacheFirst,
@@ -115,10 +115,11 @@ export function matchRoute(requestUrl, routes = [], config = {}) {
       continue;
     }
 
+    const regex = globToRegex(matchPattern);
     if (
-      matchGlob(matchPattern, requestUrl.href) ||
-      matchGlob(matchPattern, requestUrl.pathname) ||
-      matchGlob(matchPattern, appPathname)
+      regex.test(requestUrl.href) ||
+      regex.test(requestUrl.pathname) ||
+      regex.test(appPathname)
     ) {
       return route;
     }

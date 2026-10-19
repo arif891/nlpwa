@@ -1,4 +1,5 @@
 import { getConfig, updateActiveConfig, loadConfigFromCache } from '../config/index.js';
+import { logger } from '../logger.js';
 import { tryAcquire, release, openActive, withLock } from './store.js';
 import { fetchServerInfo, loadCachedSnapshot } from '../update/manifest.js';
 import { stageUpdate } from '../update/stage.js';
@@ -28,7 +29,7 @@ export async function precacheFiles() {
   try {
     manifest = await fetchServerInfo();
   } catch (err) {
-    console.warn(`[NLPWA] No update manifest at install (${err.message})`);
+    logger.warn(`[NLPWA] No update manifest at install (${err.message})`);
   }
 
   const activeSnapshot = await loadCachedSnapshot();
@@ -73,11 +74,11 @@ async function precacheWithoutManifest() {
       }
       updateActiveConfig(data);
     } else {
-      console.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
+      logger.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
       await loadConfigFromCache();
     }
   } catch (err) {
-    console.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
+    logger.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
     await loadConfigFromCache();
   }
 
@@ -97,7 +98,7 @@ async function precacheWithoutManifest() {
   const failed = [];
   results.forEach((result, i) => {
     if (result.status === 'rejected') {
-      console.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
+      logger.warn(`[NLPWA] Precache failed: ${precache[i]}`, result.reason);
       failed.push(precache[i]);
     }
   });

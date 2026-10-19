@@ -1,4 +1,5 @@
 import { getConfig } from '../config/index.js';
+import { logger } from '../logger.js';
 import { CACHING_CAPABLE_STRATEGIES } from '../../shared/constants.js';
 import { resolvePathWithBase } from '../../shared/url.js';
 import { openActive } from './store.js';
@@ -68,7 +69,7 @@ async function evictNonCacheable(cache, cacheName, protectedPaths) {
 
       if (!isCacheableUrl(request.url)) {
         await cache.delete(request);
-        console.log(`[NLPWA] Evicted (route no longer cacheable) [${cacheName}]: ${pathname}`);
+        logger.log(`[NLPWA] Evicted (route no longer cacheable) [${cacheName}]: ${pathname}`);
       }
     })
   );

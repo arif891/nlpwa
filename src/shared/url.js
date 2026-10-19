@@ -47,10 +47,17 @@ export function resolveUpdateEndpoints(config = {}) {
     }
   }
 
+  let timeoutMs = typeof config?.updateTimeoutMs === 'number' ? config.updateTimeoutMs : undefined;
+  if (timeoutMs === undefined && updateAPI && typeof updateAPI === 'object' && !Array.isArray(updateAPI)) {
+    if (typeof updateAPI.timeoutMs === 'number') {
+      timeoutMs = updateAPI.timeoutMs;
+    }
+  }
+
   if (config?.base) {
     versionEndpoint = resolvePathWithBase(versionEndpoint, config.base);
     infoEndpoint = resolvePathWithBase(infoEndpoint, config.base);
   }
 
-  return { versionEndpoint, infoEndpoint };
+  return { versionEndpoint, infoEndpoint, timeoutMs };
 }

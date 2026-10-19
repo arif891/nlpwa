@@ -1,4 +1,5 @@
 import { initConfig, loadConfigFromCache } from './config/index.js';
+import { logger } from './logger.js';
 import { precacheFiles } from './cache/install.js';
 import { getStorageQuotaInfo, cleanRuntimeCache } from './cache/cleanup.js';
 import { handleFetch } from './fetch/index.js';
@@ -23,7 +24,7 @@ export function initSW(userConfig = {}) {
 
   // ── install ────────────────────────────────────────────────────────────────
   self.addEventListener('install', (event) => {
-    console.log(`[NLPWA] Installing SW v${config.version}`);
+    logger.log(`[NLPWA] Installing SW v${config.version}`);
     event.waitUntil(
       (async () => {
         try {
@@ -33,7 +34,7 @@ export function initSW(userConfig = {}) {
             await self.skipWaiting();
           }
         } catch (err) {
-          console.error('[NLPWA] Install error:', err);
+          logger.error('[NLPWA] Install error:', err);
           throw err;
         }
       })()
@@ -42,7 +43,7 @@ export function initSW(userConfig = {}) {
 
   // ── activate ───────────────────────────────────────────────────────────────
   self.addEventListener('activate', (event) => {
-    console.log(`[NLPWA] Activated SW v${config.version}`);
+    logger.log(`[NLPWA] Activated SW v${config.version}`);
     // Only await fast, local operations in waitUntil so fetch events are never blocked
     event.waitUntil(
       (async () => {
@@ -104,7 +105,14 @@ export function initSW(userConfig = {}) {
 
     switch (event.data?.type) {
       case MESSAGE_TYPES.CHECK_UPDATE:
-        event.waitUntil(checkForUpdate({ force: true }));
+        event.waitUntil((async () => {
+          try {
+            const result = await checkForUpdate({ force: true });
+            reply(MESSAGE_TYPES.CHECK_UPDATE, { result });
+          } catch (err) {
+            reply(MESSAGE_TYPES.CHECK_UPDATE, null, err);
+          }
+        })());
         break;
 
       case MESSAGE_TYPES.APPLY_UPDATE:

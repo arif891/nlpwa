@@ -149,6 +149,6 @@ export async function saveCachedSnapshot(snapshotData) {
   const cache = await openActive(getConfig().caches.offline);
   await writeSnapshot(cache, snapshotData);
   if (Array.isArray(snapshotData?.files)) {
-    _activeSnapshotPaths = new Set(snapshotData.files.map((f) => f.path));
+    setActiveSnapshotPaths(new Set(snapshotData.files.map((f) => f.path)));
   }
 }

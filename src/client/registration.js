@@ -43,21 +43,26 @@ export async function register(swUrl = '/sw.js', options = {}) {
     return null;
   }
 
+  function checkReloadDeferral(version, reason) {
+    const customDefer = typeof options.shouldDeferReload === 'function'
+      && Boolean(options.shouldDeferReload({ version, reason }));
+    const editing = isUserEditing();
+    const shouldDefer = customDefer || editing;
+    const deferReason = shouldDefer ? (customDefer ? 'deferred' : 'editing') : null;
+    return { shouldDefer, reason: deferReason };
+  }
+
   // ── Update-ready handler ───────────────────────────────────────────────────
   const unsubscribeUpdate = onUpdateReady((data) => {
     if (typeof options.onUpdateReady === 'function') {
       options.onUpdateReady(data);
     }
     if (options.autoReload) {
-      const customDefer = typeof options.shouldDeferReload === 'function'
-        && Boolean(options.shouldDeferReload({ version: data?.version, reason: 'ready' }));
-      const editing = isUserEditing();
-      const shouldDefer = customDefer || editing;
+      const { shouldDefer, reason } = checkReloadDeferral(data?.version, 'ready');
 
       if (!shouldDefer) {
         applyUpdate();
       } else {
-        const reason = customDefer ? 'deferred' : 'editing';
         logger.warn(`[NLPWA] Auto-reload deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
           options.onUpdatePrompt({ ...data, reason });
@@ -86,15 +91,11 @@ export async function register(swUrl = '/sw.js', options = {}) {
       options.onUpdateApplied(data);
     }
     if (options.reloadOnUpdateApplied || options.autoReload) {
-      const customDefer = typeof options.shouldDeferReload === 'function'
-        && Boolean(options.shouldDeferReload({ version: data?.version, reason: 'applied' }));
-      const editing = isUserEditing();
-      const shouldDefer = customDefer || editing;
+      const { shouldDefer, reason } = checkReloadDeferral(data?.version, 'applied');
 
       if (!shouldDefer) {
         window.location.reload();
       } else {
-        const reason = customDefer ? 'deferred' : 'editing';
         logger.warn(`[NLPWA] Reload on update-applied deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
           options.onUpdatePrompt({ version: data?.version, updateApplied: true, reason });

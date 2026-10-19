@@ -142,6 +142,97 @@ export class SyncClient {
   }
 
   /**
+   * Get dead-letter requests for a queue that failed permanently (4xx errors or exceeded retries).
+   *
+   * @param {string} [queueName]
+   * @param {{ timeoutMs?: number }} [options]
+   * @returns {Promise<{ queue: string, count: number, items: Array<Object> }>}
+   */
+  async getDeadLetter(queueName = this.defaultQueue, { timeoutMs = 3000 } = {}) {
+    try {
+      return await requestFromSW(
+        SYNC_MESSAGE_TYPES.SYNC_GET_DEAD_LETTER,
+        { queue: queueName },
+        SYNC_MESSAGE_TYPES.SYNC_DEAD_LETTER_INFO,
+        timeoutMs
+      );
+    } catch {
+      const localQueue = new SyncQueue(queueName);
+      const items = await localQueue.getDeadLetter();
+      return {
+        queue: queueName,
+        count: items.length,
+        items: items.map((i) => ({
+          id: i.id,
+          url: i.url,
+          method: i.method,
+          timestamp: i.timestamp,
+          retryCount: i.retryCount,
+          deadLetterReason: i.deadLetterReason,
+          lastStatus: i.lastStatus,
+          failedAt: i.failedAt,
+        })),
+      };
+    }
+  }
+
+  /**
+   * Retry a dead-letter request by moving it back to the active queue.
+   *
+   * @param {number} id
+   * @param {string} [queueName]
+   * @param {{ timeoutMs?: number }} [options]
+   * @returns {Promise<boolean>}
+   */
+  async retryDeadLetter(id, queueName = this.defaultQueue, { timeoutMs = 3000 } = {}) {
+    try {
+      const res = await requestFromSW(
+        SYNC_MESSAGE_TYPES.SYNC_RETRY_DEAD_LETTER,
+        { queue: queueName, id },
+        SYNC_MESSAGE_TYPES.SYNC_RETRY_DEAD_LETTER_RESULT,
+        timeoutMs
+      );
+      return Boolean(res?.success);
+    } catch {
+      const localQueue = new SyncQueue(queueName);
+      return await localQueue.retryDeadLetter(id);
+    }
+  }
+
+  /**
+   * Clear dead-letter requests for a queue.
+   *
+   * @param {string} [queueName]
+   * @param {{ timeoutMs?: number }} [options]
+   * @returns {Promise<boolean>}
+   */
+  async clearDeadLetter(queueName = this.defaultQueue, { timeoutMs = 3000 } = {}) {
+    try {
+      await requestFromSW(
+        SYNC_MESSAGE_TYPES.SYNC_CLEAR_DEAD_LETTER,
+        { queue: queueName },
+        SYNC_MESSAGE_TYPES.SYNC_CLEAR_DEAD_LETTER_RESULT,
+        timeoutMs
+      );
+      return true;
+    } catch {
+      const localQueue = new SyncQueue(queueName);
+      await localQueue.clearDeadLetter();
+      return true;
+    }
+  }
+
+  /**
+   * Clear all pending and dead-letter requests across ALL queues.
+   * Recommended to call on user logout to purge sensitive authorization headers and payloads.
+   *
+   * @returns {Promise<void>}
+   */
+  async clearOnLogout() {
+    await SyncQueue.clearAll();
+  }
+
+  /**
    * Automatically replay queue when browser regains network connectivity or tab becomes visible.
    * Essential for Safari / Firefox which lack native Background Sync API.
    *

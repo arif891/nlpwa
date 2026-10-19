@@ -1,10 +1,13 @@
 import { getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
-import { getStaged, clearStaged, tryAcquire, release, withLock } from '../cache/store.js';
+import { getStaged, clearStaged, withLock } from '../cache/store.js';
 import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
+import { setUpdateStatus, getUpdateStatus, getCurrentStatus } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
+
+export { setUpdateStatus, getUpdateStatus };
 
 /**
  * Notify all connected clients with a postMessage.
@@ -12,6 +15,7 @@ import { MESSAGE_TYPES } from '../../shared/constants.js';
  * @param {Object} message
  */
 async function broadcast(message) {
+  if (typeof self === 'undefined' || !self.clients || typeof self.clients.matchAll !== 'function') return;
   const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
   clients.forEach(client => client.postMessage(message));
 }
@@ -37,10 +41,6 @@ async function broadcast(message) {
 export async function checkForUpdate(options = {}) {
   return await runUpdateCheck(options);
 }
-
-import { setUpdateStatus, getUpdateStatus, getCurrentStatus } from './status.js';
-
-export { setUpdateStatus, getUpdateStatus };
 
 async function runUpdateCheck({ force = false } = {}) {
   setUpdateStatus('checking');

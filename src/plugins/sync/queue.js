@@ -38,9 +38,12 @@ export class SyncQueue {
 
   /**
    * Retrieve all pending requests for this queue, pruning expired ones.
+   * @param {Object} [options]
+   * @param {boolean} [options.includeDeadLetter=false] Include dead-letter items
+   * @param {boolean} [options.deadLetterOnly=false] Return only dead-letter items
    * @returns {Promise<Array<Object>>}
    */
-  async getAll() {
+  async getAll({ includeDeadLetter = false, deadLetterOnly = false } = {}) {
     return withStore('readwrite', (store) => {
       return new Promise((resolve, reject) => {
         const index = store.index('queueName');
@@ -57,7 +60,11 @@ export class SyncQueue {
               // Expired, delete from store
               store.delete(item.id);
             } else {
-              valid.push(item);
+              if (deadLetterOnly) {
+                if (item.deadLetter) valid.push(item);
+              } else if (includeDeadLetter || !item.deadLetter) {
+                valid.push(item);
+              }
             }
           }
           // Sort FIFO by timestamp and id
@@ -71,7 +78,56 @@ export class SyncQueue {
   }
 
   /**
-   * Count pending items in this queue.
+   * Retrieve all dead-letter requests for this queue.
+   * @returns {Promise<Array<Object>>}
+   */
+  async getDeadLetter() {
+    return this.getAll({ deadLetterOnly: true });
+  }
+
+  /**
+   * Retry a dead-letter item by moving it back to the active queue.
+   * @param {number} id
+   * @returns {Promise<boolean>}
+   */
+  async retryDeadLetter(id) {
+    return withStore('readwrite', (store) => {
+      return new Promise((resolve, reject) => {
+        const req = store.get(id);
+        req.onsuccess = () => {
+          const item = req.result;
+          if (!item) return resolve(false);
+          const updated = {
+            ...item,
+            deadLetter: false,
+            deadLetterReason: null,
+            retryCount: 0,
+            authRequired: false,
+          };
+          const putReq = store.put(updated);
+          putReq.onsuccess = () => resolve(true);
+          putReq.onerror = () => reject(putReq.error);
+        };
+        req.onerror = () => reject(req.error);
+      });
+    });
+  }
+
+  /**
+   * Clear all dead-letter requests in this queue.
+   * @returns {Promise<void>}
+   */
+  async clearDeadLetter() {
+    const items = await this.getDeadLetter();
+    return withStore('readwrite', (store) => {
+      for (const item of items) {
+        store.delete(item.id);
+      }
+    });
+  }
+
+  /**
+   * Count pending active items in this queue.
    * @returns {Promise<number>}
    */
   async size() {
@@ -109,6 +165,20 @@ export class SyncQueue {
   }
 
   /**
+   * Clear all requests across all queues in the store (useful on user logout).
+   * @returns {Promise<void>}
+   */
+  static async clearAll() {
+    return withStore('readwrite', (store) => {
+      return new Promise((resolve, reject) => {
+        const req = store.clear();
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    });
+  }
+
+  /**
    * Replay all pending requests in FIFO order.
    *
    * @param {Object} [options]
@@ -126,13 +196,39 @@ export class SyncQueue {
       const req = deserializeRequest(item);
       try {
         const response = await fetchImpl(req);
-        if (response.ok || (response.status >= 200 && response.status < 400)) {
+
+        // Check for redirects (e.g. session-expired redirect to login page returning 200 HTML)
+        const isRedirected = Boolean(
+          response.redirected ||
+          response.type === 'opaqueredirect' ||
+          (response.status >= 300 && response.status < 400)
+        );
+        const contentType = response.headers?.get ? (response.headers.get('content-type') || '') : '';
+        const isHtmlRedirect = contentType.includes('text/html') && (item.url?.includes('/api/') || item.method !== 'GET');
+
+        if (isRedirected || isHtmlRedirect) {
+          // Session expired or redirected to login: do NOT discard user data!
+          failedCount++;
+          await withStore('readwrite', (store) => {
+            store.put({
+              ...item,
+              authRequired: true,
+              lastStatus: response.status,
+              redirected: true,
+              redirectUrl: response.url || null,
+            });
+          });
+          if (onReplayFail) onReplayFail(item, response);
+          continue;
+        }
+
+        if (response.ok || (response.status >= 200 && response.status < 300)) {
           // Success: remove from queue
           await this.remove(item.id);
           successCount++;
           if (onReplaySuccess) onReplaySuccess(item, response);
         } else {
-          // Server error (4xx/5xx): record retry or discard if unrecoverable client error
+          // Server error (4xx/5xx): record retry or move to dead-letter store
           failedCount++;
           const newRetryCount = (item.retryCount || 0) + 1;
           const maxRetries = item.maxRetries || this.maxRetries;
@@ -143,8 +239,17 @@ export class SyncQueue {
               store.put({ ...item, authRequired: true, lastStatus: response.status });
             });
           } else if (newRetryCount >= maxRetries || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) {
-            // Discard client fatal errors or exceeded retries
-            await this.remove(item.id);
+            // Unrecoverable client error (409 conflict, 422 unprocessable, etc.) or exceeded retries:
+            // Move to dead-letter store so user data is NOT lost and application can inspect/retry it
+            await withStore('readwrite', (store) => {
+              store.put({
+                ...item,
+                deadLetter: true,
+                deadLetterReason: newRetryCount >= maxRetries ? 'max_retries_exceeded' : `http_${response.status}`,
+                failedAt: Date.now(),
+                lastStatus: response.status,
+              });
+            });
           } else {
             await withStore('readwrite', (store) => {
               store.put({ ...item, retryCount: newRetryCount, lastStatus: response.status });

@@ -4,7 +4,7 @@ import { evictFromRuntime } from '../cache/runtime.js';
 import { evictByRoute } from '../cache/evict.js';
 import {
   getActive, getActiveName, setActive, getStaged, clearStaged,
-  cleanupCaches, getAllPinnedCaches, tryAcquire, release, withLock,
+  cleanupCaches, getAllPinnedCaches, pruneClientPins, withLock,
 } from '../cache/store.js';
 import { getSnapshotPath } from './manifest.js';
 import { setUpdateStatus } from './status.js';
@@ -91,6 +91,7 @@ export async function commitStaged(event) {
       if (currentConfig.retainPreviousVersionCache && previousActive?.cache) {
         keep.push(previousActive.cache);
       }
+      await pruneClientPins();
       const pinned = getAllPinnedCaches();
       keep.push(...pinned);
 
@@ -135,6 +136,7 @@ export async function commitIfReady(event) {
 /** Delete offline caches left behind by interrupted or superseded updates. */
 export async function sweepOrphanCaches() {
   const config = getConfig();
+  await pruneClientPins();
   const [staged, active] = await Promise.all([getStaged(), getActive()]);
   const pinned = getAllPinnedCaches();
   await cleanupCaches({

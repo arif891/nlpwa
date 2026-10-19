@@ -87,6 +87,40 @@ export class BackgroundSyncPlugin {
             .catch((err) => reply(SYNC_MESSAGE_TYPES.SYNC_CLEARED, null, err));
 
           if (event.waitUntil) event.waitUntil(promise);
+        } else if (type === SYNC_MESSAGE_TYPES.SYNC_GET_DEAD_LETTER) {
+          const promise = this.queue.getDeadLetter()
+            .then((items) => {
+              reply(SYNC_MESSAGE_TYPES.SYNC_DEAD_LETTER_INFO, {
+                queue: this.queueName,
+                count: items.length,
+                items: items.map((item) => ({
+                  id: item.id,
+                  url: item.url,
+                  method: item.method,
+                  timestamp: item.timestamp,
+                  retryCount: item.retryCount,
+                  deadLetterReason: item.deadLetterReason,
+                  lastStatus: item.lastStatus,
+                  failedAt: item.failedAt,
+                })),
+              });
+            })
+            .catch((err) => reply(SYNC_MESSAGE_TYPES.SYNC_DEAD_LETTER_INFO, null, err));
+
+          if (event.waitUntil) event.waitUntil(promise);
+        } else if (type === SYNC_MESSAGE_TYPES.SYNC_RETRY_DEAD_LETTER) {
+          const id = event.data?.id;
+          const promise = this.queue.retryDeadLetter(id)
+            .then((success) => reply(SYNC_MESSAGE_TYPES.SYNC_RETRY_DEAD_LETTER_RESULT, { queue: this.queueName, id, success }))
+            .catch((err) => reply(SYNC_MESSAGE_TYPES.SYNC_RETRY_DEAD_LETTER_RESULT, null, err));
+
+          if (event.waitUntil) event.waitUntil(promise);
+        } else if (type === SYNC_MESSAGE_TYPES.SYNC_CLEAR_DEAD_LETTER) {
+          const promise = this.queue.clearDeadLetter()
+            .then(() => reply(SYNC_MESSAGE_TYPES.SYNC_CLEAR_DEAD_LETTER_RESULT, { queue: this.queueName, success: true }))
+            .catch((err) => reply(SYNC_MESSAGE_TYPES.SYNC_CLEAR_DEAD_LETTER_RESULT, null, err));
+
+          if (event.waitUntil) event.waitUntil(promise);
         }
       });
     }

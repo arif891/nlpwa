@@ -7,6 +7,7 @@ import {
   getActiveName,
   getStaged,
   pinClient,
+  unpinClient,
   getClientPinnedCache,
   getClientPinnedVersion,
 } from '../cache/store.js';
@@ -80,10 +81,24 @@ export function handleMessage(config) {
           const clientId = event.source?.id;
           if (clientId) {
             const active = await getActive();
-            const cacheName = event.data?.cache || (await getActiveName(config.caches.offline));
+            let cacheName = event.data?.cache;
+            const offlinePrefix = `${config.caches.offline}@`;
+            if (!cacheName || typeof cacheName !== 'string' || !cacheName.startsWith(offlinePrefix)) {
+              cacheName = await getActiveName(config.caches.offline);
+            }
             const version = event.data?.version || active?.version || null;
             await pinClient(clientId, cacheName, version);
             reply(MESSAGE_TYPES.CLIENT_PINNED, { clientId, cache: cacheName, version });
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.UNPIN_CLIENT:
+        event.waitUntil((async () => {
+          const clientId = event.source?.id;
+          if (clientId) {
+            await unpinClient(clientId);
+            reply(MESSAGE_TYPES.CLIENT_UNPINNED, { clientId });
           }
         })());
         break;

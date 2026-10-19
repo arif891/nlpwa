@@ -184,3 +184,72 @@ test('sync client: getPending and clear interact with local queue fallback', asy
   assert.equal(cleared, true);
   assert.equal(await queue.size(), 0);
 });
+
+test('sync queue: session-expired redirect preserves mutation and sets authRequired', async () => {
+  const queue = new SyncQueue('redirect-protection');
+  await queue.push(new Request('https://example.com/api/post-comment', { method: 'POST', body: 'hello' }));
+
+  // Mock server returning redirect (redirected: true, status 200 HTML login page)
+  const fakeRedirectResponse = new Response('<html>Login Page</html>', {
+    status: 200,
+    headers: { 'Content-Type': 'text/html' },
+  });
+  Object.defineProperty(fakeRedirectResponse, 'redirected', { value: true });
+  Object.defineProperty(fakeRedirectResponse, 'url', { value: 'https://example.com/login' });
+
+  const result = await queue.replayAll({ fetchImpl: async () => fakeRedirectResponse });
+
+  assert.equal(result.failedCount, 1);
+  assert.equal(result.successCount, 0);
+  assert.equal(await queue.size(), 1, 'Mutation must NOT be deleted when server redirects to login');
+
+  const items = await queue.getAll();
+  assert.equal(items[0].authRequired, true);
+  assert.equal(items[0].redirected, true);
+});
+
+test('sync queue: 4xx unprocessable/conflict errors are moved to dead-letter store instead of lost', async () => {
+  const queue = new SyncQueue('dead-letter-test');
+  const id = await queue.push(new Request('https://example.com/api/conflict', { method: 'POST' }));
+
+  // Replay returns 409 Conflict
+  await queue.replayAll({
+    fetchImpl: async () => new Response('Conflict', { status: 409 }),
+  });
+
+  // Active queue size should now be 0
+  assert.equal(await queue.size(), 0);
+
+  // Dead-letter store must retain the failed mutation
+  const deadLetters = await queue.getDeadLetter();
+  assert.equal(deadLetters.length, 1);
+  assert.equal(deadLetters[0].id, id);
+  assert.equal(deadLetters[0].deadLetter, true);
+  assert.equal(deadLetters[0].lastStatus, 409);
+
+  // Client can retry dead-letter mutation after fixing conflict
+  const restored = await queue.retryDeadLetter(id);
+  assert.equal(restored, true);
+  assert.equal(await queue.size(), 1);
+
+  const activeItems = await queue.getAll();
+  assert.equal(activeItems[0].deadLetter, false);
+});
+
+test('sync queue: clearOnLogout / clearAll purges all requests across all queues', async () => {
+  const q1 = new SyncQueue('q1');
+  const q2 = new SyncQueue('q2');
+
+  await q1.push(new Request('https://example.com/api/q1', { method: 'POST' }));
+  await q2.push(new Request('https://example.com/api/q2', { method: 'POST' }));
+
+  assert.equal(await q1.size(), 1);
+  assert.equal(await q2.size(), 1);
+
+  const client = new SyncClient('q1');
+  await client.clearOnLogout();
+
+  assert.equal(await q1.size(), 0);
+  assert.equal(await q2.size(), 0);
+});
+

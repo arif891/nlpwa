@@ -253,15 +253,43 @@ syncClient.on('discard', ({ url, reason }) => {
 });
 ```
 
-#### 5. Clear Stored Queue
+#### 5. Dead-Letter Store Inspection & Recovery
 
-Wipe stored queue entries on user logout:
+When a mutation fails with an unrecoverable client error (e.g. `409 Conflict`, `422 Unprocessable Entity`) or exceeds `maxRetries`, NLPWA does **not** silently delete the user's data. Instead, the mutation is moved to the **dead-letter store** for application inspection and manual resolution:
 
 ```javascript
-await syncClient.clear('form-mutations');
+// Query permanently failed mutations
+const { items } = await syncClient.getDeadLetter('form-mutations');
+for (const failedItem of items) {
+  console.warn(`Failed mutation: ${failedItem.url}`, failedItem.deadLetterReason, failedItem.lastStatus);
+}
+
+// Allow user or app to retry a resolved dead-letter item:
+await syncClient.retryDeadLetter(failedItem.id, 'form-mutations');
+
+// Or clear resolved dead-letter entries:
+await syncClient.clearDeadLetter('form-mutations');
 ```
 
 ---
+
+### Security Best Practices & Clear-On-Logout
+
+> [!WARNING]
+> **Plaintext Storage Notice:** Queued offline requests—including request bodies and request headers such as `Authorization: Bearer <token>` or session cookies—are persisted in browser IndexedDB (`sync_requests`) for up to `maxRetentionMs` (default 24 hours).
+> 
+> On shared devices or multi-user terminals, you **must** clear the offline mutation queue when the user logs out:
+
+```javascript
+// In your application's logout / sign-out handler:
+async function handleUserLogout() {
+  // Purge all queued offline mutations and sensitive auth tokens across all queues
+  await syncClient.clearOnLogout();
+  
+  // Proceed with normal server logout and token revocation
+  await authService.logout();
+}
+```
 
 ### Cross-Browser Compatibility & Fallbacks
 

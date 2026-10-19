@@ -4,6 +4,7 @@ import { setupEnv, req } from './helpers/fake-env.js';
 import { makeServer, fakeSelf } from './helpers/fake-server.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
 import { stageUpdate } from '../src/sw/update/stage.js';
+import { fetchServerInfo } from '../src/sw/update/manifest.js';
 import { commitStaged, commitIfReady } from '../src/sw/update/commit.js';
 import { handleFetch } from '../src/sw/fetch/index.js';
 import {
@@ -237,3 +238,94 @@ test('client pinning: getFromOffline falls back to active cache if pinned cache 
   const storedKeys = await caches.keys();
   assert.equal(storedKeys.includes('offline@non-existent-cache'), false);
 });
+
+test('client pinning: commitStaged prunes dead client pins across updates so old offline caches are freed', async () => {
+  const server = makeServer('1.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app v1',
+    '/index.html': '<html>v1</html>',
+  });
+  setupEnv(server.fetch);
+  await precacheFiles();
+
+  const v1Cache = (await getActive()).cache;
+
+  // Pin two tabs to v1
+  pinClient('tab-closed-1', v1Cache, '1.0.0');
+  pinClient('tab-closed-2', v1Cache, '1.0.0');
+  assert.ok(getAllPinnedCaches().includes(v1Cache));
+
+  // Stage and commit v2
+  server.set('2.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app v2',
+    '/index.html': '<html>v2</html>',
+  });
+  await stageUpdate(await fetchServerInfo());
+  await commitStaged();
+
+  // Both tabs have now closed: self.clients.matchAll returns no windows
+  globalThis.self.clients = {
+    matchAll: async () => [],
+  };
+
+  // Stage and commit v3
+  server.set('3.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app v3',
+    '/index.html': '<html>v3</html>',
+  });
+  await stageUpdate(await fetchServerInfo());
+  await commitStaged();
+
+  // Pins for closed tabs must have been pruned by commitStaged
+  assert.equal(getClientPinnedCache('tab-closed-1'), null);
+  assert.equal(getClientPinnedCache('tab-closed-2'), null);
+  assert.equal(getAllPinnedCaches().length, 0);
+
+  // v1 cache is older than previousActive (which is v2) and no live clients pin it, so it MUST be freed!
+  const currentCaches = await caches.keys();
+  assert.equal(currentCaches.includes(v1Cache), false, 'v1 cache must be deleted after tabs close across updates');
+});
+
+test('client pinning: PIN_CLIENT message validates cacheName prefix', async () => {
+  const server = makeServer('1.0.0', {
+    '/config.json': cfg(),
+    '/app.js': 'app v1',
+  });
+  setupEnv(server.fetch);
+  await precacheFiles();
+  const activeCache = (await getActive()).cache;
+
+  const handler = handleMessage({ version: '1', caches: { offline: 'offline' } });
+
+  // 1. Caller attempts to pin an invalid/arbitrary cache name
+  let replyData = null;
+  const event1 = {
+    data: { type: MESSAGE_TYPES.PIN_CLIENT, cache: 'arbitrary-injected-cache' },
+    source: { id: 'tab-attacker' },
+    ports: [{ postMessage: (msg) => { replyData = msg.data; } }],
+    waitUntil: (p) => p,
+  };
+  handler(event1);
+  await new Promise(r => setTimeout(r, 10));
+
+  assert.ok(replyData);
+  assert.equal(replyData.cache, activeCache, 'Should reject arbitrary cache and fallback to active offline cache');
+  assert.equal(getClientPinnedCache('tab-attacker'), activeCache);
+
+  // 2. UNPIN_CLIENT message unpins client
+  let unpinReply = null;
+  const event2 = {
+    data: { type: MESSAGE_TYPES.UNPIN_CLIENT },
+    source: { id: 'tab-attacker' },
+    ports: [{ postMessage: (msg) => { unpinReply = msg.data; } }],
+    waitUntil: (p) => p,
+  };
+  handler(event2);
+  await new Promise(r => setTimeout(r, 10));
+
+  assert.ok(unpinReply);
+  assert.equal(getClientPinnedCache('tab-attacker'), null, 'Client should be unpinned');
+});
+

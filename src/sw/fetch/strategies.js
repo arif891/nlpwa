@@ -7,6 +7,26 @@ import {
   CACHE_STATUS,
 } from '../cache/index.js';
 import { getConfig } from '../config/index.js';
+import { createRangeResponse } from './range.js';
+import { isNavigationFallbackAllowed } from './navigation.js';
+
+export { createRangeResponse, isNavigationFallbackAllowed };
+
+/**
+ * Helper to tag a cached response and handle Range requests if requested.
+ *
+ * @param {Request} request
+ * @param {Response} response
+ * @param {string} tag
+ * @returns {Promise<Response>}
+ */
+async function serveCached(request, response, tag) {
+  const tagged = tagResponse(response, tag);
+  if (request?.headers && typeof request.headers.has === 'function' && request.headers.has('range')) {
+    return createRangeResponse(request, tagged);
+  }
+  return tagged;
+}
 
 /**
  * Safely put a response clone into the runtime cache without blocking the main response.
@@ -150,14 +170,14 @@ export async function cacheFirst(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
 
   const offlineCached = await getFromOffline(request, matchOptions);
-  if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+  if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
 
   const maxAgeMs = resolveMaxAgeMs(options);
   const runtimeCached = await getFromRuntime(request, matchOptions);
   if (runtimeCached) {
     const expired = maxAgeMs ? isResponseExpired(runtimeCached, maxAgeMs) : false;
     if (!expired) {
-      return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+      return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
     }
 
     // Cached copy has expired: attempt to refresh from network
@@ -167,7 +187,7 @@ export async function cacheFirst(request, event, options = {}) {
       return tagResponse(response, CACHE_STATUS.NETWORK);
     } catch {
       // Network failed while refreshing expired asset: serve stale cached copy
-      return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+      return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
     }
   }
 
@@ -177,7 +197,7 @@ export async function cacheFirst(request, event, options = {}) {
     return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
     // Navigation fallback for SPAs or offline pages
-    if (request.mode === 'navigate') {
+    if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
       const fallbackUrl = resolveFallbackUrl(options);
       const fallbackRes = await getFromCache(fallbackUrl);
       if (fallbackRes) {
@@ -223,15 +243,35 @@ export async function networkFirst(request, event, options = {}) {
   /** Look in offline then runtime cache; returns a tagged Response or null. */
   const lookupCache = async () => {
     const offlineCached = await getFromOffline(request, matchOptions);
-    if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+    if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
 
     const runtimeCached = await getFromRuntime(request, matchOptions);
-    if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+    if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
 
     return null;
   };
 
-  const networkPromise = fetch(request);
+  // Navigation preload optimization: parallel fetch started by the browser during SW startup
+  let preloadPromise = null;
+  if (request.mode === 'navigate' && event?.preloadResponse) {
+    preloadPromise = event.preloadResponse;
+  }
+
+  let fromPreload = false;
+  const networkPromise = (async () => {
+    if (preloadPromise) {
+      try {
+        const preloaded = await preloadPromise;
+        if (preloaded) {
+          fromPreload = true;
+          return preloaded;
+        }
+      } catch {
+        // Preload aborted or unavailable; fall through to network fetch
+      }
+    }
+    return fetch(request);
+  })();
 
   try {
     let response;
@@ -273,13 +313,13 @@ export async function networkFirst(request, event, options = {}) {
     }
 
     safePutInRuntime(request, response, event, options);
-    return tagResponse(response, CACHE_STATUS.NETWORK);
+    return tagResponse(response, fromPreload ? CACHE_STATUS.PRELOAD : CACHE_STATUS.NETWORK);
   } catch (err) {
     const cached = await lookupCache();
     if (cached) return cached;
 
     // Navigation fallback for SPAs or offline pages
-    if (request.mode === 'navigate') {
+    if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
       const fallbackUrl = resolveFallbackUrl(options);
       const fallbackRes = await getFromCache(fallbackUrl);
       if (fallbackRes) {
@@ -368,7 +408,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
         }
       })();
       if (event && typeof event.waitUntil === 'function') event.waitUntil(revalidate);
-      return tagResponse(cached, CACHE_STATUS.STALE);
+      return serveCached(request, cached, CACHE_STATUS.STALE);
     }
 
     // Cached copy has expired: wait for revalidation (network-first semantics),
@@ -378,7 +418,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
       await safePutInRuntime(request, response, event, options);
       return tagResponse(response, CACHE_STATUS.NETWORK);
     } catch {
-      return tagResponse(cached, CACHE_STATUS.STALE);
+      return serveCached(request, cached, CACHE_STATUS.STALE);
     }
   }
 
@@ -389,7 +429,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
     return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
     // Navigation fallback for SPAs or offline pages
-    if (request.mode === 'navigate') {
+    if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
       const fallbackUrl = resolveFallbackUrl(options);
       const fallbackRes = await getFromCache(fallbackUrl);
       if (fallbackRes) {
@@ -431,12 +471,12 @@ export async function cacheOnly(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
 
   const offlineCached = await getFromOffline(request, matchOptions);
-  if (offlineCached) return tagResponse(offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+  if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
 
   const runtimeCached = await getFromRuntime(request, matchOptions);
-  if (runtimeCached) return tagResponse(runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+  if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
 
-  if (request.mode === 'navigate') {
+  if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
     const fallbackUrl = resolveFallbackUrl(options);
     const fallbackRes = await getFromCache(fallbackUrl);
     if (fallbackRes) {

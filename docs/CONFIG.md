@@ -445,6 +445,74 @@ Must be one of the five strategy names listed above.
 
 ---
 
+### `navigationPreload` · `boolean | string` · default: `false`
+
+Enables browser [Navigation Preload](https://developer.mozilla.org/en-US/docs/Web/API/NavigationPreloadManager) (`self.registration.navigationPreload.enable()`).
+
+When enabled, the browser initiates the network request for HTML document navigation in parallel with the Service Worker booting up. This completely eliminates SW startup latency on `network-first` navigations:
+- `true`: Enables navigation preload.
+- `string`: Enables navigation preload and sets a custom header value (`Service-Worker-Navigation-Preload: <string>`).
+- `false`: Disables navigation preload.
+
+```js
+navigationPreload: true
+```
+
+---
+
+### `navigationAllowlist` & `navigationDenylist` · `Array<string | RegExp | Function>` · default: `[]`
+
+Defines URL pattern boundaries for SPA shell fallback. By default, an offline SPA fallback (e.g. `/index.html`) serves when a navigation request fails. However, navigations to server-rendered portals, admin consoles, or API endpoints should return genuine network errors (503) rather than the client-side SPA bundle.
+
+- `navigationDenylist`: Patterns that **must never** receive the offline SPA fallback. Any failed navigation matching the denylist returns an offline error (503 or throws if `throwOnFailure: true`).
+- `navigationAllowlist`: If non-empty, **only** matching navigations receive the SPA fallback.
+
+Supports glob syntax (`/api/**`, `/admin/**`), regular expressions, or custom predicate functions:
+
+```js
+navigationDenylist: [
+  '/api/**',
+  '/admin/**',
+  /^\/auth\//,
+  ({ url }) => url.pathname.endsWith('.pdf'),
+],
+navigationAllowlist: [
+  '/app/**',
+  '/dashboard',
+]
+```
+
+---
+
+### Range Request Support (HTTP 206 Partial Content)
+
+When cached audio or video is requested (such as in HTML5 `<audio>` or `<video>` elements), browsers like **Safari (iOS & macOS)** send HTTP byte range headers (e.g. `Range: bytes=0-1` or `Range: bytes=1048576-`).
+
+Standard Service Worker caches store full 200 responses. Without range handling, Safari media playback fails or stutters. NLPWA automatically parses RFC 7233 byte ranges on cached responses, constructing valid **206 Partial Content** slices with proper `Content-Range`, `Content-Length`, and `Accept-Ranges: bytes` headers (or 416 if unsatisfiable), enabling native media seeking and smooth playback across all platforms.
+
+---
+
+### Cache Key Control
+
+Fine-tune URL normalization and cache lookups to prevent query fragmentation and ensure clean URL routing.
+
+#### `ignoreURLParametersMatching` · `Array<RegExp | string>`
+Strips tracking and analytics parameters from request URLs before caching or matching in runtime cache. Stops marketing campaigns (`?utm_source=twitter&utm_medium=social`, `?fbclid=...`, `?gclid=...`) from fragmenting your cache entries.
+
+Defaults to stripping: `^utm_`, `^fbclid$`, `^gclid$`, `^msclkid$`, `^_ga$`, `^_gl$`, `^mc_eid$`, `^yclid$`.
+
+```js
+ignoreURLParametersMatching: [/^utm_/, /^fbclid$/, /^ref$/]
+```
+
+#### `directoryIndex` · `string` · default: `'index.html'`
+Maps root and subdirectory requests ending with a trailing slash to their index file (e.g. `/docs/` → `/docs/index.html`).
+
+#### `cleanURLs` · `boolean` · default: `true`
+Automatically resolves extensionless paths to their `.html` counterparts (e.g. `/about` → `/about.html`).
+
+---
+
 ## Full Example
 
 ### `sw.js` (Service Worker Engine)

@@ -1,45 +1,78 @@
 import { getConfig } from '../config/index.js';
 import { openActive, getActive, getActiveName, resetMeta } from './store.js';
 import { resolvePathWithBase } from '../../shared/url.js';
+import { cleanTrackingParams } from './keys.js';
 
 // ── Offline cache helpers ────────────────────────────────────────────────────
 
 /**
- * Match a request against a cache with standard HTML and base path aliases.
+ * Match a request against a cache with standard HTML, clean URLs, directory index, and base path aliases.
  *
  * @param {Cache} cache
  * @param {Request|string} request
  * @param {CacheQueryOptions} [matchOptions]
  * @param {string} [base]
+ * @param {Object} [config]
  * @returns {Promise<Response|undefined>}
  */
-async function matchWithAliases(cache, request, matchOptions, base) {
+export async function matchWithAliases(cache, request, matchOptions, base, config = getConfig()) {
+  const rawUrl = typeof request === 'string' ? request : request.url;
+  const ignorePatterns = config?.ignoreURLParametersMatching;
+  const cleanedUrl = cleanTrackingParams(rawUrl, ignorePatterns);
+
   let hit = await cache.match(request, matchOptions);
+  if (!hit && cleanedUrl !== rawUrl) {
+    hit = await cache.match(cleanedUrl, matchOptions);
+  }
   if (hit) return hit;
 
   let pathname = null;
   try {
-    pathname = new URL(typeof request === 'string' ? request : request.url, 'https://example.com').pathname;
+    pathname = new URL(cleanedUrl, 'https://example.com').pathname;
   } catch {}
 
-  if (pathname === '/') {
-    return cache.match('/index.html', matchOptions);
+  if (!pathname) return undefined;
+
+  const directoryIndex = config?.directoryIndex ?? 'index.html';
+  const cleanIndex = directoryIndex.startsWith('/') ? directoryIndex.slice(1) : directoryIndex;
+  const cleanURLs = config?.cleanURLs !== false;
+
+  // 1. Root / Directory index
+  if (directoryIndex) {
+    if (pathname === '/') {
+      hit = await cache.match(`/${cleanIndex}`, matchOptions);
+      if (hit) return hit;
+    } else if (pathname === `/${cleanIndex}`) {
+      hit = await cache.match('/', matchOptions);
+      if (hit) return hit;
+    } else if (pathname.endsWith('/')) {
+      hit = await cache.match(`${pathname}${cleanIndex}`, matchOptions);
+      if (hit) return hit;
+    }
   }
-  if (pathname === '/index.html') {
-    return cache.match('/', matchOptions);
+
+  // 2. Clean URLs (e.g. /about -> /about.html)
+  if (cleanURLs) {
+    const lastSegment = pathname.split('/').pop() || '';
+    if (lastSegment && !lastSegment.includes('.')) {
+      hit = await cache.match(`${pathname}.html`, matchOptions);
+      if (hit) return hit;
+    }
   }
+
+  // 3. Subpath base aliases
   if (base) {
     const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
     if (pathname === cleanBase || pathname === `${cleanBase}/`) {
-      return (await cache.match(`${cleanBase}/index.html`, matchOptions))
-        ?? (await cache.match('/index.html', matchOptions))
+      return (await cache.match(`${cleanBase}/${cleanIndex}`, matchOptions))
+        ?? (await cache.match(`/${cleanIndex}`, matchOptions))
         ?? (await cache.match(cleanBase, matchOptions))
         ?? (await cache.match(`${cleanBase}/`, matchOptions));
     }
-    if (pathname === `${cleanBase}/index.html`) {
+    if (pathname === `${cleanBase}/${cleanIndex}`) {
       return (await cache.match(`${cleanBase}/`, matchOptions))
         ?? (await cache.match(cleanBase, matchOptions))
-        ?? (await cache.match('/index.html', matchOptions));
+        ?? (await cache.match(`/${cleanIndex}`, matchOptions));
     }
   }
   return undefined;
@@ -53,16 +86,17 @@ async function matchWithAliases(cache, request, matchOptions, base) {
  * @returns {Promise<Response|undefined>}
  */
 export async function getFromOffline(request, matchOptions) {
-  const { caches: cacheNames, retainPreviousVersionCache, base } = getConfig();
+  const config = getConfig();
+  const { caches: cacheNames, retainPreviousVersionCache, base } = config;
   const cache = await openActive(cacheNames.offline);
-  let hit = await matchWithAliases(cache, request, matchOptions, base);
+  let hit = await matchWithAliases(cache, request, matchOptions, base, config);
 
   if (!hit && retainPreviousVersionCache) {
     const active = await getActive();
     if (active?.previousCache) {
       try {
         const prev = await caches.open(active.previousCache);
-        hit = await matchWithAliases(prev, request, matchOptions, base);
+        hit = await matchWithAliases(prev, request, matchOptions, base, config);
       } catch {
         // previous cache may have been removed
       }
@@ -101,12 +135,14 @@ export async function deleteFromOffline(request) {
  * Read a response from the runtime (lazy) cache.
  *
  * @param {Request|string} request
+ * @param {CacheQueryOptions} [matchOptions]
  * @returns {Promise<Response|undefined>}
  */
 export async function getFromRuntime(request, matchOptions) {
-  const { caches: cacheNames } = getConfig();
+  const config = getConfig();
+  const { caches: cacheNames, base } = config;
   const cache = await caches.open(cacheNames.runtime);
-  return cache.match(request, matchOptions);
+  return matchWithAliases(cache, request, matchOptions, base, config);
 }
 
 /**
@@ -117,7 +153,8 @@ export async function getFromRuntime(request, matchOptions) {
  * @param {Response} response
  */
 export async function putInRuntime(request, response) {
-  const { caches: cacheNames } = getConfig();
+  const config = getConfig();
+  const { caches: cacheNames, ignoreURLParametersMatching } = config;
   const cache = await caches.open(cacheNames.runtime);
 
   let responseToStore = response.clone();
@@ -155,6 +192,12 @@ export async function putInRuntime(request, response) {
   }
 
   await cache.put(request, responseToStore);
+
+  const rawUrl = typeof request === 'string' ? request : request.url;
+  const cleanedUrl = cleanTrackingParams(rawUrl, ignoreURLParametersMatching);
+  if (cleanedUrl !== rawUrl) {
+    await cache.put(cleanedUrl, responseToStore.clone()).catch(() => {});
+  }
 }
 
 /**

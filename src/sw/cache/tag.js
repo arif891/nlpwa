@@ -11,6 +11,9 @@ export const CACHE_STATUS = {
   /** Response was fetched fresh from the network */
   NETWORK:          'network',
 
+  /** Response came from parallel navigation preload */
+  PRELOAD:          'preload',
+
   /** Response came from the offline (precache / app shell) store */
   OFFLINE_CACHE:    'offline-cache',
 

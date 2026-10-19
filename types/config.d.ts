@@ -26,6 +26,16 @@ export interface RouteConfig {
   maxAge?: number | string;
   /** Whether to cache opaque cross-origin responses (default: false to prevent ~7MB Chrome quota padding and caching 404s) */
   cacheOpaque?: boolean;
+  /** Navigation URL patterns allowed to receive the SPA shell fallback (globs, RegExps, or predicates) */
+  navigationAllowlist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Navigation URL patterns excluded from receiving the SPA shell fallback */
+  navigationDenylist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Query parameters to ignore when matching and storing cache entries (e.g. [/^utm_/, /^fbclid$/]) */
+  ignoreURLParametersMatching?: Array<string | RegExp>;
+  /** Directory index filename when path ends with / (default: 'index.html') */
+  directoryIndex?: string;
+  /** Whether to match extensionless clean URLs against .html files (default: true) */
+  cleanURLs?: boolean;
 }
 
 export interface UpdateAPIConfigObject {
@@ -75,6 +85,18 @@ export interface NLPWAConfig {
   navigationFallback?: string;
   /** Default offline fallback page URL (for navigation) */
   offlineFallback?: string;
+  /** Enable Navigation Preload (boolean or custom header string, e.g. 'NLPWA-Preload') */
+  navigationPreload?: boolean | string;
+  /** Navigation URL patterns allowed to receive the SPA shell fallback (globs, RegExps, or predicates) */
+  navigationAllowlist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Navigation URL patterns excluded from receiving the SPA shell fallback (e.g. ['/api/**', '/admin/**']) */
+  navigationDenylist?: Array<string | RegExp | ((url: URL) => boolean)>;
+  /** Query parameters to ignore when matching and storing cache entries (e.g. [/^utm_/, /^fbclid$/]) */
+  ignoreURLParametersMatching?: Array<string | RegExp>;
+  /** Directory index filename when path ends with / (default: 'index.html') */
+  directoryIndex?: string;
+  /** Whether to match extensionless clean URLs against .html files (default: true) */
+  cleanURLs?: boolean;
   /** Logging verbosity: 'silent' | 'error' | 'warn' | 'info' | 'debug' (default: 'info') */
   logLevel?: 'silent' | 'error' | 'warn' | 'info' | 'debug';
   /** Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths) */

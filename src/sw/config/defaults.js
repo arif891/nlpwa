@@ -1,4 +1,5 @@
 import { CACHE_NAMES, SNAPSHOT_CACHE_PATH, STRATEGIES } from '../../shared/constants.js';
+import { DEFAULT_IGNORE_SEARCH_PARAMS } from '../cache/keys.js';
 
 /**
  * Default configuration values.
@@ -47,7 +48,7 @@ export const DEFAULTS = {
    *   false    - no verification
    * Use 'warn' only if a proxy/CDN rewrites your files after the build.
    */
-  verifyHashes: 'warn',
+  verifyHashes: 'strict',
 
   /**
    * Maximum file size in bytes for in-memory SHA-256 hash verification during staging.
@@ -80,6 +81,46 @@ export const DEFAULTS = {
    * Default: false (prevents ~7MB Chrome quota padding per entry and prevents caching CDN 404s/500s).
    */
   cacheOpaque: false,
+
+  /**
+   * Enable Navigation Preload to begin fetching the navigation request in parallel with SW startup.
+   * Accepts a boolean (true/false) or a custom header string (e.g. 'NLPWA-Preload').
+   * Default: false
+   */
+  navigationPreload: false,
+
+  /**
+   * Navigation URL patterns allowed to receive the SPA shell fallback on navigation failure.
+   * If non-empty, only matching navigations receive the fallback.
+   * Default: []
+   */
+  navigationAllowlist: [],
+
+  /**
+   * Navigation URL patterns excluded from receiving the SPA shell fallback (e.g. ['/api/**', '/admin/**']).
+   * Matching navigations will never receive the SPA shell fallback on failure.
+   * Default: []
+   */
+  navigationDenylist: [],
+
+  /**
+   * Query parameters to strip when storing and matching cache keys to prevent cache fragmentation.
+   * Matches RegExp patterns or glob strings (e.g. [/^utm_/, /^fbclid$/, 'gclid']).
+   * Default: [/^utm_/, /^fbclid$/, /^gclid$/, /^msclkid$/, /^dclid$/, /^_hsenc$/, /^_hsmi$/, /^ref$/, /^mc_cid$/, /^mc_eid$/]
+   */
+  ignoreURLParametersMatching: DEFAULT_IGNORE_SEARCH_PARAMS,
+
+  /**
+   * Directory index filename to match when a URL path ends with a trailing slash.
+   * Default: 'index.html'
+   */
+  directoryIndex: 'index.html',
+
+  /**
+   * Whether to match clean, extensionless URLs against .html files (e.g. /about -> /about.html).
+   * Default: true
+   */
+  cleanURLs: true,
 
   /**
    * Enable development mode (bypasses Vite internal and HMR requests to network).

@@ -9,8 +9,27 @@ import {
 import { getConfig } from '../config/index.js';
 import { createRangeResponse } from './range.js';
 import { isNavigationFallbackAllowed } from './navigation.js';
+import {
+  getPlugins,
+  runRequestWillFetch,
+  runCachedResponseWillBeUsed,
+  runCacheWillUpdate,
+  runFetchDidSucceed,
+  runFetchDidFail,
+  runCacheDidUpdate,
+} from './plugins.js';
 
-export { createRangeResponse, isNavigationFallbackAllowed };
+export {
+  createRangeResponse,
+  isNavigationFallbackAllowed,
+  getPlugins,
+  runRequestWillFetch,
+  runCachedResponseWillBeUsed,
+  runCacheWillUpdate,
+  runFetchDidSucceed,
+  runFetchDidFail,
+  runCacheDidUpdate,
+};
 
 /**
  * Helper to tag a cached response and handle Range requests if requested.
@@ -29,15 +48,50 @@ async function serveCached(request, response, tag) {
 }
 
 /**
+ * Execute a network fetch through requestWillFetch, fetchDidSucceed, and fetchDidFail plugin hooks.
+ *
+ * @param {Request} request
+ * @param {FetchEvent} [event]
+ * @param {Object} [options]
+ * @param {Array<Object>} [plugins]
+ * @returns {Promise<Response>}
+ */
+async function performFetch(request, event, options = {}, plugins = getPlugins(options)) {
+  const finalRequest = await runRequestWillFetch(plugins, { request, event, options });
+  try {
+    const rawResponse = await fetch(finalRequest);
+    const finalResponse = await runFetchDidSucceed(plugins, {
+      request: finalRequest,
+      response: rawResponse,
+      event,
+      options,
+    });
+    return finalResponse;
+  } catch (err) {
+    await runFetchDidFail(plugins, {
+      error: err,
+      originalRequest: request,
+      request: finalRequest,
+      event,
+      options,
+    });
+    throw err;
+  }
+}
+
+/**
  * Safely put a response clone into the runtime cache without blocking the main response.
+ * - Runs cacheWillUpdate plugin hooks; cancels write if hook returns null/false.
  * - Skips 206 Partial Content (Range requests) to prevent Cache Storage API TypeError.
  * - Skips non-2xx responses.
  * - Catches QuotaExceededError or write failures without breaking the caller.
+ * - Runs cacheDidUpdate plugin hook after successful write.
  * - Extends SW lifetime via event.waitUntil() if event is available.
  *
  * @param {Request} request
  * @param {Response} response
  * @param {FetchEvent} [event]
+ * @param {Object} [options]
  */
 function safePutInRuntime(request, response, event, options = {}) {
   if (!response || response.status === 206) return Promise.resolve();
@@ -60,20 +114,63 @@ function safePutInRuntime(request, response, event, options = {}) {
     return Promise.resolve();
   }
 
+  let toCache;
   try {
-    const clone = response.clone();
-    const writePromise = putInRuntime(request, clone).catch((err) => {
-      console.warn('[NLPWA] Runtime cache write failed:', err.message);
-    });
-
-    if (event && typeof event.waitUntil === 'function') {
-      event.waitUntil(writePromise);
-    }
-    return writePromise;
+    toCache = response.clone();
   } catch (err) {
-    console.warn('[NLPWA] Could not clone response for runtime cache:', err.message);
+    console.warn('[NLPWA] Could not clone response for runtime cache:', err?.message || err);
     return Promise.resolve();
   }
+
+  const asyncWrite = (async () => {
+    const plugins = getPlugins(options);
+    const cacheName = getConfig().caches?.runtime || 'runtime';
+
+    let responseToCache;
+    try {
+      responseToCache = await runCacheWillUpdate(plugins, {
+        request,
+        response: toCache,
+        event,
+        cacheName,
+        options,
+      });
+    } catch (err) {
+      console.warn('[NLPWA] cacheWillUpdate error:', err?.message || err);
+      return;
+    }
+
+    if (!responseToCache) return;
+
+    if (responseToCache.type === 'opaque') {
+      const allowOpaque = Boolean(
+        options?.cacheOpaque ??
+        getConfig().cacheOpaque ??
+        false
+      );
+      if (!allowOpaque) return;
+    } else if (!responseToCache.ok) {
+      return;
+    }
+
+    try {
+      await putInRuntime(request, responseToCache);
+      await runCacheDidUpdate(plugins, {
+        cacheName,
+        request,
+        newResponse: responseToCache,
+        event,
+        options,
+      });
+    } catch (err) {
+      console.warn('[NLPWA] Runtime cache write failed:', err?.message || err);
+    }
+  })();
+
+  if (event && typeof event.waitUntil === 'function') {
+    event.waitUntil(asyncWrite);
+  }
+  return asyncWrite;
 }
 
 /**
@@ -143,7 +240,7 @@ function isResponseExpired(response, maxAgeMs) {
   } else {
     const dateHeader = response.headers?.get('Date');
     if (dateHeader) {
-      const parsed = new Date(dateHeader).getTime();
+      const parsed = Date.parse(dateHeader);
       if (!Number.isNaN(parsed) && parsed > 0) cachedAt = parsed;
     }
   }
@@ -168,31 +265,54 @@ function isResponseExpired(response, maxAgeMs) {
  */
 export async function cacheFirst(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+  const plugins = getPlugins(options);
+  const offlineName = getConfig().caches?.offline || 'offline';
+  const runtimeName = getConfig().caches?.runtime || 'runtime';
 
-  const offlineCached = await getFromOffline(request, matchOptions);
-  if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+  let offlineCached = await getFromOffline(request, matchOptions);
+  if (offlineCached) {
+    offlineCached = await runCachedResponseWillBeUsed(plugins, {
+      cacheName: offlineName,
+      request,
+      matchOptions,
+      cachedResponse: offlineCached,
+      event,
+      options,
+    });
+    if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+  }
 
   const maxAgeMs = resolveMaxAgeMs(options);
-  const runtimeCached = await getFromRuntime(request, matchOptions);
+  let runtimeCached = await getFromRuntime(request, matchOptions);
   if (runtimeCached) {
-    const expired = maxAgeMs ? isResponseExpired(runtimeCached, maxAgeMs) : false;
-    if (!expired) {
-      return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
-    }
+    runtimeCached = await runCachedResponseWillBeUsed(plugins, {
+      cacheName: runtimeName,
+      request,
+      matchOptions,
+      cachedResponse: runtimeCached,
+      event,
+      options,
+    });
+    if (runtimeCached) {
+      const expired = maxAgeMs ? isResponseExpired(runtimeCached, maxAgeMs) : false;
+      if (!expired) {
+        return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+      }
 
-    // Cached copy has expired: attempt to refresh from network
-    try {
-      const response = await fetch(request);
-      safePutInRuntime(request, response, event, options);
-      return tagResponse(response, CACHE_STATUS.NETWORK);
-    } catch {
-      // Network failed while refreshing expired asset: serve stale cached copy
-      return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+      // Cached copy has expired: attempt to refresh from network
+      try {
+        const response = await performFetch(request, event, options, plugins);
+        safePutInRuntime(request, response, event, options);
+        return tagResponse(response, CACHE_STATUS.NETWORK);
+      } catch {
+        // Network failed while refreshing expired asset: serve stale cached copy
+        return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+      }
     }
   }
 
   try {
-    const response = await fetch(request);
+    const response = await performFetch(request, event, options, plugins);
     safePutInRuntime(request, response, event, options);
     return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
@@ -229,7 +349,7 @@ export async function cacheFirst(request, event, options = {}) {
  *
  * Best for: HTML pages, user data — content that should be fresh when online.
  *
- * Response header: X-Cache-Status: network | offline-cache | runtime-cache | offline-fallback
+ * Response header: X-Cache-Status: network | preload | offline-cache | runtime-cache | offline-fallback
  *
  * @param {Request} request
  * @param {FetchEvent} [event]
@@ -239,14 +359,37 @@ export async function cacheFirst(request, event, options = {}) {
 export async function networkFirst(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const timeoutMs = options.networkTimeoutMs ?? getConfig().networkTimeoutMs ?? 0;
+  const plugins = getPlugins(options);
+  const offlineName = getConfig().caches?.offline || 'offline';
+  const runtimeName = getConfig().caches?.runtime || 'runtime';
 
   /** Look in offline then runtime cache; returns a tagged Response or null. */
   const lookupCache = async () => {
-    const offlineCached = await getFromOffline(request, matchOptions);
-    if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+    let offlineCached = await getFromOffline(request, matchOptions);
+    if (offlineCached) {
+      offlineCached = await runCachedResponseWillBeUsed(plugins, {
+        cacheName: offlineName,
+        request,
+        matchOptions,
+        cachedResponse: offlineCached,
+        event,
+        options,
+      });
+      if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+    }
 
-    const runtimeCached = await getFromRuntime(request, matchOptions);
-    if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+    let runtimeCached = await getFromRuntime(request, matchOptions);
+    if (runtimeCached) {
+      runtimeCached = await runCachedResponseWillBeUsed(plugins, {
+        cacheName: runtimeName,
+        request,
+        matchOptions,
+        cachedResponse: runtimeCached,
+        event,
+        options,
+      });
+      if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+    }
 
     return null;
   };
@@ -264,13 +407,18 @@ export async function networkFirst(request, event, options = {}) {
         const preloaded = await preloadPromise;
         if (preloaded) {
           fromPreload = true;
-          return preloaded;
+          return runFetchDidSucceed(plugins, {
+            request,
+            response: preloaded,
+            event,
+            options,
+          });
         }
       } catch {
         // Preload aborted or unavailable; fall through to network fetch
       }
     }
-    return fetch(request);
+    return performFetch(request, event, options, plugins);
   })();
 
   try {
@@ -333,7 +481,7 @@ export async function networkFirst(request, event, options = {}) {
 
     // Return a typed offline error response instead of throwing
     return tagResponse(
-      new Response('Offline — no cached version available.', {
+      new Response('Offline — network request failed.', {
         status: 503,
         headers: { 'Content-Type': 'text/plain' },
       }),
@@ -357,8 +505,10 @@ export async function networkFirst(request, event, options = {}) {
  * @returns {Promise<Response>}
  */
 export async function networkOnly(request, event, options = {}) {
+  const plugins = getPlugins(options);
   try {
-    return tagResponse(await fetch(request), CACHE_STATUS.NETWORK);
+    const response = await performFetch(request, event, options, plugins);
+    return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
     if (getShouldThrow(options)) {
       throw err;
@@ -390,7 +540,27 @@ export async function networkOnly(request, event, options = {}) {
  */
 export async function staleWhileRevalidate(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
-  const cached = (await getFromRuntime(request, matchOptions)) ?? (await getFromOffline(request, matchOptions));
+  const plugins = getPlugins(options);
+  const runtimeName = getConfig().caches?.runtime || 'runtime';
+  const offlineName = getConfig().caches?.offline || 'offline';
+
+  let cached = await getFromRuntime(request, matchOptions);
+  let cacheNameUsed = runtimeName;
+  if (!cached) {
+    cached = await getFromOffline(request, matchOptions);
+    cacheNameUsed = offlineName;
+  }
+
+  if (cached) {
+    cached = await runCachedResponseWillBeUsed(plugins, {
+      cacheName: cacheNameUsed,
+      request,
+      matchOptions,
+      cachedResponse: cached,
+      event,
+      options,
+    });
+  }
 
   const maxAgeMs = resolveMaxAgeMs(options);
 
@@ -400,7 +570,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
       // Serve stale immediately; keep the SW alive for the background refresh.
       const revalidate = (async () => {
         try {
-          const response = await fetch(request);
+          const response = await performFetch(request, event, options, plugins);
           await safePutInRuntime(request, response, event, options);
           return response;
         } catch {
@@ -414,7 +584,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
     // Cached copy has expired: wait for revalidation (network-first semantics),
     // falling back to the expired cached entry if network fails (offline).
     try {
-      const response = await fetch(request);
+      const response = await performFetch(request, event, options, plugins);
       await safePutInRuntime(request, response, event, options);
       return tagResponse(response, CACHE_STATUS.NETWORK);
     } catch {
@@ -424,7 +594,7 @@ export async function staleWhileRevalidate(request, event, options = {}) {
 
   // No cache — wait for network, fall back to offline handling if network fails
   try {
-    const response = await fetch(request);
+    const response = await performFetch(request, event, options, plugins);
     await safePutInRuntime(request, response, event, options);
     return tagResponse(response, CACHE_STATUS.NETWORK);
   } catch (err) {
@@ -469,12 +639,35 @@ export async function staleWhileRevalidate(request, event, options = {}) {
  */
 export async function cacheOnly(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+  const plugins = getPlugins(options);
+  const offlineName = getConfig().caches?.offline || 'offline';
+  const runtimeName = getConfig().caches?.runtime || 'runtime';
 
-  const offlineCached = await getFromOffline(request, matchOptions);
-  if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+  let offlineCached = await getFromOffline(request, matchOptions);
+  if (offlineCached) {
+    offlineCached = await runCachedResponseWillBeUsed(plugins, {
+      cacheName: offlineName,
+      request,
+      matchOptions,
+      cachedResponse: offlineCached,
+      event,
+      options,
+    });
+    if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
+  }
 
-  const runtimeCached = await getFromRuntime(request, matchOptions);
-  if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+  let runtimeCached = await getFromRuntime(request, matchOptions);
+  if (runtimeCached) {
+    runtimeCached = await runCachedResponseWillBeUsed(plugins, {
+      cacheName: runtimeName,
+      request,
+      matchOptions,
+      cachedResponse: runtimeCached,
+      event,
+      options,
+    });
+    if (runtimeCached) return serveCached(request, runtimeCached, CACHE_STATUS.RUNTIME_CACHE);
+  }
 
   if (request.mode === 'navigate' && isNavigationFallbackAllowed(request, options)) {
     const fallbackUrl = resolveFallbackUrl(options);

@@ -182,4 +182,12 @@ export const DEFAULTS = {
    * Default: false (returns 503 response)
    */
   throwOnFailure: false,
+
+  /**
+   * Global plugins attached to all route strategies.
+   * Supports: cacheWillUpdate, requestWillFetch, cachedResponseWillBeUsed,
+   * fetchDidSucceed, fetchDidFail, cacheDidUpdate.
+   * Default: []
+   */
+  plugins: [],
 };

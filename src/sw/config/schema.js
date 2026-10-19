@@ -19,6 +19,13 @@ const ALLOWED_ROUTE_KEYS = new Set([
   'ignoreURLParametersMatching',
   'directoryIndex',
   'cleanURLs',
+  'plugins',
+  'requestWillFetch',
+  'cachedResponseWillBeUsed',
+  'cacheWillUpdate',
+  'fetchDidSucceed',
+  'fetchDidFail',
+  'cacheDidUpdate',
 ]);
 
 const ALLOWED_CONFIG_KEYS = new Set([
@@ -51,6 +58,13 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'ignoreURLParametersMatching',
   'directoryIndex',
   'cleanURLs',
+  'plugins',
+  'requestWillFetch',
+  'cachedResponseWillBeUsed',
+  'cacheWillUpdate',
+  'fetchDidSucceed',
+  'fetchDidFail',
+  'cacheDidUpdate',
 ]);
 
 /**

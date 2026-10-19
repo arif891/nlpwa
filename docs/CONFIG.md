@@ -513,6 +513,79 @@ Automatically resolves extensionless paths to their `.html` counterparts (e.g. `
 
 ---
 
+### Plugin Lifecycle Hooks (`plugins`)
+
+Workbox-style lifecycle plugin hooks allow developers to customize cache storage and request lifecycles without forking the engine. Hooks can be passed via `plugins: [plugin, ...]` or declared directly on routes / global config.
+
+```js
+// Example: Custom Auth & Cache Invalidation Plugin
+const authAndExpiryPlugin = {
+  // 1. requestWillFetch: Attach auth token before network fetch
+  async requestWillFetch({ request }) {
+    const headers = new Headers(request.headers);
+    headers.set('Authorization', 'Bearer ' + getStoredToken());
+    return new Request(request.url, { headers });
+  },
+
+  // 2. cachedResponseWillBeUsed: Invalidate expired or revoked tokens in cache
+  async cachedResponseWillBeUsed({ cachedResponse }) {
+    if (!cachedResponse) return null;
+    const expiresHeader = cachedResponse.headers.get('X-Token-Expires');
+    if (expiresHeader && Date.now() > Number(expiresHeader)) {
+      return null; // Treated as cache miss -> re-fetches from network
+    }
+    return cachedResponse;
+  },
+
+  // 3. cacheWillUpdate: Only cache successful JSON payloads
+  async cacheWillUpdate({ response }) {
+    if (response.status === 200 && response.headers.get('content-type')?.includes('application/json')) {
+      return response;
+    }
+    return null; // Do not store error bodies or non-JSON responses
+  },
+};
+```
+
+#### Available Lifecycle Hooks
+
+| Hook | Parameters | Description |
+|---|---|---|
+| `requestWillFetch` | `{ request, event, options }` | Called before a network fetch is made. Can return a modified `Request`. |
+| `cachedResponseWillBeUsed` | `{ cacheName, request, matchOptions, cachedResponse, event, options }` | Called before a cached response is served. Return a modified `Response`, or `null` to treat as a cache miss. |
+| `cacheWillUpdate` | `{ request, response, event, cacheName, options }` | Called before a response is committed to cache. Return modified `Response`, or `null`/`false` to skip caching. |
+| `fetchDidSucceed` | `{ request, response, event, options }` | Called after a network fetch succeeds. |
+| `fetchDidFail` | `{ error, originalRequest, request, event, options }` | Called when a network fetch throws or goes offline. |
+| `cacheDidUpdate` | `{ cacheName, request, oldResponse, newResponse, event, options }` | Called after a response is committed to CacheStorage. |
+
+#### Usage Examples
+
+```js
+// Per-route configuration
+{
+  match: '/api/**',
+  strategy: 'network-first',
+  plugins: [authAndExpiryPlugin],
+}
+
+// Direct hook shortcut on a route
+{
+  match: '/ephemeral/**',
+  strategy: 'cache-first',
+  cacheWillUpdate: async ({ response }) => {
+    return response.headers.has('X-Cache-Permitted') ? response : null;
+  },
+}
+
+// Global plugins applied to all routes
+export default {
+  plugins: [globalTelemetryPlugin],
+  routes: [...],
+};
+```
+
+---
+
 ## Full Example
 
 ### `sw.js` (Service Worker Engine)

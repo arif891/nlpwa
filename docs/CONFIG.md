@@ -209,6 +209,14 @@ You can specify glob patterns in `precache` (such as `'/assets/icons/**'` or `'/
 - Do **not** include API responses or user-specific data
 - Keep precache lean: large media files (videos, high-res images, 3D models) should be cached via runtime routes
 
+> [!IMPORTANT]
+> **Precached Files Are Strictly Cache-First (Non-Overridable)**
+> Every file listed in `precache` is automatically served `cache-first` directly from the active `offline@...` cache. **Route configurations cannot override this behavior.** Even if you define `{ match: '/app.js', strategy: 'network-first' }` or `{ match: '/index.html', strategy: 'network-only' }`, the precache atomicity rule takes precedence.
+>
+> - **Why:** Prevents runtime version skew (e.g. running v2 HTML against v1 JS chunks).
+> - **Hotfix Surprise:** You cannot bypass the cache or "hotfix" a precached file on the server by simply modifying server files or changing route strategies. The SW will continue serving the active version from cache.
+> - **Update Flow:** To deploy updates or hotfixes to precached assets, run `npx nlpwa update` (or let your CI/CD build run) to generate new manifest hashes. The Service Worker will stage the update in the background and activate it cleanly.
+
 > [!WARNING]
 > **Keep Precache Lean (Memory Footprint)**:
 > During update staging and integrity verification, `fetchVerified` clones and buffers each downloaded response into memory as an `ArrayBuffer` to compute its SHA-256 digest before storing the original response into `CacheStorage`. For typical app shell files (HTML, JS, CSS, SVG icons), memory overhead is negligible. However, putting large multi-megabyte files into `precache` will temporarily double peak memory usage while hashing.
@@ -235,8 +243,11 @@ routes: [
 ]
 ```
 
-> [!NOTE]
-> **Built-In Shell Atomicity Rule**: All precached and manifest files (your HTML shell, JS bundles, CSS, and icons) are **automatically served cache-first from the active offline cache** via an internal, non-overridable rule evaluated before `routes`. Even if your configuration uses `defaultStrategy: 'network-first'`, the app shell is never fetched raw from the network while an update is being staged. This guarantees that running tabs never serve mixed old/new files and that updates commit atomically.
+> [!IMPORTANT]
+> **Built-In Shell Atomicity Rule: Precached Files Cannot Be Overridden**
+> All precached and manifest files (your HTML shell, JS bundles, CSS, and icons) are **automatically served `cache-first` from the active offline cache** via an internal, non-overridable rule evaluated before `routes`.
+>
+> Even if your configuration defines `{ match: '/index.html', strategy: 'network-first' }` or uses `defaultStrategy: 'network-first'`, the precached app shell is never fetched raw from the network while an update is being staged. This guarantees that running tabs never serve mixed old/new files and that updates commit atomically. To deploy updates or hotfixes to precached files, run `nlpwa update` to emit a new manifest.
 
 #### `match` — Glob pattern
 

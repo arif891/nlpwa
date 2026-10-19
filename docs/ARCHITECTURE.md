@@ -193,10 +193,11 @@ fetch event (GET, http/https only)
   └─ if request.mode === 'navigate':
        └─ commitIfReady()     ← switches to staged update before serving new page!
   └─ resolveStrategy(request)
-       └─ iterate active config.routes (hydrated from offline cache) top-to-bottom
-            └─ matchGlob(route.match, request.url)
-                 └─ first match → return strategy function
-                 └─ no match   → return defaultStrategy function
+       ├─ if isManifestFile(request.url) (in precache):
+       │    └─ return cache-first (bound to active offline cache; guarantees atomicity)
+       └─ otherwise: iterate active config.routes (hydrated from offline cache) top-to-bottom
+            ├─ matchGlob(route.match, request.url) → return matched strategy function
+            └─ no match → return defaultStrategy function
   └─ event.respondWith(strategyFn(request, event))
 ```
 

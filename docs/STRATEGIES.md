@@ -18,6 +18,15 @@ directly to the network.
 | `stale-while-revalidate` | Cache (instant) | Blocks if no cache | ✅ Runtime | Feeds, listings |
 | `cache-only` | Cache | 503 response | ❌ Never | Offline fallback |
 
+> [!IMPORTANT]
+> ### ⚠️ Critical Rule: Precached Files Are Strictly Cache-First (Non-Overridable)
+> All files declared in `precache` (your app shell: HTML, JS bundles, CSS, icons) are **always served `cache-first` directly from the active offline cache**, regardless of any rules configured in `routes` or your `defaultStrategy`.
+>
+> - **Route Override Ignored:** If you configure `{ match: '/app.js', strategy: 'network-first' }` or `{ match: '/index.html', strategy: 'network-only' }`, NLPWA will **ignore** that strategy for `/app.js` and `/index.html` if they are listed in `precache`.
+> - **Why This Protects You (Atomicity Guarantee):** Allowing network-first fetches for precached shell assets would permit a live server response (e.g. v2 HTML or modern script chunk) to run against active v1 cached files. This breaks runtime coherence, leading to version skew and crash states.
+> - **The Gotcha (Hotfixing):** You cannot bypass the cache or "hotfix" a precached asset by pushing a file to the server and expecting a network-first rule to pick it up. The Service Worker will continue serving the asset from `offline@<version>`.
+> - **The Solution (Correct Update Flow):** To update or hotfix precached files, run `npx nlpwa update` (or let your CI/CD pipeline emit new manifests). NLPWA detects the updated hashes via OTA update checks, stages the delta update in the background with SHA-256 verification, and swaps versions atomically upon user navigation or `applyUpdate()`.
+
 ### `X-Cache-Status` Headers & Response Fidelity
 
 Every response intercepted by NLPWA includes an `X-Cache-Status` response header for debugging and observability:

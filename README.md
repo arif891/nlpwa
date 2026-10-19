@@ -7,6 +7,65 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 
 ---
 
+## The Pitch: Atomic Updates Without Service Worker Churn
+
+Traditional Progressive Web Apps (including standard Workbox setups) suffer from a fundamental architectural tension: **application assets and service worker lifecycles are tightly coupled**.
+
+When an application file (HTML, JS, CSS) changes in a traditional PWA:
+1. The Service Worker script changes bytes (typically via an injected manifest like `self.__WB_MANIFEST`).
+2. The browser detects byte changes and triggers the full Service Worker lifecycle: `install` → `waiting`.
+3. You are forced into an impossible trade-off:
+   - **Force `skipWaiting()` immediately:** Open tabs suddenly begin requesting newly deployed asset chunks while running old code, causing fatal runtime version mismatches, 404 chunk loading failures, or abrupt mid-session disruptions.
+   - **Wait for tabs to close:** Updates remain stalled in the `waiting` state indefinitely. Because mobile users rarely close tabs, users stay on outdated, broken versions for days or weeks.
+
+### How NLPWA Solves It
+
+NLPWA breaks this dilemma by completely decoupling the Service Worker engine from your application releases:
+
+- **Zero SW Lifecycle Churn:** The Service Worker engine installs once and stays running. Updates to your app never trigger worker reinstall, waiting worker queues, or lifecycle thrashing.
+- **Atomic OTA Delta Staging:** App releases arrive Over-The-Air (OTA) via lightweight JSON manifests (`version.json` / `info.json`). Unchanged files are copied locally from the active cache (zero network bytes). Changed files are downloaded into an isolated staging cache (`offline@v2`) and verified against SHA-256 hashes.
+- **Client Version Pinning:** Every open tab is isolated to its active version (`offline@v1`). If a newer version is staged or committed by another tab, existing tabs remain strictly bound to their pinned version for their entire lifespan.
+- **One-Pointer Atomic Swap:** When the user navigates or approves an update prompt, a single metadata pointer write (`nlpwa-meta`) switches the active version atomically. Active sessions are never broken, and partial updates are mathematically impossible.
+
+---
+
+## How NLPWA Compares with Workbox
+
+[Workbox](https://developer.chrome.com/docs/workbox) is Google's modular, low-level library for service worker routing and caching. NLPWA approaches PWAs from a different angle — as an integrated, app-centric framework built around native-like over-the-air (OTA) updates:
+
+| Dimension | Workbox | NLPWA |
+|---|---|---|
+| **SW vs. App Versioning** | **Tightly Coupled.** Precache manifests are typically injected into `sw.js` (`self.__WB_MANIFEST`). Changing any application file changes `sw.js` bytes, triggering the browser's full Service Worker lifecycle (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active across app updates. App updates arrive over the air via lightweight JSON manifests (`version.json` / `info.json`), staging updates in the background without worker lifecycle churn. |
+| **Staging & Cache Turnover** | **Worker Lifecycle Driven.** New assets are cached during the waiting worker's `install` event; switching versions requires coordinating `skipWaiting()` and client window reloads. | **Isolated Atomic Swap.** Updates stage into an isolated cache (`offline@v2`) in the background while the active app runs undisturbed. Versions swap cleanly on navigation (or on prompt) via an atomic pointer flip (`nlpwa-meta`). |
+| **Multi-Tab Isolation** | **Shared Worker State.** When a waiting worker activates, all open tabs immediately contend with new worker logic and updated caches, risking runtime version skew. | **Per-Client Version Pinning.** Each open browser tab is pinned by `clientId` to its active version cache. Pinned caches are immune to garbage collection until the tab closes. |
+| **Download Integrity & Soft-404s** | **Optional SRI.** Supports Subresource Integrity (`integrity` option), but requires developers to configure and generate integrity hashes during build. | **Built-in Manifest Verification.** Automatically hashes and verifies every staged asset against SHA-256 digests. Built-in protection against captive portals or SPA hosts serving 200 HTML for missing assets. |
+| **Update Delivery & Frequency** | **Browser Script Checks.** Driven primarily by browser byte-checks on `sw.js` (on navigation or 24-hour intervals) or manual `registration.update()` calls. | **Two-Tier App Protocol.** In addition to browser SW checks, client apps can check for app updates on tab focus, interval, or custom UI via a lightweight Tier 1 JSON check before fetching full manifests. |
+| **Integration & Batteries** | **Modular Toolkit.** Gives you low-level building blocks, but requires writing worker glue code, build integrations, postMessage channels, and custom reload UI prompts. | **Turnkey App Framework.** Pre-bundled SW engine, CLI (`nlpwa init` / `nlpwa update` / `nlpwa add`), Rollup/Vite plugins, cross-tab update coordination, form-edit protection prompts, and quota management out of the box. |
+
+### When Workbox is the Better Choice
+
+While NLPWA provides a turnkey application framework with atomic OTA updates, full plugin lifecycle hooks, and background sync, Workbox remains the industry standard when you need:
+- **Custom Service Worker Architecture**: Writing bespoke worker routing pipelines, stream transformations, or assembling custom worker topologies with low-level primitives.
+- **Broad Framework Ecosystem**: Deep, off-the-shelf integrations with Next.js PWA plugins (`next-pwa` / `@ducanh2912/next-pwa`), Nuxt PWA, or legacy Webpack build chains (`workbox-webpack-plugin`).
+- **Google Analytics Offline Queueing**: Specialized, pre-bundled tracking queueing for Google Analytics (`workbox-google-analytics`).
+- **Per-Route Runtime Expiration Rules**: Configuring max-age and max-entries declaratively inside individual route declarations without coordinating explicit cache cleanup calls (`workbox-expiration`).
+
+---
+
+## ⚠️ Critical Rule: Precached Files Are Strictly Cache-First (Non-Overridable)
+
+All files declared in your `precache` array (your HTML shell, JS bundles, CSS, and icons) are **always served `cache-first` directly from the active offline cache**, regardless of custom route rules or your `defaultStrategy`.
+
+> [!IMPORTANT]
+> **Precache Overrides Any Route Strategy to Protect Atomicity**
+> If you configure `{ match: '/app.js', strategy: 'network-first' }` or `{ match: '/index.html', strategy: 'network-only' }`, NLPWA will **ignore** that strategy for `/app.js` and `/index.html` if they are in `precache`.
+>
+> - **Why this protects you (Atomicity Guarantee):** If precached files could be fetched raw from the network, a client could load a live v2 HTML shell while still running v1 cached scripts (or vice-versa), causing fatal runtime version skew.
+> - **The Gotcha (Hotfixing):** You cannot hotfix a precached asset by simply pushing an updated file to your server or switching a route rule. The Service Worker will continue serving the active version from `offline@<version>`.
+> - **The Solution (Correct Update Flow):** Run `npx nlpwa update` (or let your CI/CD build run) to emit a new version and update manifests (`version.json` / `info.json`). NLPWA will detect the change, stage the delta update in the background with SHA-256 verification, and activate the hotfix atomically.
+
+---
+
 ## Features
 
 - **Decoupled SW vs. App versioning** — SW engine version is managed manually; App version is deterministically derived from manifest content hashes (or semver)
@@ -19,40 +78,6 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 - **Multi-tab coherence & form-edit protection** — open tabs sync cleanly, while automatic reloads are safely deferred if the user is typing in forms
 - **Offline mutation & Background Sync** — queue offline `POST`/`PUT`/`DELETE` in IndexedDB and replay with automatic cross-browser fallbacks
 - **Zero runtime dependencies** — pre-bundled standalone engine (`sw.js`), runtime SDK (`client.js`), and starter config
-
----
-
-## Why "Native-like"?
-
-Native mobile apps (iOS & Android) feel reliable because they follow a strict, atomic update lifecycle:
-1. **Background Staging:** Updates download quietly over the air (OTA) in the background without interrupting the active screen or dropping unsaved user work.
-2. **Atomic Version Swapping & Client Version Pinning:** When the user restarts or navigates, the app switches versions as a single atomic unit. With per-client version pinning via `clientId`, an existing tab running unhashed code is isolated to its pinned version cache for its entire lifecycle—even if another tab navigates and commits a newer version. Pinned version caches are protected from garbage collection while tabs remain open.
-3. **Delta Syncing:** Only files that actually changed are transferred over the wire.
-4. **Integrity Verification:** Every downloaded file is verified with SHA-256 hashes against the manifest before it is allowed to go live. (Protects against network transport corruption, captive portal intercepts returning 200 HTML for missing assets, and partial deployments).
-
-Standard Service Worker setups often fail this test: calling `self.skipWaiting()` either causes abrupt mid-session reloads or leaves active tabs serving half-v1 and half-v2 assets. **NLPWA reproduces the native mobile app update lifecycle on the web.**
-
----
-
-## How NLPWA Compares with Workbox
-
-[Workbox](https://developer.chrome.com/docs/workbox) is Google's modular, low-level library for service worker routing and caching. NLPWA approaches PWAs from a different angle — as an integrated, app-centric framework with native-like over-the-air (OTA) updates:
-
-| Dimension | Workbox | NLPWA |
-|---|---|---|
-| **SW vs. App Versioning** | **Tightly Coupled.** Precache manifests are typically injected into `sw.js` (`self.__WB_MANIFEST`). Changing any application file changes `sw.js` bytes, triggering the browser's full Service Worker lifecycle (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active across app updates. App updates arrive over the air via lightweight JSON manifests (`version.json` / `info.json`), staging updates in the background without worker lifecycle churn. |
-| **Staging & Cache Turnover** | **Worker Lifecycle Driven.** New assets are cached during the waiting worker's `install` event; switching versions requires coordinating `skipWaiting()` and client window reloads. | **Isolated Atomic Swap.** Updates stage into an isolated cache (`offline@v2`) in the background while the active app runs undisturbed. Versions swap cleanly on navigation (or on prompt) via an atomic pointer flip (`nlpwa-meta`). |
-| **Download Integrity & Soft-404s** | **Optional SRI.** Supports Subresource Integrity (`integrity` option), but requires developers to configure and generate integrity hashes during build. | **Built-in Manifest Verification.** Automatically hashes and verifies every staged asset against SHA-256 digests. Built-in protection against captive portals or SPA hosts serving 200 HTML for missing assets. |
-| **Update Delivery & Frequency** | **Browser Script Checks.** Driven primarily by browser byte-checks on `sw.js` (on navigation or 24-hour intervals) or manual `registration.update()` calls. | **Two-Tier App Protocol.** In addition to browser SW checks, client apps can check for app updates on tab focus, interval, or custom UI via a lightweight Tier 1 JSON check before fetching full manifests. |
-| **Integration & Batteries** | **Modular Toolkit.** Gives you low-level building blocks, but requires writing worker glue code, build integrations, postMessage channels, and custom reload UI prompts. | **Turnkey App Framework.** Pre-bundled SW engine, CLI (`nlpwa init` / `nlpwa update` / `nlpwa add`), Rollup/Vite plugins, cross-tab update coordination, form-edit protection prompts, and quota management out of the box. |
-
-### When Workbox is the Better Choice
-
-While NLPWA provides a turnkey application framework with atomic OTA updates, full plugin lifecycle hooks, and background sync, Workbox remains the industry standard when you need:
-- **Custom Service Worker Architecture**: Writing bespoke worker routing pipelines, stream transformations, or assembling custom worker topologies with low-level primitives.
-- **Broad Framework Ecosystem**: Deep, off-the-shelf integrations with Next.js PWA plugins (`next-pwa` / `@ducanh2912/next-pwa`), Nuxt PWA, or legacy Webpack build chains (`workbox-webpack-plugin`).
-- **Google Analytics Offline Queueing**: Specialized, pre-bundled tracking queueing for Google Analytics (`workbox-google-analytics`).
-- **Per-Route Runtime Expiration Rules**: Configuring max-age and max-entries declaratively inside individual route declarations without coordinating explicit cache cleanup calls (`workbox-expiration`).
 
 ---
 

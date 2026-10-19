@@ -20,6 +20,8 @@ Runtime configuration is completely decoupled from `sw.js` and loaded dynamicall
 ```
 src/
 ├── shared/                         ← Shared by SW, client, and build tool
+│   ├── async.js                    mapConcurrent() bounded async concurrency runner
+│   ├── time.js                     parseDurationMs(), resolveMaxAgeMs(), isResponseExpired()
 │   ├── constants.js                Cache names (OFFLINE, RUNTIME, META), message types, strategies
 │   ├── hash.js                     sha256Hex(), hashMatches()
 │   ├── glob.js                     Glob URL pattern matching (*, **, ?)
@@ -28,37 +30,104 @@ src/
 │   └── logger.js                   Tiered logging utility (silent, error, warn, info, debug)
 │
 ├── sw/                             ← Runs in Service Worker thread
-│   ├── index.js                    Entry: initSW(config) — wires all lifecycle events & messages
+│   ├── index.js                    Entry orchestrator: initSW(config) — wires event handlers
 │   ├── logger.js                   SW-scoped loggers (error, warn, log, debug)
+│   ├── standalone.js               Auto-init classic/module worker entry (built to out/sw.js)
+│   ├── events/                     ← Modular SW lifecycle event listeners
+│   │   ├── install.js              Install event: precacheFiles() and skipWaiting()
+│   │   ├── activate.js             Activate event: clients.claim(), navigationPreload, pin seeding
+│   │   ├── message.js              Message dispatcher table for all postMessage actions
+│   │   ├── push.js                 Push notifications and silent background update triggers
+│   │   └── sync.js                 Periodic background sync update checks
 │   ├── config/
 │   │   ├── defaults.js             Default config values (SW version, endpoints, paths, logLevel)
 │   │   ├── schema.js               Config validation (returns error strings)
 │   │   └── index.js                loadConfigFromCache(), updateActiveConfig(), ensureConfigReady()
-│   ├── cache/
-│   │   ├── store.js                nlpwa-meta pointers (active / staged memoised), Web Locks / withLock
-│   │   ├── install.js              precacheFiles() — install-time stage + commit (manifest-driven)
-│   │   ├── runtime.js              get/put/delete helpers for offline + runtime caches, clearAllCaches()
-│   │   ├── cleanup.js              cleanRuntimeCache(), getStorageQuotaInfo() — bounded batching & eviction
-│   │   ├── evict.js                evictByRoute() — route-aware eviction delegating to matchRoute
+│   ├── cache/                      ← Segmented storage subsystem
+│   │   ├── meta/                   Low-level JSON metadata & atomic pointers
+│   │   │   ├── store.js            readMeta(), writeMeta(), deleteMeta() (nlpwa-meta CacheStorage)
+│   │   │   ├── active.js           Active version pointer (getActive, setActive, clearActive)
+│   │   │   ├── staged.js           Staged version pointer (getStaged, setStaged, clearStaged)
+│   │   │   ├── client-pins.js      Per-client tab isolation (pinClient, unpinClient, pruneClientPins)
+│   │   │   └── lock.js             Cooperative operation lock (Web Locks API + memory mutex)
+│   │   ├── offline/                Precache & app shell store
+│   │   │   ├── store.js            getFromOffline(), putInOffline(), deleteFromOffline()
+│   │   │   ├── aliases.js          matchWithAliases() — clean URLs, directory index, subpath bases
+│   │   │   └── install.js          precacheFiles() — install-time stage + commit (manifest-driven)
+│   │   ├── runtime/                Dynamic lazy cache store
+│   │   │   ├── store.js            getFromRuntime(), putInRuntime(), evictFromRuntime(), clearAllCaches()
+│   │   │   └── keys.js             cleanTrackingParams() — strips marketing/analytics query parameters
+│   │   ├── eviction/               Storage inspection & eviction policies
+│   │   │   ├── quota.js            getStorageQuotaInfo() using navigator.storage.estimate()
+│   │   │   ├── size.js             resolveByteSize() for parsing bytes, KB, MB, GB, '50MB'
+│   │   │   ├── policies.js         cleanRuntimeCache() (LRU, largest, max-age, quota, pattern, all)
+│   │   │   └── route-cleaner.js    evictByRoute(), isCacheableUrl() — route-aware invalidation
+│   │   ├── tag.js                  tagResponse() — injects X-Cache-Status headers
 │   │   └── index.js                Barrel re-export
-│   ├── fetch/
-│   │   ├── strategies.js           5 strategy functions (X-Cache-Status, offlineFallback, safePutInRuntime)
+│   ├── fetch/                      ← Fetch interception & request pipeline
+│   │   ├── strategies/             Individual caching strategy implementations
+│   │   │   ├── cache-first.js      Cache-First algorithm (offline → runtime → network)
+│   │   │   ├── network-first.js    Network-First algorithm (network race with timeout → cache)
+│   │   │   ├── network-only.js     Network-Only algorithm (pure network pass-through)
+│   │   │   ├── stale-while-revalidate.js Stale-While-Revalidate algorithm (serve cached, refresh bg)
+│   │   │   ├── cache-only.js       Cache-Only algorithm (strictly cache, offline fallback on miss)
+│   │   │   ├── context.js          Shared execution helpers (performFetch, safePutInRuntime, etc.)
+│   │   │   └── index.js            Strategy registry & re-exports
 │   │   ├── router.js               resolveStrategy(request), matchRoute(url, routes, config)
+│   │   ├── navigation.js           isNavigationFallbackAllowed() — allowlist/denylist matching
+│   │   ├── plugins.js              Workbox-compatible plugin lifecycle hooks runner
+│   │   ├── range.js                createRangeResponse() — 206 Partial Content byte slicing
 │   │   └── index.js                handleFetch(event) — SW fetch event handler
-│   └── update/
-│       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerInfo (Tier 2), save snapshot
+│   └── update/                     ← Atomic OTA update engine
+│       ├── staging/                Update staging pipeline
+│       │   ├── verifier.js         isAlreadyStaged() — SHA-256 integrity & oversized file rules
+│       │   ├── fetcher.js          fetchVerified() — streaming fetch with timeout & hash verification
+│       │   └── orchestrator.js     stageUpdate() — builds delta cache, copies unchanged, verifies delta
 │       ├── diff.js                 computeDiff(newFiles, oldFiles) → { added, modified, removed }
-│       ├── stage.js                stageUpdate() — builds, hash-verifies & broadcasts STAGING_PROGRESS
+│       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerInfo (Tier 2), save snapshot
 │       ├── commit.js               commitStaged() — one-write atomic switch to staged version
-│       └── index.js                checkForUpdate(), getUpdateStatus(), setUpdateStatus()
+│       ├── status.js               Observable update status tracker (idle, checking, staging, ready)
+│       └── index.js                checkForUpdate() orchestration
 │
 ├── client/                         ← Runs in main browser thread (built to out/client.js / client.esm.js)
-│   ├── register.js                 register(swUrl, options), unregister(scope)
+│   ├── index.js                    Clean public API entry point
+│   ├── registration.js             register(swUrl, options), unregister(scope), onUpdateApplied()
+│   ├── form-guard.js               isUserEditing() — detects active form inputs to protect unsaved work
+│   ├── polling.js                  setupFocusPolling(), setupIntervalPolling(), setupPeriodicSync()
 │   ├── messaging.js                sendToSW(), onSWMessage(), getVersion(), getStatus(), requestFromSW()
 │   ├── cache-manager.js            getCacheInfo(), cleanupRuntimeCache() — quota & cache management
-│   └── update-ui.js                onUpdateReady(), onStagingProgress(), applyUpdate()
+│   ├── update-ui.js                onUpdateReady(), onStagingProgress(), applyUpdate()
+│   └── logger.js                   Client logger with configurable log levels
+│
+├── cli/                            ← Modular CLI engine (executed via bin/nlpwa.js)
+│   ├── index.js                    CLI argument parser & command router (runCLI)
+│   ├── commands/
+│   │   ├── init.js                 cmdInit() — project scaffolding & drop-in file installer
+│   │   ├── add.js                  cmdAdd() — installs optional official plugins into project
+│   │   ├── update.js               cmdUpdate() — manifest generation & update endpoint emitter
+│   │   ├── status.js               cmdStatus() — inspect deployed config and tracked files
+│   │   └── generate-offline.js     cmdGenerateOffline() — standalone offline.html page generator
+│   ├── core/
+│   │   ├── manifest.js             hashFile(), computeManifestHash(), deriveAppVersion(), collectTrackedFiles()
+│   │   └── config.js               findConfigFile(), loadConfig(), syncSourceConfigVersion()
+│   └── ui/
+│       └── terminal.js             ANSI color formatting, printBanner(), printHelp()
+│
+├── plugins/                        ← Official modular plugins
+│   └── sync/                       Background Sync & Offline Mutation (IndexedDB + cross-browser fallback)
+│       ├── idb.js                  Zero-dependency IndexedDB wrapper & request serializer
+│       ├── queue.js                SyncQueue — FIFO replay queue with retention pruning & retries
+│       ├── sw.js                   BackgroundSyncPlugin — SW fetchDidFail & sync event listeners
+│       ├── client.js               SyncClient — window API & autoSyncOnOnline fallback
+│       ├── constants.js            Typed message constants
+│       └── index.js                Barrel re-export
+│
+├── bin/
+│   ├── nlpwa.js                    Thin executable shim delegating to src/cli/index.js
+│   └── build-utils.js              Re-export adapter for build utilities
 │
 ├── rollup-plugin.js                ← Bundler plugin for Vite / Rollup integration
+├── webpack-plugin.js               ← Bundler plugin for Webpack integration
 └── config.js                       ← Starter config template (emits out/config.json)
 ```
 
@@ -178,7 +247,7 @@ Commit Phase: commitStaged() (triggered on navigation or APPLY_UPDATE message):
 
 ```
 SW postMessage({ type: 'UPDATE_READY', version })
-  └─ onSWMessage handler in register.js
+  └─ onSWMessage handler in src/client/registration.js
        ├─ options.onUpdateReady({ version })  ← user callback
        ├─ document.dispatchEvent('nlpwa:update-ready')
        └─ options.autoReload → deferred to prompt if user is editing inputs, else applyUpdate

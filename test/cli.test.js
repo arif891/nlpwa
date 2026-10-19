@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -184,5 +184,44 @@ test('cli help: init documents copying config.json (not config.js)', () => {
   assert.match(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and config\.json/);
   assert.doesNotMatch(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and config\.js\b/);
 });
+
+test('cli add: lists available plugins when no plugin name is provided', () => {
+  const res = spawnSync(process.execPath, [CLI, 'add'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Available plugins:/);
+  assert.match(res.stdout, /sync — Background Sync/);
+});
+
+test('cli add: warns on unknown plugin', () => {
+  const res = spawnSync(process.execPath, [CLI, 'add', 'nonexistent'], { encoding: 'utf8' });
+  assert.equal(res.status, 1, res.stderr);
+  assert.match(res.stderr, /Unknown plugin "nonexistent"/);
+});
+
+test('cli add: installs sync plugin into target directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-add-'));
+  const outDir = fileURLToPath(new URL('../out', import.meta.url));
+  const syncSw = join(outDir, 'plugins/sync.sw.js');
+  const syncClient = join(outDir, 'plugins/sync.client.js');
+
+  // Ensure source files exist in out/ even if tests run before npm run build
+  if (!existsSync(syncSw) || !existsSync(syncClient)) {
+    mkdirSync(join(outDir, 'plugins'), { recursive: true });
+    if (!existsSync(syncSw)) writeFileSync(syncSw, '/* NLPWASyncSW */');
+    if (!existsSync(syncClient)) writeFileSync(syncClient, '/* NLPWASyncClient */');
+  }
+
+  const res = spawnSync(process.execPath, [CLI, 'add', 'sync', '--dir', root], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /Plugin "sync" added successfully/);
+
+  const swFile = readFileSync(join(root, 'plugins/sync.sw.js'), 'utf8');
+  const clientFile = readFileSync(join(root, 'plugins/sync.client.js'), 'utf8');
+  assert.ok(swFile.length > 0);
+  assert.ok(clientFile.length > 0);
+  assert.match(swFile, /NLPWASyncSW/);
+  assert.match(clientFile, /NLPWASyncClient/);
+});
+
 
 

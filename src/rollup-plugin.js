@@ -33,6 +33,7 @@ export function nlpwaPlugin(options = {}) {
   let targetVersion = null;
   let targetConfig = null;
   let targetConfigPath = null;
+  let cachedContentHash = '';
 
   async function resolveTargetVersion() {
     targetConfigPath = findConfigFile(options.config);
@@ -73,14 +74,17 @@ export function nlpwaPlugin(options = {}) {
         // Note: when deriveVersion is enabled (default), runtime manifests append the content hash
         // (e.g. '1.0.0-a1b2c3d4e5f6'). If autoIncrement is true or deriveVersion is false,
         // APP_VERSION matches the manifest version exactly.
-        let contentHash = '';
-        try {
-          const distDir = resolve(process.cwd(), options.distDir ?? './dist');
-          if (existsSync(distDir)) {
-            const { files } = collectTrackedFiles(targetConfig || {}, distDir);
-            contentHash = computeManifestHash(files, targetConfig || {});
-          }
-        } catch {}
+        let contentHash = cachedContentHash;
+        if (!contentHash) {
+          try {
+            const distDir = resolve(process.cwd(), options.distDir ?? './dist');
+            if (existsSync(distDir)) {
+              const { files } = collectTrackedFiles(targetConfig || {}, distDir);
+              contentHash = computeManifestHash(files, targetConfig || {});
+              cachedContentHash = contentHash;
+            }
+          } catch {}
+        }
         return `export const APP_VERSION = ${JSON.stringify(targetVersion)};\nexport const BASE_VERSION = ${JSON.stringify(targetVersion)};\nexport const CONTENT_HASH = ${JSON.stringify(contentHash)};\nexport default APP_VERSION;\n`;
       }
     },
@@ -162,6 +166,8 @@ export function nlpwaPlugin(options = {}) {
 
       writeFileSync(versionOut, JSON.stringify({ version: appVersion }, null, jsonIndent), 'utf8');
       writeFileSync(infoOut, JSON.stringify({ version: appVersion, files }, null, jsonIndent), 'utf8');
+
+      cachedContentHash = computeManifestHash(files, runtimeConfig);
 
       console.log(`[NLPWA] Emitted ${cleanConfigPath} and update API (v${appVersion}, ${files.length} tracked offline files)`);
     },

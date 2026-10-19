@@ -1,5 +1,6 @@
 import { MESSAGE_TYPES } from '../shared/constants.js';
 import { onSWMessage, sendToSW, requestFromSW } from './messaging.js';
+import { logger } from './logger.js';
 
 /**
  * Register a handler to be called when the SW signals an update is ready.
@@ -144,12 +145,12 @@ export async function applyUpdate({ timeoutMs = 3000, reload = true } = {}) {
     }
   } catch (err) {
     // If no SW available or timeout occurs, log warning and fall through if reload desired
-    console.warn('[NLPWA] applyUpdate: SW reply timed out or not available:', err.message);
+    logger.warn('[NLPWA] applyUpdate: SW reply timed out or not available:', err.message);
   }
 
   // If the SW explicitly replied that no update could be applied (e.g. not ready), abort reload
   if (applied === false) {
-    console.warn('[NLPWA] applyUpdate: no staged update ready to commit, reload aborted.');
+    logger.warn('[NLPWA] applyUpdate: no staged update ready to commit, reload aborted.');
     return false;
   }
 

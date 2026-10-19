@@ -430,3 +430,35 @@ test('update: rollback to active version while an update is staged discards the 
   assert.equal((await getActive()).version, '1.0.0');
 });
 
+test('update: supports ETag and If-None-Match 304 on version check', async () => {
+  let reqHeaders = [];
+  const server = makeServer('1.0.0', v1);
+  setupEnv(async (r) => {
+    const url = new URL(r.url);
+    if (url.pathname === '/api/update/version.json') {
+      reqHeaders.push(r.headers.get('if-none-match'));
+      if (r.headers.get('if-none-match') === '"etag-v1"') {
+        return new Response(null, { status: 304, headers: { ETag: '"etag-v1"' } });
+      }
+      return new Response(JSON.stringify({ version: '1.0.0' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', ETag: '"etag-v1"' },
+      });
+    }
+    return server.fetch(r);
+  });
+
+  await precacheFiles();
+
+  // First check sends no If-None-Match and receives ETag "etag-v1"
+  const check1 = await checkForUpdate();
+  assert.equal(check1.updated, false);
+  assert.equal(reqHeaders[0], null);
+
+  // Second check sends If-None-Match: "etag-v1" and gets 304 Not Modified
+  const check2 = await checkForUpdate();
+  assert.equal(check2.updated, false);
+  assert.equal(reqHeaders[1], '"etag-v1"');
+});
+
+

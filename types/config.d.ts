@@ -119,6 +119,8 @@ export interface UpdateAPIConfigObject {
   version: string;
   /** Full manifest check returning { version: string, files: Array<{ path: string, hash: string }> } */
   info: string;
+  /** Request timeout in milliseconds */
+  timeoutMs?: number;
 }
 
 export interface UpdateAPIEndpointEntry {
@@ -141,6 +143,8 @@ export interface NLPWAConfig {
   verifyHashes?: 'strict' | 'warn' | false;
   /** Maximum file size in bytes for in-memory SHA-256 hash verification during staging (default: 20MB) */
   maxVerifyBytes?: number;
+  /** Explicit opt-in to allow files exceeding maxVerifyBytes to skip in-memory verification in strict mode (default: false) */
+  allowOversizedUnverified?: boolean;
   /** Cache storage names */
   caches?: {
     offline?: string;

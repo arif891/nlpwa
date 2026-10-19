@@ -725,8 +725,54 @@ test('glob: caps _regexCache and clearGlobCache clears cache', async () => {
   clearGlobCache();
   const r1 = globToRegex('/test/**');
   assert.ok(r1.test('/test/hello'));
+});test('NlpwaWebpackPlugin: emits config.json and update API endpoints on afterEmit', async () => {
+  const { NlpwaWebpackPlugin } = await import('../src/webpack-plugin.js');
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-webpack-'));
+  const configPath = join(root, 'config.json');
+  const distDir = join(root, 'dist');
+  mkdirSync(distDir, { recursive: true });
+  writeFileSync(join(distDir, 'index.html'), '<h1>Hello Webpack</h1>');
+  writeFileSync(configPath, JSON.stringify({ version: '1.2.0', precache: ['/index.html'] }));
+
+  const plugin = new NlpwaWebpackPlugin({
+    config: configPath,
+    distDir,
+    autoIncrement: true,
+  });
+
+  let afterEmitHook = null;
+  const mockCompiler = {
+    hooks: {
+      afterEmit: {
+        tapPromise(name, fn) {
+          afterEmitHook = fn;
+        },
+      },
+    },
+    options: {
+      output: {
+        path: distDir,
+      },
+    },
+  };
+
+  plugin.apply(mockCompiler);
+  assert.ok(typeof afterEmitHook === 'function', 'afterEmit hook registered');
+
+  await afterEmitHook({});
+
+  // Verify outputs
+  const emittedConfig = JSON.parse(readFileSync(join(distDir, 'config.json'), 'utf8'));
+  assert.equal(emittedConfig.version, '1.2.1');
+  assert.deepEqual(emittedConfig.precache, ['/index.html']);
+
+  const versionApi = JSON.parse(readFileSync(join(distDir, 'api/update/version.json'), 'utf8'));
+  assert.equal(versionApi.version, '1.2.1');
+
+  const infoApi = JSON.parse(readFileSync(join(distDir, 'api/update/info.json'), 'utf8'));
+  assert.equal(infoApi.version, '1.2.1');
+  assert.ok(Array.isArray(infoApi.files));
+  assert.ok(infoApi.files.some((f) => f.path === '/index.html'));
+  assert.ok(infoApi.files.some((f) => f.path === '/config.json'));
 });
-
-
-
 

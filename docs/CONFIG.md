@@ -584,6 +584,29 @@ export default {
 };
 ```
 
+#### Official Plugins: Background Sync (`nlpwa/sync`)
+
+```js
+import { BackgroundSyncPlugin } from 'nlpwa/sync';
+
+export default {
+  routes: [
+    // Queue offline POST/PUT/PATCH mutations and replay when online
+    {
+      match: '/api/checkout/**',
+      strategy: 'network-only',
+      plugins: [
+        new BackgroundSyncPlugin({
+          queueName: 'orders',
+          maxRetentionMs: 24 * 60 * 60 * 1000, // 24h
+          maxRetries: 5,
+        }),
+      ],
+    },
+  ],
+};
+```
+
 ---
 
 ## Full Example

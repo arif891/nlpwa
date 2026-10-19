@@ -38,13 +38,13 @@ Standard Service Worker setups often fail this test: calling `self.skipWaiting()
 
 [Workbox](https://developer.chrome.com/docs/workbox) is Google's modular, low-level library for service worker routing and caching. NLPWA approaches PWAs from a different angle — as an integrated, app-centric framework with native-like over-the-air (OTA) updates:
 
-| Dimension | Workbox | NLPWA |
-|---|---|---|
-| **SW vs. App Versioning** | **Tightly Coupled.** Precache manifests are typically injected into `sw.js` (`self.__WB_MANIFEST`). Changing any application file changes `sw.js` bytes, triggering the browser's full Service Worker lifecycle (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active across app updates. App updates arrive over the air via lightweight JSON manifests (`version.json` / `info.json`), staging updates in the background without worker lifecycle churn. |
-| **Staging & Cache Turnover** | **Worker Lifecycle Driven.** New assets are cached during the waiting worker's `install` event; switching versions requires coordinating `skipWaiting()` and client window reloads. | **Isolated Atomic Swap.** Updates stage into an isolated cache (`offline@v2`) in the background while the active app runs undisturbed. Versions swap cleanly on navigation (or on prompt) via an atomic pointer flip (`nlpwa-meta`). |
-| **Download Integrity & Soft-404s** | **Optional SRI.** Supports Subresource Integrity (`integrity` option), but requires developers to configure and generate integrity hashes during build. | **Built-in Manifest Verification.** Automatically hashes and verifies every staged asset against SHA-256 digests. Built-in protection against captive portals or SPA hosts serving 200 HTML for missing assets. |
-| **Update Delivery & Frequency** | **Browser Script Checks.** Driven primarily by browser byte-checks on `sw.js` (on navigation or 24-hour intervals) or manual `registration.update()` calls. | **Two-Tier App Protocol.** In addition to browser SW checks, client apps can check for app updates on tab focus, interval, or custom UI via a lightweight Tier 1 JSON check before fetching full manifests. |
-| **Integration & Batteries** | **Modular Toolkit.** Gives you low-level building blocks, but requires writing worker glue code, build integrations, postMessage channels, and custom reload UI prompts. | **Turnkey App Framework.** Pre-bundled SW engine, CLI (`nlpwa init` / `nlpwa update`), Rollup/Vite plugins, cross-tab update coordination, form-edit protection prompts, and quota management out of the box. |
+| Dimension                          | Workbox                                                                                                                                                                                                                                               | NLPWA                                                                                                                                                                                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SW vs. App Versioning**          | **Tightly Coupled.** Precache manifests are typically injected into `sw.js` (`self.__WB_MANIFEST`). Changing any application file changes `sw.js` bytes, triggering the browser's full Service Worker lifecycle (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active across app updates. App updates arrive over the air via lightweight JSON manifests (`version.json` / `info.json`), staging updates in the background without worker lifecycle churn. |
+| **Staging & Cache Turnover**       | **Worker Lifecycle Driven.** New assets are cached during the waiting worker's `install` event; switching versions requires coordinating `skipWaiting()` and client window reloads.                                                                   | **Isolated Atomic Swap.** Updates stage into an isolated cache (`offline@v2`) in the background while the active app runs undisturbed. Versions swap cleanly on navigation (or on prompt) via an atomic pointer flip (`nlpwa-meta`).          |
+| **Download Integrity & Soft-404s** | **Optional SRI.** Supports Subresource Integrity (`integrity` option), but requires developers to configure and generate integrity hashes during build.                                                                                               | **Built-in Manifest Verification.** Automatically hashes and verifies every staged asset against SHA-256 digests. Built-in protection against captive portals or SPA hosts serving 200 HTML for missing assets.                               |
+| **Update Delivery & Frequency**    | **Browser Script Checks.** Driven primarily by browser byte-checks on `sw.js` (on navigation or 24-hour intervals) or manual `registration.update()` calls.                                                                                           | **Two-Tier App Protocol.** In addition to browser SW checks, client apps can check for app updates on tab focus, interval, or custom UI via a lightweight Tier 1 JSON check before fetching full manifests.                                   |
+| **Integration & Batteries**        | **Modular Toolkit.** Gives you low-level building blocks, but requires writing worker glue code, build integrations, postMessage channels, and custom reload UI prompts.                                                                              | **Turnkey App Framework.** Pre-bundled SW engine, CLI (`nlpwa init` / `nlpwa update`), Rollup/Vite plugins, cross-tab update coordination, form-edit protection prompts, and quota management out of the box.                                 |
 
 ### When Workbox is the Better Choice
 
@@ -61,13 +61,13 @@ While NLPWA is tailored for end-to-end PWA application lifecycles with atomic OT
 
 To prevent confusion between source files, drop-in engines, and generated build outputs:
 
-| File | Type | Do I edit it? | Role & Description |
-|---|---|---|---|
-| **`config.js`** *(or `nlpwa.config.js`)* | Source | ✏️ **Yes — Edit this** | Your primary configuration. Define your app version, precached shell files, and route strategies with JavaScript comments and types. |
-| **`sw.js`** | Core Engine | 📋 **Copy / Drop-in** | The pre-bundled Service Worker engine. Copied into your project by `nlpwa init` (or imported via `nlpwa/sw`). Do not edit unless customizing core SW hooks. |
-| **`client.js`** | Client SDK | 📋 **Copy / Drop-in** | The client runtime script. Exposes `window.NLPWAClient` / `register()`, handles update prompts, and provides cache management. |
-| **`config.json`** | Runtime Data | ⚙️ **Generated / Deployed** | Emitted automatically into your build directory (`dist/`) by `nlpwa update` from `config.js` and loaded into the offline cache. *(In pure no-build static projects, you can edit this directly instead of `config.js`)*. |
-| **`api/update/*`** | Manifests | ⚙️ **Generated / Deployed** | Generated by `nlpwa update` (`version.json` and `info.json`). These are the static HTTP endpoints your Service Worker polls for OTA delta updates. |
+| File                                     | Type         | Do I edit it?              | Role & Description                                                                                                                                                                                                       |
+| ---------------------------------------- | ------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`config.js`** *(or `nlpwa.config.js`)* | Source       | ✏️ **Yes — Edit this**      | Your primary configuration. Define your app version, precached shell files, and route strategies with JavaScript comments and types.                                                                                     |
+| **`sw.js`**                              | Core Engine  | 📋 **Copy / Drop-in**       | The pre-bundled Service Worker engine. Copied into your project by `nlpwa init` (or imported via `nlpwa/sw`). Do not edit unless customizing core SW hooks.                                                              |
+| **`client.js`**                          | Client SDK   | 📋 **Copy / Drop-in**       | The client runtime script. Exposes `window.NLPWAClient` / `register()`, handles update prompts, and provides cache management.                                                                                           |
+| **`config.json`**                        | Runtime Data | ⚙️ **Generated / Deployed** | Emitted automatically into your build directory (`dist/`) by `nlpwa update` from `config.js` and loaded into the offline cache. *(In pure no-build static projects, you can edit this directly instead of `config.js`)*. |
+| **`api/update/*`**                       | Manifests    | ⚙️ **Generated / Deployed** | Generated by `nlpwa update` (`version.json` and `info.json`). These are the static HTTP endpoints your Service Worker polls for OTA delta updates.                                                                       |
 
 ---
 
@@ -110,7 +110,7 @@ export default {
   },
 
   // Verify SHA-256 hashes against update manifest ('strict' | 'warn' | false)
-  verifyHashes: 'strict',
+  verifyHashes: 'warn',
 
   // App shell files to track and offline-cache
   precache: [
@@ -189,15 +189,15 @@ Manifest hashes are the first 32 hex characters of each file's SHA-256 digest.
 
 #### CLI Reference
 
-| Command / Flag | Default | Description |
-|---|---|---|
-| `npx nlpwa init [--dir <path>]` | `./` | Copies `sw.js`, `client.js`, and `config.json` to target directory |
+| Command / Flag                    | Default          | Description                                                                                                  |
+| --------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------ |
+| `npx nlpwa init [--dir <path>]`   | `./`             | Copies `sw.js`, `client.js`, and `config.json` to target directory                                           |
 | `npx nlpwa update [--dir <path>]` | `./dist` or `./` | Derives version from manifest content hash, builds `config.json`, hashes offline files, and emits update API |
-| `--config <path>` | auto-detect | Path to custom config file (e.g. `./src/config.js`) |
-| `--version <string>` | hash-derived | Explicit version override (e.g. `2.0.0`) |
-| `--bump-patch` | `false` | Explicitly increment semver patch version (`1.0.0` → `1.0.1`) instead of content hash |
-| `--sync-source` | `false` | Write updated version back into source `config.js` file (opt-in) |
-| `--pretty` | `false` | Pretty-print output JSON files with 2-space indentation (compact by default) |
+| `--config <path>`                 | auto-detect      | Path to custom config file (e.g. `./src/config.js`)                                                          |
+| `--version <string>`              | hash-derived     | Explicit version override (e.g. `2.0.0`)                                                                     |
+| `--bump-patch`                    | `false`          | Explicitly increment semver patch version (`1.0.0` → `1.0.1`) instead of content hash                        |
+| `--sync-source`                   | `false`          | Write updated version back into source `config.js` file (opt-in)                                             |
+| `--pretty`                        | `false`          | Pretty-print output JSON files with 2-space indentation (compact by default)                                 |
 
 ### 5. Bundler Integration (Vite / Rollup)
 
@@ -265,11 +265,11 @@ import { register, applyUpdate } from 'nlpwa/client';
 
 NLPWA uses these caches:
 
-| Cache | Purpose |
-| --- | --- |
+| Cache                    | Purpose                                                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `offline@<version>-<id>` | One per app version: app shell (`precache`) + `config.json` + internal snapshot `/_nlpwa/snapshot.json`. Only the **active** one serves requests |
-| `runtime` | Assets cached lazily on first request; evicted when stale |
-| `nlpwa-meta` | Two tiny pointers: which `offline@…` cache is active, and whether a complete update is staged |
+| `runtime`                | Assets cached lazily on first request; evicted when stale                                                                                        |
+| `nlpwa-meta`             | Two tiny pointers: which `offline@…` cache is active, and whether a complete update is staged                                                    |
 
 An update is built in a brand-new `offline@…` cache while the active one keeps serving. A cache that contains its snapshot is complete, and going live is a single write to the active pointer, so the app is always on either the old or the new version, never a mix. `config.json` lives inside the versioned cache, so routes switch together with the files they describe. An app installed without a manifest or by an older NLPWA (plain `offline` cache) is migrated and cleaned up on its first update.
 
@@ -306,21 +306,21 @@ See [docs/CONFIG.md](docs/CONFIG.md) for full config reference.
 
 ### Client: `NLPWAClient.register(swUrl, options)`
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `onUpdateReady` | `Function` | — | Called with `{ version }` when update is staged |
-| `onNoUpdate` | `Function` | — | Called with `{ version }` when app is confirmed up to date |
-| `onUpdateFailed` | `Function` | — | Called with `{ version, failed, failedDetails, error, errorCode, quotaExceeded, retryCount, nextRetryAt, persistent, hasHashMismatch }` when update staging fails or hash verification fails |
-| `onUpdateApplied` | `Function` | — | Called with `{ version }` when update is committed across any tab |
-| `onUpdatePrompt` | `Function` | — | Called when auto-reload is deferred because user is editing inputs or shouldDeferReload returns true |
-| `shouldDeferReload` | `Function` | — | Custom predicate `({ version, reason }) => boolean` to defer reload (e.g. unsaved state, uploads in progress) |
-| `autoReload` | `boolean` | `false` | Automatically apply update and reload when staged (deferred to prompt if editing inputs or shouldDeferReload) |
-| `reloadOnUpdateApplied` | `boolean` | `false` | Automatically reload this tab if another tab commits an update (deferred to prompt if editing or shouldDeferReload) |
-| `checkOnFocus` | `boolean` | `true` | Check for update when tab gains focus |
-| `checkOnRegister` | `boolean` | `true` | Check for update on initial registration via non-blocking message |
-| `periodicSync` | `boolean` | `true` | Periodic Background Sync for installed PWAs if supported |
-| `focusThrottleMs` | `number` | `3600000` | Min ms between focus-triggered checks (1 hr) |
-| `pollIntervalMs` | `number` | `3600000` | Client interval (ms) to check updates while tab is active (1 hr) |
+| Option                  | Type       | Default   | Description                                                                                                                                                                                  |
+| ----------------------- | ---------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onUpdateReady`         | `Function` | —         | Called with `{ version }` when update is staged                                                                                                                                              |
+| `onNoUpdate`            | `Function` | —         | Called with `{ version }` when app is confirmed up to date                                                                                                                                   |
+| `onUpdateFailed`        | `Function` | —         | Called with `{ version, failed, failedDetails, error, errorCode, quotaExceeded, retryCount, nextRetryAt, persistent, hasHashMismatch }` when update staging fails or hash verification fails |
+| `onUpdateApplied`       | `Function` | —         | Called with `{ version }` when update is committed across any tab                                                                                                                            |
+| `onUpdatePrompt`        | `Function` | —         | Called when auto-reload is deferred because user is editing inputs or shouldDeferReload returns true                                                                                         |
+| `shouldDeferReload`     | `Function` | —         | Custom predicate `({ version, reason }) => boolean` to defer reload (e.g. unsaved state, uploads in progress)                                                                                |
+| `autoReload`            | `boolean`  | `false`   | Automatically apply update and reload when staged (deferred to prompt if editing inputs or shouldDeferReload)                                                                                |
+| `reloadOnUpdateApplied` | `boolean`  | `false`   | Automatically reload this tab if another tab commits an update (deferred to prompt if editing or shouldDeferReload)                                                                          |
+| `checkOnFocus`          | `boolean`  | `true`    | Check for update when tab gains focus                                                                                                                                                        |
+| `checkOnRegister`       | `boolean`  | `true`    | Check for update on initial registration via non-blocking message                                                                                                                            |
+| `periodicSync`          | `boolean`  | `true`    | Periodic Background Sync for installed PWAs if supported                                                                                                                                     |
+| `focusThrottleMs`       | `number`   | `3600000` | Min ms between focus-triggered checks (1 hr)                                                                                                                                                 |
+| `pollIntervalMs`        | `number`   | `3600000` | Client interval (ms) to check updates while tab is active (1 hr)                                                                                                                             |
 
 ### Client: `NLPWAClient.applyUpdate(options)`
 
@@ -511,26 +511,26 @@ await cleanupRuntimeCache({
 
 All size options conveniently accept **MB** (`maxTotalMB`), **KB** (`maxTotalKB`), **Bytes** (`maxTotalBytes`), or string with units (e.g. `'50MB'`, `'500KB'`):
 
-| Strategy | Key Options | Behavior |
-|---|---|---|
+| Strategy    | Key Options                                                              | Behavior                                                                 |
+| ----------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | `'largest'` | `maxTotalMB` / `maxTotalKB` / `maxTotalBytes`, `maxEntries`, `minItemMB` | Sorts runtime files by size descending, evicting the largest files first |
-| `'lru'` | `maxEntries`, `maxTotalMB` / `maxTotalBytes` | Sorts runtime files by cached timestamp ascending, evicting oldest first |
-| `'max-age'` | `maxAgeMs` | Evicts entries older than `maxAgeMs` |
-| `'quota'` | `maxQuotaPercent`, `maxQuotaMB` / `maxQuotaBytes`, `preferLargest` | Checks origin quota and evicts entries until under target threshold |
-| `'pattern'` | `match` (glob) | Evicts entries whose URL matches glob pattern |
-| `'all'` | — | Wipes all runtime cache entries |
+| `'lru'`     | `maxEntries`, `maxTotalMB` / `maxTotalBytes`                             | Sorts runtime files by cached timestamp ascending, evicting oldest first |
+| `'max-age'` | `maxAgeMs`                                                               | Evicts entries older than `maxAgeMs`                                     |
+| `'quota'`   | `maxQuotaPercent`, `maxQuotaMB` / `maxQuotaBytes`, `preferLargest`       | Checks origin quota and evicts entries until under target threshold      |
+| `'pattern'` | `match` (glob)                                                           | Evicts entries whose URL matches glob pattern                            |
+| `'all'`     | —                                                                        | Wipes all runtime cache entries                                          |
 
 ---
 
 ## Fetch Strategies
 
-| Strategy | Serves from | Falls back to | Caches response | Best for |
-|---|---|---|---|---|
-| `cache-first` | Cache (offline → runtime) | Network | ✅ Runtime | Static assets, fonts, images |
-| `network-first` | Network | Cache (offline → runtime) | ✅ Runtime | HTML pages, user data |
-| `network-only` | Network | — | ❌ Never | API mutations (POST/PUT/DELETE) |
-| `stale-while-revalidate` | Cache (instant) | Network (block if uncached) | ✅ Runtime | Feeds, listings |
-| `cache-only` | Cache | 503 response | ❌ Never | Offline-only fallback |
+| Strategy                 | Serves from               | Falls back to               | Caches response | Best for                        |
+| ------------------------ | ------------------------- | --------------------------- | --------------- | ------------------------------- |
+| `cache-first`            | Cache (offline → runtime) | Network                     | ✅ Runtime       | Static assets, fonts, images    |
+| `network-first`          | Network                   | Cache (offline → runtime)   | ✅ Runtime       | HTML pages, user data           |
+| `network-only`           | Network                   | —                           | ❌ Never         | API mutations (POST/PUT/DELETE) |
+| `stale-while-revalidate` | Cache (instant)           | Network (block if uncached) | ✅ Runtime       | Feeds, listings                 |
+| `cache-only`             | Cache                     | 503 response                | ❌ Never         | Offline-only fallback           |
 
 All intercepted responses carry an `X-Cache-Status` header (`offline-cache`, `runtime-cache`, `network`, `stale`, `offline-fallback`, or `bypass`).
 See [docs/STRATEGIES.md](docs/STRATEGIES.md) for detailed behaviour.
@@ -562,12 +562,12 @@ Output:
 
 ## Documentation
 
-| Doc | Contents |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, module map, data flow |
-| [docs/CONFIG.md](docs/CONFIG.md) | Full config schema reference |
-| [docs/STRATEGIES.md](docs/STRATEGIES.md) | Fetch strategy behaviour & decision guide |
-| [docs/UPDATE-PROTOCOL.md](docs/UPDATE-PROTOCOL.md) | Manifest format & update protocol spec |
+| Doc                                                | Contents                                  |
+| -------------------------------------------------- | ----------------------------------------- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)       | System design, module map, data flow      |
+| [docs/CONFIG.md](docs/CONFIG.md)                   | Full config schema reference              |
+| [docs/STRATEGIES.md](docs/STRATEGIES.md)           | Fetch strategy behaviour & decision guide |
+| [docs/UPDATE-PROTOCOL.md](docs/UPDATE-PROTOCOL.md) | Manifest format & update protocol spec    |
 
 ---
 

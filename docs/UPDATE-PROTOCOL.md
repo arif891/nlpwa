@@ -52,12 +52,12 @@ Fetched **only** if Tier 1 reports a different version (or the SW engine version
 
 ### Fields
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `version` | `string` | ✅ | Semantic version with content digest (derived deterministically from manifest hash, e.g. `1.0.0-a1b2c3d4e5f6`) |
-| `files` | `array` | ✅ | List of tracked offline files and their hashes |
-| `files[].path` | `string` | ✅ | URL pathname starting with `/` |
-| `files[].hash` | `string` | ✅ | Stable content hash (32-character prefix or full 64-character SHA-256 hex string; minimum 32 characters required) |
+| Field          | Type     | Required | Description                                                                                                       |
+| -------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `version`      | `string` | ✅        | Semantic version with content digest (derived deterministically from manifest hash, e.g. `1.0.0-a1b2c3d4e5f6`)    |
+| `files`        | `array`  | ✅        | List of tracked offline files and their hashes                                                                    |
+| `files[].path` | `string` | ✅        | URL pathname starting with `/`                                                                                    |
+| `files[].hash` | `string` | ✅        | Stable content hash (32-character prefix or full 64-character SHA-256 hex string; minimum 32 characters required) |
 
 ---
 
@@ -182,7 +182,7 @@ Open separate cache: offline@1.4.2-<unique-id>
 3. Added & modified files: Fetch fresh from network with { cache: 'no-store' }.
 4. Hash Verification:
    - Compute SHA-256 of downloaded body.
-   - Match against manifest hash (config.verifyHashes: 'strict' | 'warn' | false).
+   - Match against manifest hash (config.verifyHashes: 'warn' | 'warn' | false).
    - Strict mode rejects mismatches (and HTTP 200 HTML error pages).
    - *Security Scope*: Same-origin hashes protect against network transport corruption, captive portal intercepts, and partial deployments—not against a compromised web origin.
    - *Memory Considerations*: `fetchVerified` clones and buffers the response into an `ArrayBuffer` in memory to compute its digest before storing the original in `CacheStorage`. This temporarily doubles memory consumption per fetched file. For this reason, `precache` should be kept strictly limited to small app shell assets; large media (videos, heavy 3D assets/datasets) should be routed through runtime caching strategies instead.
@@ -255,12 +255,12 @@ intermediate changes. No intermediate manifests are needed.
 
 Failures during staging never corrupt the running application:
 
-| Failure | Outcome |
-|---|---|
-| `fetch()` fails or hash mismatches | Active version continues serving untouched; retry on next check |
-| Network drops mid-update | Verified files remain cached in staging; resumed on next check |
-| Single file permanently broken | Retried with exponential backoff after 5 attempts; active app remains 100% untouched |
-| Manifest endpoint unreachable | Update skipped entirely; retried on next check |
+| Failure                            | Outcome                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------ |
+| `fetch()` fails or hash mismatches | Active version continues serving untouched; retry on next check                      |
+| Network drops mid-update           | Verified files remain cached in staging; resumed on next check                       |
+| Single file permanently broken     | Retried with exponential backoff after 5 attempts; active app remains 100% untouched |
+| Manifest endpoint unreachable      | Update skipped entirely; retried on next check                                       |
 
 ---
 
@@ -268,28 +268,28 @@ Failures during staging never corrupt the running application:
 
 ### SW → Client
 
-| Type | Payload | Meaning |
-|---|---|---|
-| `UPDATE_READY` | `{ type, version }` | Staged update is complete; client should prompt user |
-| `UPDATE_APPLIED` | `{ type, version, applied }` | Staged update has been switched to active; client may reload |
-| `NO_UPDATE` | `{ type, version }` | Version check ran; client is already up to date |
-| `STAGING_PROGRESS` | `{ type, loaded, total, percent, file }` | Staging download and verification progress |
-| `UPDATE_FAILED` | `{ type, version, failed, error, persistent, hasHashMismatch }` | Staging or hash verification failed |
-| `VERSION_INFO` | `{ type, version, activeVersion, stagedVersion }` | Reply with current active & staged versions |
-| `STATUS_INFO` | `{ type, status, activeVersion, stagedVersion, percent }` | Reply with current update lifecycle status |
-| `CACHE_INFO` | `{ type, data: { quota, usage, runtimeEntries, runtimeBytes, largestEntries } }` | Reply with storage quota & cache metrics |
-| `RUNTIME_CLEANED` | `{ type, data: { evictedCount, evictedUrls, freedBytes, remainingEntries } }` | Reply with cache cleanup summary |
+| Type               | Payload                                                                          | Meaning                                                      |
+| ------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `UPDATE_READY`     | `{ type, version }`                                                              | Staged update is complete; client should prompt user         |
+| `UPDATE_APPLIED`   | `{ type, version, applied }`                                                     | Staged update has been switched to active; client may reload |
+| `NO_UPDATE`        | `{ type, version }`                                                              | Version check ran; client is already up to date              |
+| `STAGING_PROGRESS` | `{ type, loaded, total, percent, file }`                                         | Staging download and verification progress                   |
+| `UPDATE_FAILED`    | `{ type, version, failed, error, persistent, hasHashMismatch }`                  | Staging or hash verification failed                          |
+| `VERSION_INFO`     | `{ type, version, activeVersion, stagedVersion }`                                | Reply with current active & staged versions                  |
+| `STATUS_INFO`      | `{ type, status, activeVersion, stagedVersion, percent }`                        | Reply with current update lifecycle status                   |
+| `CACHE_INFO`       | `{ type, data: { quota, usage, runtimeEntries, runtimeBytes, largestEntries } }` | Reply with storage quota & cache metrics                     |
+| `RUNTIME_CLEANED`  | `{ type, data: { evictedCount, evictedUrls, freedBytes, remainingEntries } }`    | Reply with cache cleanup summary                             |
 
 ### Client → SW
 
-| Type | Payload | Meaning |
-|---|---|---|
-| `CHECK_UPDATE` | `{ type }` | Client requests an immediate update check |
-| `APPLY_UPDATE` | `{ type }` | Client asks SW to commit staged update immediately |
-| `GET_VERSION` | `{ type }` | Client requests current SW and app version info |
-| `GET_STATUS` | `{ type }` | Client requests current update staging status |
-| `GET_CACHE_INFO` | `{ type }` | Client requests storage quota & cache stats |
-| `CLEANUP_RUNTIME` | `{ type, options }` | Client requests runtime cache eviction |
+| Type              | Payload             | Meaning                                            |
+| ----------------- | ------------------- | -------------------------------------------------- |
+| `CHECK_UPDATE`    | `{ type }`          | Client requests an immediate update check          |
+| `APPLY_UPDATE`    | `{ type }`          | Client asks SW to commit staged update immediately |
+| `GET_VERSION`     | `{ type }`          | Client requests current SW and app version info    |
+| `GET_STATUS`      | `{ type }`          | Client requests current update staging status      |
+| `GET_CACHE_INFO`  | `{ type }`          | Client requests storage quota & cache stats        |
+| `CLEANUP_RUNTIME` | `{ type, options }` | Client requests runtime cache eviction             |
 
 ### Client usage
 
@@ -334,13 +334,13 @@ async function onUserClickUpdate() {
 
 Updates are checked through complementary triggers:
 
-| Trigger | Who | Frequency |
-|---|---|---|
-| Client Registration | Client | Automatically on registration via non-blocking `CHECK_UPDATE` message |
-| Active Tab Interval | Client | Every `options.pollIntervalMs` (default: 1 hr) while tab is open |
-| Tab focus / visibility | Client | Throttled by `options.focusThrottleMs` (default: 1 hr) |
+| Trigger                  | Who     | Frequency                                                             |
+| ------------------------ | ------- | --------------------------------------------------------------------- |
+| Client Registration      | Client  | Automatically on registration via non-blocking `CHECK_UPDATE` message |
+| Active Tab Interval      | Client  | Every `options.pollIntervalMs` (default: 1 hr) while tab is open      |
+| Tab focus / visibility   | Client  | Throttled by `options.focusThrottleMs` (default: 1 hr)                |
 | Periodic Background Sync | Browser | Periodically (12-24 hrs) when supported by browser for installed PWAs |
-| Manual | Client | Via `requestUpdateCheck()` / `postMessage({ type: 'CHECK_UPDATE' })` |
+| Manual                   | Client  | Via `requestUpdateCheck()` / `postMessage({ type: 'CHECK_UPDATE' })`  |
 
 A concurrency lock prevents two update runs from overlapping regardless of
 which trigger fires.

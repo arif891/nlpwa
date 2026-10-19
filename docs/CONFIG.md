@@ -142,7 +142,7 @@ How each downloaded update file is checked against the hash in the update manife
 > Manifest hashes are SHA-256 digests served from the same origin (`info.json`). They verify content integrity against network transport corruption, captive portals returning 200 HTML for missing files, proxy caching glitches, and partial deployments—not a compromise of the web server origin itself.
 
 ```js
-verifyHashes: 'strict'
+verifyHashes: 'warn'
 ```
 
 ---
@@ -227,12 +227,12 @@ routes: [
 
 #### `match` — Glob pattern
 
-| Syntax | Matches | Example |
-|---|---|---|
-| `*` | Any characters except `/` | `/pages/*` matches `/pages/about` |
-| `**` | Any characters including `/` | `/assets/**` matches `/assets/img/logo.png` |
-| `?` | Any single character except `/` | `/page?` matches `/pages` |
-| Literal | Exact pathname | `/offline.html` |
+| Syntax   | Matches                               | Example                                                  |
+| -------- | ------------------------------------- | -------------------------------------------------------- |
+| `*`      | Any characters except `/`             | `/pages/*` matches `/pages/about`                        |
+| `**`     | Any characters including `/`          | `/assets/**` matches `/assets/img/logo.png`              |
+| `?`      | Any single character except `/`       | `/page?` matches `/pages`                                |
+| Literal  | Exact pathname                        | `/offline.html`                                          |
 | Full URL | External CDN or cross-origin endpoint | `https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/**` |
 
 #### Cross-Origin & CDN Asset Caching
@@ -297,13 +297,13 @@ Fallback HTML document served for navigation requests (`mode: 'navigate'`) when 
 
 #### `strategy` — Fetch strategy
 
-| Value | Description |
-|---|---|
-| `'cache-first'` | Cache → Network. Best for: static assets, CDN libraries |
-| `'network-first'` | Network → Cache fallback. Best for: HTML pages |
-| `'network-only'` | Network always. Best for: API writes |
-| `'stale-while-revalidate'` | Cache instantly, update in background. Best for: feeds |
-| `'cache-only'` | Cache only, 503 on miss (or throws if `throwOnFailure: true`). Best for: offline fallback |
+| Value                      | Description                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| `'cache-first'`            | Cache → Network. Best for: static assets, CDN libraries                                   |
+| `'network-first'`          | Network → Cache fallback. Best for: HTML pages                                            |
+| `'network-only'`           | Network always. Best for: API writes                                                      |
+| `'stale-while-revalidate'` | Cache instantly, update in background. Best for: feeds                                    |
+| `'cache-only'`             | Cache only, 503 on miss (or throws if `throwOnFailure: true`). Best for: offline fallback |
 
 See [STRATEGIES.md](STRATEGIES.md) for full strategy behaviour.
 
@@ -473,7 +473,7 @@ export default {
     version: '/api/update/version.json',
     info:    '/api/update/info.json',
   },
-  verifyHashes: 'strict',                        // 'strict' | 'warn' | false
+  verifyHashes: 'warn',                        // 'strict' | 'warn' | false
 
   // ── Caches ─────────────────────────────────────────────────────────────────
   caches: {

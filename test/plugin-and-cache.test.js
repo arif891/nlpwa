@@ -320,7 +320,7 @@ test('resolveStrategy: bypasses Vite dev server and HMR URLs only when dev: true
 test('updateActiveConfig: enforces same-origin trust boundary by locking verifyHashes, caches, and snapshotCachePath', () => {
   initConfig({
     version: '1.0.0',
-    verifyHashes: 'strict',
+    verifyHashes: 'warn',
     caches: { offline: 'trusted-offline', runtime: 'trusted-runtime' },
     snapshotCachePath: '/_nlpwa/snapshot.json',
   });

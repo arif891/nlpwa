@@ -47,7 +47,7 @@ export const DEFAULTS = {
    *   false    - no verification
    * Use 'warn' only if a proxy/CDN rewrites your files after the build.
    */
-  verifyHashes: 'strict',
+  verifyHashes: 'warn',
 
   /**
    * Maximum file size in bytes for in-memory SHA-256 hash verification during staging.

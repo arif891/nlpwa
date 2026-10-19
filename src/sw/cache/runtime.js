@@ -21,9 +21,14 @@ export async function matchWithAliases(cache, request, matchOptions, base, confi
   const ignorePatterns = config?.ignoreURLParametersMatching;
   const cleanedUrl = cleanTrackingParams(rawUrl, ignorePatterns);
 
-  let hit = await cache.match(request, matchOptions);
-  if (!hit && cleanedUrl !== rawUrl) {
+  let hit;
+  if (cleanedUrl !== rawUrl) {
     hit = await cache.match(cleanedUrl, matchOptions);
+    if (!hit) {
+      hit = await cache.match(request, matchOptions);
+    }
+  } else {
+    hit = await cache.match(request, matchOptions);
   }
   if (hit) return hit;
 
@@ -204,13 +209,10 @@ export async function putInRuntime(request, response) {
     }
   }
 
-  await cache.put(request, responseToStore);
-
   const rawUrl = typeof request === 'string' ? request : request.url;
   const cleanedUrl = cleanTrackingParams(rawUrl, ignoreURLParametersMatching);
-  if (cleanedUrl !== rawUrl) {
-    await cache.put(cleanedUrl, responseToStore.clone()).catch(() => {});
-  }
+  const keyToStore = cleanedUrl !== rawUrl ? cleanedUrl : request;
+  await cache.put(keyToStore, responseToStore);
 }
 
 /**

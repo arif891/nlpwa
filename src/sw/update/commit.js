@@ -7,7 +7,7 @@ import {
   cleanupCaches, getAllPinnedCaches, tryAcquire, release, withLock,
 } from '../cache/store.js';
 import { getSnapshotPath } from './manifest.js';
-import { setUpdateStatus } from './index.js';
+import { setUpdateStatus } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 
 /**
@@ -43,11 +43,25 @@ export async function commitStaged(event) {
     return false;
   }
 
+  // Inspect incoming version's config from the staged cache before setActive
+  // to determine retainPreviousVersionCache in a single atomic write.
+  let retainPrevious = Boolean(config.retainPreviousVersionCache);
+  try {
+    const configPath = config.configPath || '/config.json';
+    const stagedConfigRes = (await cache.match(configPath)) || (await cache.match('/config.json'));
+    if (stagedConfigRes) {
+      const stagedConfigJson = await stagedConfigRes.clone().json();
+      if (typeof stagedConfigJson.retainPreviousVersionCache === 'boolean') {
+        retainPrevious = stagedConfigJson.retainPreviousVersionCache;
+      }
+    }
+  } catch {}
+
   await setActive({
     cache: staged.cache,
     version: staged.version,
     swVersion: staged.swVersion,
-    ...(config.retainPreviousVersionCache && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
+    ...(retainPrevious && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
   });
   await clearStaged();
 
@@ -55,15 +69,6 @@ export async function commitStaged(event) {
   // requests resolve against the new version's routes and settings.
   await loadConfigFromCache();
   const currentConfig = getConfig();
-
-  // If the new version opted out of previous cache retention, update pointer
-  if (!currentConfig.retainPreviousVersionCache && previousActive?.cache) {
-    await setActive({
-      cache: staged.cache,
-      version: staged.version,
-      swVersion: staged.swVersion,
-    });
-  }
 
   // Defer heavy disk cleanup and window messaging to event.waitUntil so the navigation
   // response is never blocked, preserving instant first-paint performance.

@@ -108,16 +108,19 @@ function printHelp() {
   nlpwa <command> [options]
 
 ${c.bold}COMMANDS${c.reset}
-  ${c.green}init${c.reset}     Scaffolds or copies sw.js, client.js, and config.json
-           into your target project directory for immediate drop-in use.
-  ${c.green}update${c.reset}   Reads config.js, derives content-hash app version,
-           generates config.json, hashes ONLY tracked offline files,
-           and emits update API endpoints (/api/update/version & info).
-  ${c.green}build${c.reset}    Alias for "update" — builds manifest and update endpoints.
-  ${c.green}status${c.reset}   Inspects manifest version, update endpoints, and tracked files.
+  ${c.green}init${c.reset}              Scaffolds or copies sw.js, client.js, and config.json
+                   into your target project directory for immediate drop-in use.
+  ${c.green}generate-offline${c.reset}  Generates a zero-dependency, self-contained offline.html
+                   fallback page with auto-reconnect and retry button.
+  ${c.green}update${c.reset}            Reads config.js, derives content-hash app version,
+                   generates config.json, hashes ONLY tracked offline files,
+                   and emits update API endpoints (/api/update/version & info).
+  ${c.green}build${c.reset}             Alias for "update" — builds manifest and update endpoints.
+  ${c.green}status${c.reset}            Inspects manifest version, update endpoints, and tracked files.
 
-${c.bold}OPTIONS (init, status)${c.reset}
+${c.bold}OPTIONS (init, generate-offline, status)${c.reset}
   ${c.cyan}--dir${c.reset}     <path>      Target directory (default: ./ or ./dist)
+  ${c.cyan}--dest${c.reset}    <filename>  Output filename for generate-offline (default: offline.html)
 
 ${c.bold}OPTIONS (update)${c.reset}
   ${c.cyan}--config${c.reset}      <path>      Config file path            (default: auto-detect ./config.js)
@@ -400,6 +403,120 @@ async function cmdStatus(args) {
   console.log(`  ${c.dim}Client SDK (client.js):${c.reset} ${existsSync(clientFile) ? c.green + 'present' + c.reset : c.yellow + 'missing' + c.reset}\n`);
 }
 
+async function cmdGenerateOffline(args) {
+  printBanner();
+  const targetDir = resolve(process.cwd(), args.dir ?? (existsSync(resolve(process.cwd(), 'dist')) ? 'dist' : '.'));
+  mkdirSync(targetDir, { recursive: true });
+  const filename = args.dest ?? 'offline.html';
+  const outPath = resolve(targetDir, filename);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline — App Unavailable</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 1.5rem;
+      color: var(--primary);
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.025em;
+    }
+    p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 1.75rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 0.75rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #0f172a;
+      background: var(--primary);
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:hover { background: var(--primary-hover); }
+    .btn:active { transform: scale(0.98); }
+    .status {
+      margin-top: 1.25rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 00-9.78 2.096A4.001 4.001 0 003 15z"></path>
+      <line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"></line>
+    </svg>
+    <h1>You're Offline</h1>
+    <p>This page requires an active internet connection or hasn't been cached yet. Please check your network and try again.</p>
+    <button class="btn" onclick="window.location.reload()">Retry Connection</button>
+    <div class="status" id="status">Waiting for network...</div>
+  </div>
+  <script>
+    window.addEventListener('online', () => {
+      document.getElementById('status').textContent = 'Back online! Reconnecting...';
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>
+`;
+
+  writeFileSync(outPath, html, 'utf8');
+  console.log(`  ${c.green}+${c.reset} ${c.bold}Generated offline fallback:${c.reset} ${outPath}`);
+  console.log(`\n  ${c.dim}Tip: Add "/${filename.replace(/^\/+/, '')}" to your config.js precache and offlineFallback.${c.reset}\n`);
+}
+
 // ── Entry ─────────────────────────────────────────────────────────────────────
 
 const argv    = process.argv.slice(2);
@@ -414,6 +531,11 @@ if (!command || args.help) {
 switch (command) {
   case 'init':
     await cmdInit(args);
+    break;
+
+  case 'generate-offline':
+  case 'offline':
+    await cmdGenerateOffline(args);
     break;
 
   case 'build':

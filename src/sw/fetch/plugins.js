@@ -13,6 +13,7 @@ export function getPlugins(options = {}) {
   const routePlugins = Array.isArray(options?.plugins) ? options.plugins : [];
 
   const directHookPlugin = {};
+  if (typeof options?.cacheKeyWillBeUsed === 'function') directHookPlugin.cacheKeyWillBeUsed = options.cacheKeyWillBeUsed;
   if (typeof options?.requestWillFetch === 'function') directHookPlugin.requestWillFetch = options.requestWillFetch;
   if (typeof options?.cachedResponseWillBeUsed === 'function') directHookPlugin.cachedResponseWillBeUsed = options.cachedResponseWillBeUsed;
   if (typeof options?.cacheWillUpdate === 'function') directHookPlugin.cacheWillUpdate = options.cacheWillUpdate;
@@ -25,6 +26,31 @@ export function getPlugins(options = {}) {
     plugins.push(directHookPlugin);
   }
   return plugins;
+}
+
+/**
+ * Execute cacheKeyWillBeUsed hook chain.
+ * Allows plugins to override or normalize the Request or URL string used as the cache key.
+ *
+ * @param {Array<Object>} plugins
+ * @param {Object} params
+ * @param {Request|string} params.request
+ * @param {string} [params.mode] 'read' | 'write'
+ * @param {FetchEvent} [params.event]
+ * @param {Object} [params.options]
+ * @returns {Promise<Request|string>}
+ */
+export async function runCacheKeyWillBeUsed(plugins, params) {
+  let key = params.request;
+  for (const plugin of plugins) {
+    if (typeof plugin?.cacheKeyWillBeUsed === 'function') {
+      const result = await plugin.cacheKeyWillBeUsed({ ...params, request: key });
+      if (result instanceof Request || typeof result === 'string') {
+        key = result;
+      }
+    }
+  }
+  return key;
 }
 
 /**

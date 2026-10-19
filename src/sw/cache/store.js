@@ -240,12 +240,24 @@ export async function pruneClientPins() {
   } catch {}
 }
 
+// ── Active snapshot paths ─────────────────────────────────────────────────
+let _activeSnapshotPaths = null;
+
+export function getActiveSnapshotPaths() {
+  return _activeSnapshotPaths;
+}
+
+export function setActiveSnapshotPaths(paths) {
+  _activeSnapshotPaths = paths ? (paths instanceof Set ? paths : new Set(paths)) : null;
+}
+
 /** Forget everything (used by clearAllCaches and tests). */
 export async function resetMeta() {
   _activePromise = null;
   _stagedPromise = null;
   _clientPins.clear();
   _pinsLoaded = false;
+  _activeSnapshotPaths = null;
   if (_savePinsTimeout) {
     clearTimeout(_savePinsTimeout);
     _savePinsTimeout = null;
@@ -257,6 +269,12 @@ export async function resetMeta() {
   ]);
 }
 
+// ── Cooperative lock ──────────────────────────────────────────────────────
+// Staging and committing must not overlap. Navigations must never wait for a
+// long download, so callers use tryAcquire() and simply skip when busy.
+
+let _busy = false;
+
 /** Drop the in-memory memo only (tests install a fresh CacheStorage per case). */
 export function resetStoreMemo() {
   _activePromise = null;
@@ -264,17 +282,12 @@ export function resetStoreMemo() {
   _busy = false;
   _clientPins.clear();
   _pinsLoaded = false;
+  _activeSnapshotPaths = null;
   if (_savePinsTimeout) {
     clearTimeout(_savePinsTimeout);
     _savePinsTimeout = null;
   }
 }
-
-// ── Cooperative lock ──────────────────────────────────────────────────────
-// Staging and committing must not overlap. Navigations must never wait for a
-// long download, so callers use tryAcquire() and simply skip when busy.
-
-let _busy = false;
 
 export function tryAcquire() {
   if (_busy) return false;

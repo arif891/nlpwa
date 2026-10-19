@@ -18,7 +18,7 @@ const STRATEGY_FN = {
   [STRATEGIES.CACHE_ONLY]:             cacheOnly,
 };
 
-import { getActiveSnapshotPaths } from '../update/manifest.js';
+import { getActiveSnapshotPaths } from '../cache/store.js';
 
 /**
  * Check whether a request URL corresponds to a precached app shell or manifest file.

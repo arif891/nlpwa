@@ -23,20 +23,16 @@ async function mapLimit(items, limit, fn) {
 }
 
 /** Is `path` already in the staging cache with the expected content? */
-async function isAlreadyStaged(cacheOrOptions, path, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, fetchUrl = path, allowOversizedUnverified = false) {
-  let cache = cacheOrOptions;
-  if (cacheOrOptions && typeof cacheOrOptions === 'object' && !('match' in cacheOrOptions) && 'cache' in cacheOrOptions) {
-    ({
-      cache,
-      path,
-      expected,
-      verify,
-      maxVerifyBytes = 20 * 1024 * 1024,
-      fileSize = null,
-      fetchUrl = path,
-      allowOversizedUnverified = false,
-    } = cacheOrOptions);
-  }
+async function isAlreadyStaged({
+  cache,
+  path,
+  expected,
+  verify,
+  maxVerifyBytes = 20 * 1024 * 1024,
+  fileSize = null,
+  fetchUrl = path,
+  allowOversizedUnverified = false,
+} = {}) {
   const hit = (await cache.match(fetchUrl)) || (fetchUrl !== path ? await cache.match(path) : null);
   if (!hit) return false;
   if (!expected || verify === false) return true;
@@ -50,18 +46,14 @@ async function isAlreadyStaged(cacheOrOptions, path, expected, verify, maxVerify
 }
 
 /** Fetch a file fresh from the network and check it against its manifest hash. */
-async function fetchVerified(pathOrOptions, expected, verify, maxVerifyBytes = 20 * 1024 * 1024, fileSize = null, allowOversizedUnverified = false) {
-  let path = pathOrOptions;
-  if (pathOrOptions && typeof pathOrOptions === 'object' && 'path' in pathOrOptions) {
-    ({
-      path,
-      expected,
-      verify,
-      maxVerifyBytes = 20 * 1024 * 1024,
-      fileSize = null,
-      allowOversizedUnverified = false,
-    } = pathOrOptions);
-  }
+async function fetchVerified({
+  path,
+  expected,
+  verify,
+  maxVerifyBytes = 20 * 1024 * 1024,
+  fileSize = null,
+  allowOversizedUnverified = false,
+} = {}) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? AbortSignal.timeout(30000)
     : undefined;
@@ -167,28 +159,76 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
 
   let processedCount = 0;
   const totalFiles = files.length;
-  const notifyProgress = (filePath) => {
-    processedCount++;
+  let lastProgressBroadcast = 0;
+  let progressTimeout = null;
+  let latestProgressPayload = null;
+
+  const broadcastProgress = (payload) => {
     if (activeSnapshot && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
       self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
-        const rawPercent = totalFiles > 0 ? Math.floor((processedCount / totalFiles) * 100) : 100;
-        const percent = processedCount >= totalFiles ? 100 : Math.min(99, rawPercent);
-        clients.forEach((c) => c.postMessage({
-          type: MESSAGE_TYPES.STAGING_PROGRESS,
-          version: manifest.version,
-          loaded: processedCount,
-          total: totalFiles,
-          percent,
-          file: filePath,
-        }));
+        clients.forEach((c) => c.postMessage(payload));
       }).catch(() => {});
+    }
+  };
+
+  const notifyProgress = (filePath) => {
+    processedCount++;
+    const rawPercent = totalFiles > 0 ? Math.floor((processedCount / totalFiles) * 100) : 100;
+    const percent = processedCount >= totalFiles ? 100 : Math.min(99, rawPercent);
+    const payload = {
+      type: MESSAGE_TYPES.STAGING_PROGRESS,
+      version: manifest.version,
+      loaded: processedCount,
+      total: totalFiles,
+      percent,
+      file: filePath,
+    };
+    latestProgressPayload = payload;
+
+    const now = Date.now();
+    // Complete (100%): broadcast immediately and clear any trailing timer
+    if (percent === 100) {
+      if (progressTimeout) {
+        clearTimeout(progressTimeout);
+        progressTimeout = null;
+      }
+      lastProgressBroadcast = now;
+      broadcastProgress(payload);
+      return;
+    }
+
+    // Intermediate progress: throttle to at most 1 message per 250ms
+    if (now - lastProgressBroadcast >= 250) {
+      if (progressTimeout) {
+        clearTimeout(progressTimeout);
+        progressTimeout = null;
+      }
+      lastProgressBroadcast = now;
+      broadcastProgress(payload);
+    } else if (!progressTimeout) {
+      progressTimeout = setTimeout(() => {
+        progressTimeout = null;
+        lastProgressBroadcast = Date.now();
+        if (latestProgressPayload) {
+          broadcastProgress(latestProgressPayload);
+        }
+      }, 250 - (now - lastProgressBroadcast));
     }
   };
 
   await mapLimit(files, FETCH_CONCURRENCY, async ({ path, hash, size }) => {
     const fetchUrl = resolvePathWithBase(path, config.base);
     try {
-      if (await isAlreadyStaged(next, path, hash, verify, maxVerifyBytes, size, fetchUrl, allowOversizedUnverified)) {
+      if (await isAlreadyStaged({
+        cache: next,
+        path,
+        expected: hash,
+        verify,
+        maxVerifyBytes,
+        fileSize: size,
+        fetchUrl,
+        allowOversizedUnverified,
+      })) {
         stats.reused++;
         notifyProgress(path);
         return;
@@ -206,7 +246,14 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
           return;
         }
       }
-      const fetchedRes = await fetchVerified(fetchUrl, hash, verify, maxVerifyBytes, size, allowOversizedUnverified);
+      const fetchedRes = await fetchVerified({
+        path: fetchUrl,
+        expected: hash,
+        verify,
+        maxVerifyBytes,
+        fileSize: size,
+        allowOversizedUnverified,
+      });
       const copyForPath = fetchUrl !== path ? fetchedRes.clone() : null;
       await putWithQuotaRecovery(fetchUrl, fetchedRes);
       if (copyForPath) {
@@ -217,10 +264,14 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     } catch (err) {
       failed.push(path);
       failedDetails[path] = err.message;
-      notifyProgress(path);
       logger.warn(`[NLPWA] Staging failed: ${fetchUrl} - ${err.message}`);
     }
   });
+
+  if (progressTimeout) {
+    clearTimeout(progressTimeout);
+    progressTimeout = null;
+  }
 
   const retryCount = failed.length ? staged.retryCount + 1 : 0;
 

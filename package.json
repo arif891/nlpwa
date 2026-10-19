@@ -51,6 +51,11 @@
       "import": "./out/rollup-plugin.js",
       "default": "./out/rollup-plugin.js"
     },
+    "./webpack": {
+      "types": "./types/webpack.d.ts",
+      "import": "./out/webpack-plugin.js",
+      "default": "./out/webpack-plugin.js"
+    },
     "./testing": {
       "default": "./test/helpers/fake-env.js"
     },

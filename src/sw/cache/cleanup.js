@@ -1,7 +1,7 @@
 import { getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
 import { matchGlob } from '../../shared/glob.js';
-import { CLEANUP_STRATEGIES } from '../../shared/constants.js';
+import { CLEANUP_STRATEGIES, FETCH_CONCURRENCY } from '../../shared/constants.js';
 
 /**
  * Extract size (bytes) and cached timestamp (ms) from a cached Response.
@@ -107,7 +107,7 @@ export async function getStorageQuotaInfo() {
   let runtimeBytes = 0;
   const entries = [];
 
-  const itemMetas = await mapConcurrent(requests, 6, async (req) => {
+  const itemMetas = await mapConcurrent(requests, FETCH_CONCURRENCY, async (req) => {
     const res = await cache.match(req);
     if (!res) return null;
     const meta = await getResponseMetadata(res);
@@ -226,7 +226,7 @@ export async function cleanRuntimeCache(options = {}) {
     const allItems = [];
     let totalBytes = 0;
 
-    const itemEntries = await mapConcurrent(requests, 6, async (req) => {
+    const itemEntries = await mapConcurrent(requests, FETCH_CONCURRENCY, async (req) => {
       const res = await cache.match(req);
       if (!res) return null;
       const meta = await getResponseMetadata(res);
@@ -255,149 +255,154 @@ export async function cleanRuntimeCache(options = {}) {
       }
     };
 
-  // 1. Filter: individual item size thresholds
-  if (maxItemBytes != null) {
-    for (const item of allItems) {
-      if (item.size > maxItemBytes) {
-        markForEviction(item);
-      }
-    }
-  }
-  if (minItemBytes != null) {
-    for (const item of allItems) {
-      if (item.size >= minItemBytes) {
-        markForEviction(item);
-      }
-    }
-  }
-
-  // 2. Filter: individual max age / TTL
-  if (options.maxAgeMs != null && strategy !== CLEANUP_STRATEGIES.MAX_AGE) {
-    const cutoff = Date.now() - options.maxAgeMs;
-    for (const item of allItems) {
-      if (item.cachedAt > 0 && item.cachedAt < cutoff) {
-        markForEviction(item);
-      }
-    }
-  }
-
-  // 3. Strategy evaluation on remaining items
-  const candidates = allItems.filter(item => !toEvictSet.has(item));
-
-  if (strategy === CLEANUP_STRATEGIES.ALL) {
-    for (const item of candidates) {
-      markForEviction(item);
-    }
-  } else if (strategy === CLEANUP_STRATEGIES.PATTERN) {
-    const pattern = options.match || options.pattern;
-    if (pattern) {
-      for (const item of candidates) {
-        if (matchGlob(pattern, item.url)) {
+    // 1. Filter: individual item size thresholds
+    if (maxItemBytes != null) {
+      for (const item of allItems) {
+        if (item.size > maxItemBytes) {
           markForEviction(item);
         }
       }
     }
-  } else if (strategy === CLEANUP_STRATEGIES.MAX_AGE) {
-    const maxAgeMs = options.maxAgeMs ?? (7 * 24 * 60 * 60 * 1000); // 7 days default
-    const cutoff = Date.now() - maxAgeMs;
-    for (const item of candidates) {
-      if (item.cachedAt > 0 && item.cachedAt < cutoff) {
-        markForEviction(item);
+    if (minItemBytes != null) {
+      for (const item of allItems) {
+        if (item.size >= minItemBytes) {
+          markForEviction(item);
+        }
       }
     }
-  } else if (strategy === CLEANUP_STRATEGIES.LARGEST) {
-    // Sort descending by size (largest files first)
-    candidates.sort((a, b) => b.size - a.size);
 
-    let currentRemainingCount = allItems.length - toEvictSet.size;
-
-    for (const item of candidates) {
-      const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
-      const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
-      const hitLimit = options.count != null && toEvictSet.size >= options.count;
-
-      if (hitLimit) break;
-      if (needsSizeEviction || needsCountEviction) {
-        markForEviction(item);
-        currentRemainingCount--;
+    // 2. Filter: individual max age / TTL
+    if (options.maxAgeMs != null && strategy !== CLEANUP_STRATEGIES.MAX_AGE) {
+      const cutoff = Date.now() - options.maxAgeMs;
+      for (const item of allItems) {
+        if (item.cachedAt > 0 && item.cachedAt < cutoff) {
+          markForEviction(item);
+        }
       }
     }
-  } else if (strategy === CLEANUP_STRATEGIES.LRU) {
-    // Sort ascending by cachedAt (oldest first)
-    candidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
 
-    let currentRemainingCount = allItems.length - toEvictSet.size;
+    // 3. Strategy evaluation on remaining items
+    const candidates = allItems.filter(item => !toEvictSet.has(item));
 
-    for (const item of candidates) {
-      const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
-      const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
-      const hitLimit = options.count != null && toEvictSet.size >= options.count;
-
-      if (hitLimit) break;
-      if (needsCountEviction || needsSizeEviction) {
+    if (strategy === CLEANUP_STRATEGIES.ALL) {
+      for (const item of candidates) {
         markForEviction(item);
-        currentRemainingCount--;
       }
-    }
-  } else if (strategy === CLEANUP_STRATEGIES.QUOTA) {
-    const quotaInfo = await getStorageQuotaInfo();
-    const maxQuotaPercent = options.maxQuotaPercent ?? 80;
-
-    let currentUsage = quotaInfo.usage ?? totalBytes;
-    const quota = quotaInfo.quota;
-
-    const isOverQuota = () => {
-      if (quota && maxQuotaPercent != null) {
-        if ((currentUsage / quota) * 100 > maxQuotaPercent) return true;
+    } else if (strategy === CLEANUP_STRATEGIES.PATTERN) {
+      const pattern = options.match || options.pattern;
+      if (pattern) {
+        for (const item of candidates) {
+          if (matchGlob(pattern, item.url)) {
+            markForEviction(item);
+          }
+        }
       }
-      if (maxQuotaBytes != null && currentUsage > maxQuotaBytes) return true;
-      return false;
-    };
-
-    if (isOverQuota()) {
-      // By default prefer evicting largest files to recover quota fastest
-      if (options.preferLargest !== false) {
-        candidates.sort((a, b) => b.size - a.size);
-      } else {
-        candidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+    } else if (strategy === CLEANUP_STRATEGIES.MAX_AGE) {
+      const maxAgeMs = options.maxAgeMs ?? (7 * 24 * 60 * 60 * 1000); // 7 days default
+      const cutoff = Date.now() - maxAgeMs;
+      for (const item of candidates) {
+        if (item.cachedAt > 0 && item.cachedAt < cutoff) {
+          markForEviction(item);
+        }
       }
+    } else if (strategy === CLEANUP_STRATEGIES.LARGEST) {
+      // Sort descending by size (largest files first)
+      candidates.sort((a, b) => b.size - a.size);
+
+      let currentRemainingCount = allItems.length - toEvictSet.size;
 
       for (const item of candidates) {
-        if (!isOverQuota()) break;
-        markForEviction(item);
-        currentUsage = Math.max(0, currentUsage - item.size);
+        const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
+        const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
+        const hitLimit = options.count != null && toEvictSet.size >= options.count;
+
+        if (hitLimit) break;
+        if (needsSizeEviction || needsCountEviction) {
+          markForEviction(item);
+          currentRemainingCount--;
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.LRU) {
+      let lruCandidates = candidates;
+      if (options.match || options.pattern) {
+        const pattern = options.match || options.pattern;
+        lruCandidates = candidates.filter(item => matchGlob(pattern, item.url));
+      }
+      // Sort ascending by cachedAt (oldest first)
+      lruCandidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+
+      let currentRemainingCount = lruCandidates.length;
+
+      for (const item of lruCandidates) {
+        const needsCountEviction = options.maxEntries != null && currentRemainingCount > options.maxEntries;
+        const needsSizeEviction = maxTotalBytes != null && remainingBytes > maxTotalBytes;
+        const hitLimit = options.count != null && toEvictSet.size >= options.count;
+
+        if (hitLimit) break;
+        if (needsCountEviction || needsSizeEviction) {
+          markForEviction(item);
+          currentRemainingCount--;
+        }
+      }
+    } else if (strategy === CLEANUP_STRATEGIES.QUOTA) {
+      const quotaInfo = await getStorageQuotaInfo();
+      const maxQuotaPercent = options.maxQuotaPercent ?? 80;
+
+      let currentUsage = quotaInfo.usage ?? totalBytes;
+      const quota = quotaInfo.quota;
+
+      const isOverQuota = () => {
+        if (quota && maxQuotaPercent != null) {
+          if ((currentUsage / quota) * 100 > maxQuotaPercent) return true;
+        }
+        if (maxQuotaBytes != null && currentUsage > maxQuotaBytes) return true;
+        return false;
+      };
+
+      if (isOverQuota()) {
+        // By default prefer evicting largest files to recover quota fastest
+        if (options.preferLargest !== false) {
+          candidates.sort((a, b) => b.size - a.size);
+        } else {
+          candidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));
+        }
+
+        for (const item of candidates) {
+          if (!isOverQuota()) break;
+          markForEviction(item);
+          currentUsage = Math.max(0, currentUsage - item.size);
+        }
       }
     }
-  }
 
-  // 4. Perform deletions
-  const evicted = [...toEvictSet];
-  let freedBytes = 0;
+    // 4. Perform deletions
+    const evicted = [...toEvictSet];
+    let freedBytes = 0;
 
-  await mapConcurrent(evicted, 8, async (item) => {
-    freedBytes += item.size;
-    await cache.delete(item.req);
-  });
+    await mapConcurrent(evicted, 8, async (item) => {
+      freedBytes += item.size;
+      await cache.delete(item.req);
+    });
 
-  const finalRemainingEntries = allItems.length - evicted.length;
-  const finalRemainingBytes = Math.max(0, totalBytes - freedBytes);
-  const updatedQuota = await getStorageQuotaInfo();
+    const finalRemainingEntries = allItems.length - evicted.length;
+    const finalRemainingBytes = Math.max(0, totalBytes - freedBytes);
+    const updatedQuota = await getStorageQuotaInfo();
 
-  logger.log(
-    `[NLPWA] Runtime cache cleaned (${strategy}): ${evicted.length} evicted, ` +
-    `${(freedBytes / 1024).toFixed(1)} KB freed, ${finalRemainingEntries} remaining`
-  );
+    logger.log(
+      `[NLPWA] Runtime cache cleaned (${strategy}): ${evicted.length} evicted, ` +
+      `${(freedBytes / 1024).toFixed(1)} KB freed, ${finalRemainingEntries} remaining`
+    );
 
-  return {
-    success: true,
-    strategy,
-    evictedCount: evicted.length,
-    evictedUrls: evicted.map(item => item.url),
-    freedBytes,
-    remainingEntries: finalRemainingEntries,
-    remainingBytes: finalRemainingBytes,
-    quota: updatedQuota,
-  };
+    return {
+      success: true,
+      strategy,
+      evictedCount: evicted.length,
+      evictedUrls: evicted.map(item => item.url),
+      freedBytes,
+      remainingEntries: finalRemainingEntries,
+      remainingBytes: finalRemainingBytes,
+      quota: updatedQuota,
+    };
   };
 
   try {

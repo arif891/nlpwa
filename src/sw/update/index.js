@@ -38,25 +38,17 @@ export async function checkForUpdate(options = {}) {
   return await runUpdateCheck(options);
 }
 
-let _currentStatus = 'idle';
+import { setUpdateStatus, getUpdateStatus, getCurrentStatus } from './status.js';
 
-export function setUpdateStatus(status) {
-  _currentStatus = status;
-}
-
-export async function getUpdateStatus() {
-  const staged = await getStaged();
-  if (staged?.complete) return 'ready';
-  return _currentStatus;
-}
+export { setUpdateStatus, getUpdateStatus };
 
 async function runUpdateCheck({ force = false } = {}) {
-  _currentStatus = 'checking';
+  setUpdateStatus('checking');
   try {
     return await _doUpdateCheck({ force });
   } finally {
-    if (_currentStatus === 'checking') {
-      _currentStatus = 'idle';
+    if (getCurrentStatus() === 'checking') {
+      setUpdateStatus('idle');
     }
   }
 }
@@ -64,16 +56,21 @@ async function runUpdateCheck({ force = false } = {}) {
 async function _doUpdateCheck({ force = false } = {}) {
   const config = getConfig();
 
+  const active = await loadCachedSnapshot();
+  const staged = await getStaged();
+
   // ── Tier 1: lightweight version check ────────────────────────────────────
   let serverVersion;
   try {
-    serverVersion = (await fetchServerVersion()).version;
+    const versionRes = await fetchServerVersion();
+    if (versionRes?.notModified) {
+      serverVersion = active?.version;
+    } else {
+      serverVersion = versionRes?.version;
+    }
   } catch (err) {
     logger.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
   }
-
-  const active = await loadCachedSnapshot();
-  const staged = await getStaged();
 
   // A complete update is already staged and waiting for the next navigation.
   if (staged?.complete && staged.swVersion === config.version
@@ -106,7 +103,7 @@ async function _doUpdateCheck({ force = false } = {}) {
 
   if (serverVersion && isCurrent(serverVersion)) {
     await discardStaged();
-    _currentStatus = 'idle';
+    setUpdateStatus('idle');
     logger.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
     return { updated: false, rolledBack: Boolean(staged) };
@@ -123,7 +120,7 @@ async function _doUpdateCheck({ force = false } = {}) {
 
   if (isCurrent(serverManifest.version)) {
     await discardStaged();
-    _currentStatus = 'idle';
+    setUpdateStatus('idle');
     logger.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
     return { updated: false, rolledBack: Boolean(staged) };
@@ -135,12 +132,12 @@ async function _doUpdateCheck({ force = false } = {}) {
 
   // ── Stage (active version keeps serving) ─────────────────────────────────
   // Narrow lock: acquire only around staging cache writes and commit
-  _currentStatus = 'staging';
+  setUpdateStatus('staging');
   return withLock(async () => {
     const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
 
     if (result.status === 'incomplete') {
-      _currentStatus = 'idle';
+      setUpdateStatus('idle');
       const errorCode = result.hasHashMismatch
         ? 'HASH_MISMATCH'
         : result.quotaExceeded
@@ -171,12 +168,12 @@ async function _doUpdateCheck({ force = false } = {}) {
     }
 
     if (isFresh) {
-      _currentStatus = 'idle';
+      setUpdateStatus('idle');
       await commitStaged();
       return { updated: false, version: serverManifest.version, initial: true };
     }
 
-    _currentStatus = 'ready';
+    setUpdateStatus('ready');
     await broadcast({
       type: MESSAGE_TYPES.UPDATE_READY,
       version: serverManifest.version,

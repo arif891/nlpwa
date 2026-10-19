@@ -142,6 +142,13 @@ export const DEFAULTS = {
   logLevel: 'info',
 
   /**
+   * Timeout in milliseconds for network requests before falling back to cache in network-first strategy.
+   * A value of 0 means no timeout (wait indefinitely for network before fallback).
+   * Default: 0
+   */
+  networkTimeoutMs: 0,
+
+  /**
    * Fallback URL for navigation requests when offline.
    * Default: '/index.html'
    */

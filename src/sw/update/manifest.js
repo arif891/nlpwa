@@ -1,10 +1,18 @@
 import { getConfig, getUpdateEndpoints } from '../config/index.js';
-import { openActive } from '../cache/store.js';
+import { openActive, getActiveSnapshotPaths, setActiveSnapshotPaths } from '../cache/store.js';
+
+export { getActiveSnapshotPaths, setActiveSnapshotPaths };
+
+let _lastVersionETag = null;
+
+export function resetManifestMemo() {
+  _lastVersionETag = null;
+}
 
 /**
  * Fetch lightweight app version from the server (Tier 1 check).
  *
- * @returns {Promise<{ version: string }>}
+ * @returns {Promise<{ version?: string, notModified?: boolean }>}
  */
 export async function fetchServerVersion() {
   const config = getConfig();
@@ -16,14 +24,28 @@ export async function fetchServerVersion() {
     ? AbortSignal.timeout(baseTimeout)
     : undefined;
 
+  const headers = { Accept: 'application/json' };
+  if (_lastVersionETag) {
+    headers['If-None-Match'] = _lastVersionETag;
+  }
+
   const response = await fetch(versionEndpoint, {
     cache: 'no-store',
-    headers: { 'Accept': 'application/json' },
+    headers,
     signal,
   });
 
+  if (response.status === 304) {
+    return { notModified: true };
+  }
+
   if (!response.ok) {
     throw new Error(`[NLPWA] Version check failed: HTTP ${response.status} ${response.statusText}`);
+  }
+
+  const etag = response.headers?.get('ETag');
+  if (etag) {
+    _lastVersionETag = etag;
   }
 
   const data = await response.json();
@@ -84,16 +106,6 @@ export function getSnapshotPath() {
   return getConfig().snapshotCachePath;
 }
 
-let _activeSnapshotPaths = null;
-
-export function getActiveSnapshotPaths() {
-  return _activeSnapshotPaths;
-}
-
-export function setActiveSnapshotPaths(paths) {
-  _activeSnapshotPaths = paths ? (paths instanceof Set ? paths : new Set(paths)) : null;
-}
-
 /**
  * Load the snapshot (hash map of what is currently live) from the ACTIVE
  * offline cache. Returns null on a fresh install.
@@ -104,12 +116,12 @@ export async function loadCachedSnapshot() {
   const cache = await openActive(getConfig().caches.offline);
   const response = await cache.match(getSnapshotPath());
   if (!response) {
-    _activeSnapshotPaths = null;
+    setActiveSnapshotPaths(null);
     return null;
   }
   const data = await response.json();
   if (Array.isArray(data?.files)) {
-    _activeSnapshotPaths = new Set(data.files.map((f) => f.path));
+    setActiveSnapshotPaths(new Set(data.files.map((f) => f.path)));
   }
   return data;
 }

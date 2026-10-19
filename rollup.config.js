@@ -85,5 +85,19 @@ export default async () => {
     ],
     plugins,
   },
+
+  // ── Webpack plugin ────────────────────────────────────────────────────────
+  {
+    input: 'src/webpack-plugin.js',
+    output: {
+      file:    'out/webpack-plugin.js',
+      format:  'es',
+      banner:  '/* NLPWA Webpack Plugin — https://github.com/arif891/nlpwa */',
+    },
+    external: [
+      /^node:/,
+    ],
+    plugins,
+  },
 ];
 };

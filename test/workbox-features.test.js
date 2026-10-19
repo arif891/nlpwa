@@ -4,8 +4,9 @@ import { setupEnv, req, fakeEvent, sleep } from './helpers/fake-env.js';
 import { createRangeResponse } from '../src/sw/fetch/range.js';
 import { isNavigationFallbackAllowed } from '../src/sw/fetch/navigation.js';
 import { cleanTrackingParams, DEFAULT_IGNORE_SEARCH_PARAMS } from '../src/sw/cache/keys.js';
-import { networkFirst, cacheFirst } from '../src/sw/fetch/strategies.js';
+import { networkFirst, cacheFirst, staleWhileRevalidate } from '../src/sw/fetch/strategies.js';
 import { getFromRuntime, putInRuntime, matchWithAliases } from '../src/sw/cache/runtime.js';
+import { cleanRuntimeCache } from '../src/sw/cache/cleanup.js';
 import { initConfig } from '../src/sw/config/index.js';
 
 test('range requests: createRangeResponse returns original response when no Range header', async () => {
@@ -196,3 +197,119 @@ test('cache key control: getFromRuntime matches request stripped of tracking que
   assert.ok(match);
   assert.equal(await match.text(), 'product details');
 });
+
+test('cache key control: cleanURLs resolves extensionless requests to .html by default and respects cleanURLs: false', async () => {
+  const caches = setupEnv();
+  const runtime = await caches.open('runtime');
+
+  await runtime.put(req('/contact.html'), new Response('contact html content'));
+
+  // By default, cleanURLs is true: /contact matches /contact.html
+  initConfig({ cleanURLs: true });
+  const hit = await getFromRuntime(req('/contact'));
+  assert.ok(hit);
+  assert.equal(await hit.text(), 'contact html content');
+
+  // When cleanURLs is false, /contact must NOT match /contact.html
+  initConfig({ cleanURLs: false });
+  const miss = await getFromRuntime(req('/contact'));
+  assert.equal(miss, undefined);
+});
+
+test('plugins: cacheKeyWillBeUsed hook customizes cache key on read and write', async () => {
+  const caches = setupEnv(async (r) => new Response('data for ' + r.url));
+  const runtime = await caches.open('runtime');
+
+  // Plugin strips language prefix '/en/' from cache key
+  const customKeyPlugin = {
+    cacheKeyWillBeUsed({ request }) {
+      const url = new URL(request.url || request);
+      url.pathname = url.pathname.replace(/^\/en/, '');
+      return url.href;
+    },
+  };
+
+  const event1 = fakeEvent();
+  const response = await cacheFirst(req('/en/profile'), event1, {
+    plugins: [customKeyPlugin],
+  });
+  assert.ok(response);
+  await event1.settle();
+
+  // Cache key stored in runtime cache should be /profile, not /en/profile
+  const directHit = await runtime.match(req('/profile'));
+  assert.ok(directHit, 'Item should be cached under rewritten cache key /profile');
+
+  // A subsequent request with /en/profile should hit the cache via the plugin
+  const cacheHit = await cacheFirst(req('/en/profile'), fakeEvent(), {
+    plugins: [customKeyPlugin],
+  });
+  assert.equal(cacheHit.headers.get('X-Cache-Status'), 'runtime-cache');
+});
+
+test('route maxEntries: cleanRuntimeCache supports scoped pattern matching and maxEntries for on-demand cleanup', async () => {
+  const caches = setupEnv(async (r) => new Response('res for ' + r.url));
+  const runtime = await caches.open('runtime');
+
+  // Add 3 items matching /items/**
+  await cacheFirst(req('/items/1'), fakeEvent());
+  await sleep(10);
+  await cacheFirst(req('/items/2'), fakeEvent());
+  await sleep(10);
+  await cacheFirst(req('/items/3'), fakeEvent());
+  await sleep(10);
+
+  // Add an unrelated item /other/page that should not be touched
+  await cacheFirst(req('/other/page'), fakeEvent());
+  await sleep(10);
+
+  let keys = await runtime.keys();
+  assert.equal(keys.length, 4);
+
+  // Run on-demand scoped cleanup with maxEntries: 2 for /items/**
+  await cleanRuntimeCache({
+    strategy: 'lru',
+    maxEntries: 2,
+    match: '/items/**',
+  });
+
+  keys = await runtime.keys();
+  assert.equal(keys.length, 3);
+  const remainingUrls = keys.map((k) => new URL(k.url).pathname);
+  assert.ok(!remainingUrls.includes('/items/1'), '/items/1 should have been evicted as the oldest item matching pattern');
+  assert.ok(remainingUrls.includes('/items/2'));
+  assert.ok(remainingUrls.includes('/items/3'));
+  assert.ok(remainingUrls.includes('/other/page'), 'Unrelated route /other/page should not be affected');
+});
+
+test('stale-while-revalidate: onRevalidated callback fires after background revalidation', async () => {
+  let fetchCount = 0;
+  const caches = setupEnv(async (r) => {
+    fetchCount++;
+    return new Response(`version ${fetchCount}`);
+  });
+  const runtime = await caches.open('runtime');
+  await runtime.put(req('/feed'), new Response('stale feed', {
+    headers: { 'X-NLPWA-Cached-At': String(Date.now()) },
+  }));
+
+  let revalidatedData = null;
+  const event = fakeEvent();
+
+  const served = await staleWhileRevalidate(req('/feed'), event, {
+    onRevalidated(data) {
+      revalidatedData = data;
+    },
+  });
+
+  // Served stale response immediately
+  assert.equal(await served.text(), 'stale feed');
+  assert.equal(served.headers.get('X-Cache-Status'), 'stale');
+
+  // Wait for background revalidate promise in event.waitUntil
+  await event.settle();
+
+  assert.ok(revalidatedData, 'onRevalidated callback should have been invoked');
+  assert.equal(await revalidatedData.response.clone().text(), 'version 1');
+});
+

@@ -1,7 +1,6 @@
 import { DEFAULTS } from './defaults.js';
 import { validateConfig } from './schema.js';
-import { openActive, setMetaCacheName } from '../cache/store.js';
-import { setActiveSnapshotPaths } from '../update/manifest.js';
+import { openActive, setMetaCacheName, setActiveSnapshotPaths } from '../cache/store.js';
 import { resolvePathWithBase, resolveUpdateEndpoints } from '../../shared/url.js';
 import { createLogger } from '../../shared/logger.js';
 
@@ -149,7 +148,8 @@ export async function loadConfigFromCache() {
     logger.log(`[NLPWA] Runtime config loaded from offline cache (${configPath})`);
 
     try {
-      const snapRes = await cache.match('/_nlpwa/snapshot.json');
+      const snapPath = config.snapshotCachePath || '/_nlpwa/snapshot.json';
+      const snapRes = await cache.match(snapPath);
       if (snapRes) {
         const snapData = await snapRes.json();
         if (Array.isArray(snapData?.files)) {

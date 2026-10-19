@@ -19,9 +19,6 @@ import { MESSAGE_TYPES } from '../shared/constants.js';
 export function initSW(userConfig = {}) {
   const config = initConfig(userConfig);
 
-  // Eagerly try to hydrate routes and config from offline cache on SW startup
-  loadConfigFromCache().catch(() => {});
-
   // ── install ────────────────────────────────────────────────────────────────
   self.addEventListener('install', (event) => {
     logger.log(`[NLPWA] Installing SW v${config.version}`);
@@ -201,5 +198,77 @@ export function initSW(userConfig = {}) {
     if (event.tag === 'nlpwa-update-check') {
       event.waitUntil(checkForUpdate());
     }
+  });
+
+  // ── push notifications ─────────────────────────────────────────────────────
+  self.addEventListener('push', (event) => {
+    if (typeof userConfig.onPush === 'function') {
+      try {
+        const customRes = userConfig.onPush(event);
+        if (customRes && typeof customRes.then === 'function') {
+          event.waitUntil(customRes);
+          return;
+        }
+      } catch (err) {
+        logger.warn('[NLPWA] onPush handler error:', err?.message || err);
+      }
+    }
+
+    if (!event.data) return;
+
+    event.waitUntil((async () => {
+      try {
+        let payload;
+        try {
+          payload = event.data.json();
+        } catch {
+          payload = { body: event.data.text() };
+        }
+
+        // Silent background update trigger via Push
+        if (payload?.type === 'CHECK_UPDATE' || payload?.nlpwa === 'check-update') {
+          await checkForUpdate({ force: true });
+          return;
+        }
+
+        if (payload?.title && self.registration && typeof self.registration.showNotification === 'function') {
+          const { title, ...options } = payload;
+          await self.registration.showNotification(title, options);
+        }
+      } catch (err) {
+        logger.warn('[NLPWA] Push handling error:', err?.message || err);
+      }
+    })());
+  });
+
+  self.addEventListener('notificationclick', (event) => {
+    if (typeof userConfig.onNotificationClick === 'function') {
+      try {
+        const customRes = userConfig.onNotificationClick(event);
+        if (customRes && typeof customRes.then === 'function') {
+          event.waitUntil(customRes);
+          return;
+        }
+      } catch (err) {
+        logger.warn('[NLPWA] onNotificationClick handler error:', err?.message || err);
+      }
+    }
+
+    event.notification.close();
+    const targetUrl = event.notification.data?.url || '/';
+
+    event.waitUntil((async () => {
+      if (self.clients && typeof self.clients.matchAll === 'function') {
+        const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of windowClients) {
+          if (client.url === targetUrl && 'focus' in client) {
+            return client.focus();
+          }
+        }
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(targetUrl);
+        }
+      }
+    })());
   });
 }

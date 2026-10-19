@@ -3,9 +3,8 @@ import {
   getFromOffline,
   getFromRuntime,
   putInRuntime,
-  tagResponse,
-  CACHE_STATUS,
-} from '../cache/index.js';
+} from '../cache/runtime.js';
+import { tagResponse, CACHE_STATUS } from '../cache/tag.js';
 import { getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
 import { createRangeResponse } from './range.js';
@@ -18,6 +17,7 @@ import {
   runFetchDidSucceed,
   runFetchDidFail,
   runCacheDidUpdate,
+  runCacheKeyWillBeUsed,
 } from './plugins.js';
 
 export {
@@ -30,6 +30,7 @@ export {
   runFetchDidSucceed,
   runFetchDidFail,
   runCacheDidUpdate,
+  runCacheKeyWillBeUsed,
 };
 
 /**
@@ -127,10 +128,22 @@ function safePutInRuntime(request, response, event, options = {}) {
     const plugins = getPlugins(options);
     const cacheName = getConfig().caches?.runtime || 'runtime';
 
+    let cacheKey = request;
+    try {
+      cacheKey = await runCacheKeyWillBeUsed(plugins, {
+        request,
+        mode: 'write',
+        event,
+        options,
+      });
+    } catch (err) {
+      logger.warn('[NLPWA] cacheKeyWillBeUsed error:', err?.message || err);
+    }
+
     let responseToCache;
     try {
       responseToCache = await runCacheWillUpdate(plugins, {
-        request,
+        request: cacheKey,
         response: toCache,
         event,
         cacheName,
@@ -155,10 +168,10 @@ function safePutInRuntime(request, response, event, options = {}) {
     }
 
     try {
-      await putInRuntime(request, responseToCache);
+      await putInRuntime(cacheKey, responseToCache);
       await runCacheDidUpdate(plugins, {
         cacheName,
-        request,
+        request: cacheKey,
         newResponse: responseToCache,
         event,
         options,
@@ -271,11 +284,18 @@ export async function cacheFirst(request, event, options = {}) {
   const runtimeName = getConfig().caches?.runtime || 'runtime';
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
-  let offlineCached = await getFromOffline(request, matchOptions, clientId);
+  let cacheKey = request;
+  try {
+    cacheKey = await runCacheKeyWillBeUsed(plugins, { request, mode: 'read', event, options });
+  } catch (err) {
+    logger.warn('[NLPWA] cacheKeyWillBeUsed error:', err?.message || err);
+  }
+
+  let offlineCached = await getFromOffline(cacheKey, matchOptions, clientId);
   if (offlineCached) {
     offlineCached = await runCachedResponseWillBeUsed(plugins, {
       cacheName: offlineName,
-      request,
+      request: cacheKey,
       matchOptions,
       cachedResponse: offlineCached,
       event,
@@ -285,11 +305,11 @@ export async function cacheFirst(request, event, options = {}) {
   }
 
   const maxAgeMs = resolveMaxAgeMs(options);
-  let runtimeCached = await getFromRuntime(request, matchOptions);
+  let runtimeCached = await getFromRuntime(cacheKey, matchOptions);
   if (runtimeCached) {
     runtimeCached = await runCachedResponseWillBeUsed(plugins, {
       cacheName: runtimeName,
-      request,
+      request: cacheKey,
       matchOptions,
       cachedResponse: runtimeCached,
       event,
@@ -352,16 +372,25 @@ export async function cacheFirst(request, event, options = {}) {
  * Best for: HTML pages, user data — content that should be fresh when online.
  *
  * Response header: X-Cache-Status: network | preload | offline-cache | runtime-cache | offline-fallback
+ */
+
 /** Look in offline then runtime cache; returns a tagged Response or null. */
 async function lookupTaggedCache({ request, matchOptions, clientId, plugins, options, event }) {
+  let cacheKey = request;
+  try {
+    cacheKey = await runCacheKeyWillBeUsed(plugins, { request, mode: 'read', event, options });
+  } catch (err) {
+    logger.warn('[NLPWA] cacheKeyWillBeUsed error:', err?.message || err);
+  }
+
   const offlineName = getConfig().caches?.offline || 'offline';
   const runtimeName = getConfig().caches?.runtime || 'runtime';
 
-  let offlineCached = await getFromOffline(request, matchOptions, clientId);
+  let offlineCached = await getFromOffline(cacheKey, matchOptions, clientId);
   if (offlineCached) {
     offlineCached = await runCachedResponseWillBeUsed(plugins, {
       cacheName: offlineName,
-      request,
+      request: cacheKey,
       matchOptions,
       cachedResponse: offlineCached,
       event,
@@ -370,11 +399,11 @@ async function lookupTaggedCache({ request, matchOptions, clientId, plugins, opt
     if (offlineCached) return serveCached(request, offlineCached, CACHE_STATUS.OFFLINE_CACHE);
   }
 
-  let runtimeCached = await getFromRuntime(request, matchOptions);
+  let runtimeCached = await getFromRuntime(cacheKey, matchOptions);
   if (runtimeCached) {
     runtimeCached = await runCachedResponseWillBeUsed(plugins, {
       cacheName: runtimeName,
-      request,
+      request: cacheKey,
       matchOptions,
       cachedResponse: runtimeCached,
       event,
@@ -558,17 +587,24 @@ export async function staleWhileRevalidate(request, event, options = {}) {
   const offlineName = getConfig().caches?.offline || 'offline';
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
 
-  let cached = await getFromRuntime(request, matchOptions);
+  let cacheKey = request;
+  try {
+    cacheKey = await runCacheKeyWillBeUsed(plugins, { request, mode: 'read', event, options });
+  } catch (err) {
+    logger.warn('[NLPWA] cacheKeyWillBeUsed error:', err?.message || err);
+  }
+
+  let cached = await getFromRuntime(cacheKey, matchOptions);
   let cacheNameUsed = runtimeName;
   if (!cached) {
-    cached = await getFromOffline(request, matchOptions, clientId);
+    cached = await getFromOffline(cacheKey, matchOptions, clientId);
     cacheNameUsed = offlineName;
   }
 
   if (cached) {
     cached = await runCachedResponseWillBeUsed(plugins, {
       cacheName: cacheNameUsed,
-      request,
+      request: cacheKey,
       matchOptions,
       cachedResponse: cached,
       event,
@@ -586,6 +622,11 @@ export async function staleWhileRevalidate(request, event, options = {}) {
         try {
           const response = await performFetch(request, event, options, plugins);
           await safePutInRuntime(request, response, event, options);
+          if (typeof options.onRevalidated === 'function') {
+            try {
+              options.onRevalidated({ request, response, cachedResponse: cached, event });
+            } catch {}
+          }
           return response;
         } catch {
           // offline during revalidation is fine

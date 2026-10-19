@@ -1,6 +1,7 @@
 import { onUpdateReady, onNoUpdate, onUpdateFailed, applyUpdate } from './update-ui.js';
 import { requestUpdateCheck, onSWMessage } from './messaging.js';
 import { MESSAGE_TYPES } from '../shared/constants.js';
+import { logger, setClientLogLevel } from './logger.js';
 
 const NON_EDITING_INPUT_TYPES = new Set([
   'button', 'submit', 'reset', 'checkbox', 'radio',
@@ -51,6 +52,7 @@ export function isUserEditing() {
  *
  * @param {string} swUrl  path to the bundled sw.js  (default: '/sw.js')
  * @param {Object} options
+ * @param {string}   [options.logLevel]              client logging level ('silent' | 'error' | 'warn' | 'info' | 'debug')
  * @param {Function} [options.onUpdateReady]         called when SW signals update ready
  * @param {Function} [options.onNoUpdate]            called when SW signals already up to date
  * @param {Function} [options.onUpdateFailed]        called when SW signals update failed or hash mismatch
@@ -66,8 +68,12 @@ export function isUserEditing() {
  * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
  */
 export async function register(swUrl = '/sw.js', options = {}) {
+  if (options.logLevel) {
+    setClientLogLevel(options.logLevel);
+  }
+
   if (!('serviceWorker' in navigator)) {
-    console.warn('[NLPWA] Service Workers are not supported in this browser.');
+    logger.warn('[NLPWA] Service Workers are not supported in this browser.');
     return null;
   }
 
@@ -79,9 +85,9 @@ export async function register(swUrl = '/sw.js', options = {}) {
   let registration;
   try {
     registration = await navigator.serviceWorker.register(swUrl, regOptions);
-    console.log('[NLPWA] SW registered:', registration.scope);
+    logger.log('[NLPWA] SW registered:', registration.scope);
   } catch (err) {
-    console.error('[NLPWA] SW registration failed:', err);
+    logger.error('[NLPWA] SW registration failed:', err);
     return null;
   }
 
@@ -100,7 +106,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
         applyUpdate();
       } else {
         const reason = customDefer ? 'deferred' : 'editing';
-        console.warn(`[NLPWA] Auto-reload deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
+        logger.warn(`[NLPWA] Auto-reload deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
           options.onUpdatePrompt({ ...data, reason });
         }
@@ -137,7 +143,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
         window.location.reload();
       } else {
         const reason = customDefer ? 'deferred' : 'editing';
-        console.warn(`[NLPWA] Reload on update-applied deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
+        logger.warn(`[NLPWA] Reload on update-applied deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
         if (typeof options.onUpdatePrompt === 'function') {
           options.onUpdatePrompt({ version: data?.version, updateApplied: true, reason });
         } else if (typeof options.onUpdateReady === 'function') {
@@ -203,7 +209,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
   if (enablePeriodicSync && 'periodicSync' in registration) {
     try {
       if (pollIntervalMs < 86400000) {
-        console.warn('[NLPWA] Periodic Background Sync minInterval is set below 24h. Most browsers enforce a minimum interval of 12-24 hours for periodicSync.');
+        logger.warn('[NLPWA] Periodic Background Sync minInterval is set below 24h. Most browsers enforce a minimum interval of 12-24 hours for periodicSync.');
       }
       registration.periodicSync.register('nlpwa-update-check', {
         minInterval: pollIntervalMs,
@@ -217,9 +223,9 @@ export async function register(swUrl = '/sw.js', options = {}) {
   if (options.persistentStorage && typeof navigator !== 'undefined' && navigator.storage?.persist) {
     navigator.storage.persist().then((persisted) => {
       if (persisted) {
-        console.log('[NLPWA] Storage is persistent; browser will not evict cached resources under storage pressure.');
+        logger.log('[NLPWA] Storage is persistent; browser will not evict cached resources under storage pressure.');
       } else {
-        console.log('[NLPWA] Storage is best-effort; persistent storage permission was not granted.');
+        logger.log('[NLPWA] Storage is best-effort; persistent storage permission was not granted.');
       }
     }).catch(() => {});
   }

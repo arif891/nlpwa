@@ -34,7 +34,17 @@ export function resolveUpdateEndpoints(config = {}) {
   let versionEndpoint = '/api/update/version.json';
   let infoEndpoint = '/api/update/info.json';
 
-  const updateAPI = config?.updateAPI ?? config;
+  let updateAPI = config?.updateAPI;
+  if (updateAPI === undefined) {
+    if (
+      Array.isArray(config) ||
+      config?.info ||
+      (typeof config?.version === 'string' && (config.version.startsWith('/') || config.version.endsWith('.json')))
+    ) {
+      updateAPI = config;
+    }
+  }
+
   if (updateAPI) {
     if (typeof updateAPI === 'object' && !Array.isArray(updateAPI)) {
       if (updateAPI.version) versionEndpoint = updateAPI.version;

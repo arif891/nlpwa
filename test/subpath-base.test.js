@@ -238,3 +238,18 @@ test('subpath base: evictFromRuntime deletes both raw path and base-prefixed pat
   assert.equal(await runtime.match('/assets/bundle.js'), undefined);
 });
 
+test('subpath base: getApiDiskPath strips base prefix so disk files are written to targetDir/api/... not targetDir/my-app/api/...', async () => {
+  const { getApiDiskPath } = await import('../src/cli/core/manifest.js');
+  const { resolveUpdateEndpoints } = await import('../src/shared/url.js');
+  const runtimeConfig = { base: '/my-app/', version: '1.0.0' };
+  const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(runtimeConfig);
+  assert.equal(versionEndpoint, '/my-app/api/update/version.json');
+  assert.equal(infoEndpoint, '/my-app/api/update/info.json');
+
+  const { resolve } = await import('node:path');
+  const versionDiskPath = getApiDiskPath('dist', versionEndpoint, runtimeConfig.base);
+  const infoDiskPath = getApiDiskPath('dist', infoEndpoint, runtimeConfig.base);
+  assert.equal(versionDiskPath, resolve('dist', 'api/update/version.json'));
+  assert.equal(infoDiskPath, resolve('dist', 'api/update/info.json'));
+});
+

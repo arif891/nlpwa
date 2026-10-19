@@ -497,6 +497,8 @@ test('client update-ui: onUpdateFailed catches UPDATE_FAILED event and triggers 
         failed: ['/main.js'],
         error: 'Hash mismatch on /main.js',
         hasHashMismatch: true,
+        errorCode: 'HASH_MISMATCH',
+        quotaExceeded: false,
       },
     })
   );
@@ -504,8 +506,12 @@ test('client update-ui: onUpdateFailed catches UPDATE_FAILED event and triggers 
   assert.ok(received);
   assert.equal(received.version, '2.0.0');
   assert.equal(received.hasHashMismatch, true);
+  assert.equal(received.errorCode, 'HASH_MISMATCH');
+  assert.equal(received.quotaExceeded, false);
   assert.equal(docEvents[0]?.type, 'nlpwa:update-failed');
   assert.equal(docEvents[0]?.detail.error, 'Hash mismatch on /main.js');
+  assert.equal(docEvents[0]?.detail.errorCode, 'HASH_MISMATCH');
+  assert.equal(docEvents[0]?.detail.quotaExceeded, false);
 
   unsub();
   assert.equal(listeners.length, 0);

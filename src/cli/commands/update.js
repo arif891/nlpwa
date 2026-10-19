@@ -38,10 +38,11 @@ export async function cmdUpdate(args) {
   let newVersion;
   let versionNote;
 
+  const isPatch = Boolean(args.patch || args['bump-patch'] || args.bumpPatch);
   if (args.version) {
     newVersion = args.version;
     versionNote = 'explicit override';
-  } else if (args['bump-patch'] || args.bumpPatch) {
+  } else if (isPatch) {
     newVersion = incrementPatch(prevVersion);
     versionNote = 'patch auto-increment';
   } else {
@@ -63,14 +64,18 @@ export async function cmdUpdate(args) {
     console.log(`  ${c.dim}Source  :${c.reset} ${c.yellow}updated version in ${configPath}${c.reset}\n`);
   }
 
+  const isClean = Boolean(args.clean);
+  const defaultVersionEndpoint = isClean ? '/api/update/version' : '/api/update/version.json';
+  const defaultInfoEndpoint = isClean ? '/api/update/info' : '/api/update/info.json';
+
   // Prepare runtime config object
   const runtimeConfig = {
     ...rawConfig,
     version: newVersion,
     configPath: rawConfig.configPath || '/config.json',
     updateAPI: rawConfig.updateAPI || {
-      version: '/api/update/version.json',
-      info: '/api/update/info.json',
+      version: defaultVersionEndpoint,
+      info: defaultInfoEndpoint,
     },
     precache: expandedPrecache,
     routes: rawConfig.routes || [],
@@ -108,8 +113,8 @@ export async function cmdUpdate(args) {
   // 3. Emit update API outputs
   const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(runtimeConfig);
 
-  const versionOut = getApiDiskPath(targetDir, versionEndpoint);
-  const infoOut = getApiDiskPath(targetDir, infoEndpoint);
+  const versionOut = getApiDiskPath(targetDir, versionEndpoint, runtimeConfig.base);
+  const infoOut = getApiDiskPath(targetDir, infoEndpoint, runtimeConfig.base);
 
   mkdirSync(dirname(versionOut), { recursive: true });
   mkdirSync(dirname(infoOut), { recursive: true });

@@ -249,5 +249,36 @@ test('cli update: marks oversized files and skipVerifyGlobs with skipVerify: tru
   assert.equal(htmlEntry.skipVerify, undefined, 'normal files should not have skipVerify: true');
 });
 
+test('cli update: --patch flag auto-increments base semver patch', () => {
+  const root = makeProject();
+  const res = runUpdate(root, ['--patch']);
+  assert.equal(res.status, 0, res.stderr);
+
+  const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
+  assert.match(version.version, /^1\.0\.1/);
+});
+
+test('cli update: --clean flag emits directory-style endpoints (index.json)', () => {
+  const root = makeProject();
+  const res = runUpdate(root, ['--clean']);
+  assert.equal(res.status, 0, res.stderr);
+
+  assert.ok(existsSync(join(root, 'dist/api/update/version/index.json')), 'version/index.json exists');
+  assert.ok(existsSync(join(root, 'dist/api/update/info/index.json')), 'info/index.json exists');
+});
+
+test('canonicalizeConfig: strips plugins property so plugin class instances do not affect hashing', async () => {
+  const { canonicalizeConfig } = await import('../src/cli/core/manifest.js');
+  class MockPlugin {
+    constructor() { this.queue = { name: 'q' }; }
+  }
+
+  const config1 = { version: '1.0.0', plugins: [new MockPlugin()] };
+  const config2 = { version: '1.0.0' };
+
+  assert.deepEqual(canonicalizeConfig(config1), canonicalizeConfig(config2));
+});
+
+
 
 

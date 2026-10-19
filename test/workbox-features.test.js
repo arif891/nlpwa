@@ -313,3 +313,44 @@ test('stale-while-revalidate: onRevalidated callback fires after background reva
   assert.equal(await revalidatedData.response.clone().text(), 'version 1');
 });
 
+test('config schema: validateConfig accepts newly added route and top-level options without error', async () => {
+  const { validateConfig } = await import('../src/sw/config/schema.js');
+  const { DEFAULTS } = await import('../src/sw/config/defaults.js');
+  const validConfig = {
+    ...DEFAULTS,
+    version: '1.0.0',
+    minVersion: '1.0.0',
+    minSupportedVersion: '1.0.0',
+    cacheKeyWillBeUsed: () => {},
+    onPush: () => {},
+    onNotificationClick: () => {},
+    routes: [
+      {
+        match: '/api/**',
+        strategy: 'network-first',
+        fallbackOn5xx: true,
+        cacheKeyWillBeUsed: () => {},
+        onRevalidated: () => {},
+      },
+    ],
+  };
+
+  const errors = validateConfig(validConfig);
+  assert.equal(errors.length, 0, `Expected 0 validation errors, got: ${errors.join(', ')}`);
+});
+
+test('matchWithAliases: skips relative path aliases for cross-origin requests', async () => {
+  setupEnv(() => new Response('ok'));
+  const caches = globalThis.caches;
+  const runtime = await caches.open('runtime');
+
+  // Cache a cross-origin URL
+  const cdnUrl = 'https://cdn.example.org/lib/app.js';
+  await runtime.put(cdnUrl, new Response('cdn script'));
+
+  // A request to https://cdn.example.org/lib/ should NOT match /lib/index.html on app origin
+  const matched = await matchWithAliases(runtime, req('https://cdn.example.org/lib/'));
+  assert.equal(matched, undefined);
+});
+
+

@@ -27,12 +27,23 @@ export async function matchWithAliases(cache, request, matchOptions, base, confi
   }
   if (hit) return hit;
 
-  let pathname = null;
+  let parsedUrl = null;
   try {
-    pathname = new URL(cleanedUrl, 'https://example.com').pathname;
+    const fallbackBase = typeof self !== 'undefined' && self.location ? self.location.href : 'https://example.com';
+    parsedUrl = new URL(cleanedUrl, fallbackBase);
   } catch {}
 
-  if (!pathname) return undefined;
+  if (!parsedUrl) return undefined;
+
+  const isSameOrigin = typeof self !== 'undefined' && self.location
+    ? parsedUrl.origin === self.location.origin
+    : true;
+
+  if (!isSameOrigin) {
+    return undefined;
+  }
+
+  const pathname = parsedUrl.pathname;
 
   const directoryIndex = config?.directoryIndex ?? 'index.html';
   const cleanIndex = directoryIndex.startsWith('/') ? directoryIndex.slice(1) : directoryIndex;

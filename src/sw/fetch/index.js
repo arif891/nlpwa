@@ -20,11 +20,20 @@ import { initClientPins, pinClient, getClientPinnedCache, getActiveName, getActi
 export function handleFetch(event) {
   const { request } = event;
 
-  // Only intercept GET requests
-  if (request.method !== 'GET') return;
+  // Intercept GET requests, or non-GET mutations when plugins are configured
+  if (request.method !== 'GET') {
+    const config = getConfig();
+    const hasGlobalPlugins = Array.isArray(config?.plugins) && config.plugins.length > 0;
+    const hasRoutePlugins = Array.isArray(config?.routes) && config.routes.some((r) => Array.isArray(r?.plugins) && r.plugins.length > 0);
+    if (!hasGlobalPlugins && !hasRoutePlugins) {
+      return;
+    }
+  }
 
   // Only intercept http(s) requests
   if (!request.url.startsWith('http')) return;
+
+  event._nlpwaIntercepted = true;
 
   event.respondWith(
     (async () => {

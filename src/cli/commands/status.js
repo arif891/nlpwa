@@ -21,8 +21,8 @@ export async function cmdStatus(args) {
   }
 
   const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(activeConfig ?? {});
-  const versionOut = getApiDiskPath(targetDir, versionEndpoint);
-  const infoOut = getApiDiskPath(targetDir, infoEndpoint);
+  const versionOut = getApiDiskPath(targetDir, versionEndpoint, activeConfig?.base);
+  const infoOut = getApiDiskPath(targetDir, infoEndpoint, activeConfig?.base);
 
   let versionData = null;
   let infoData = null;

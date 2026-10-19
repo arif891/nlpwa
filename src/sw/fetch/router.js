@@ -177,6 +177,14 @@ export function resolveStrategy(request) {
     }
   }
 
+  // Non-GET requests (mutations) are routed through network-only with plugin hooks
+  if (request.method !== 'GET') {
+    const matchedRoute = matchRoute(requestUrl, routes, config);
+    const handler = (req, event) => networkOnly(req, event, matchedRoute || {});
+    handler.strategy = 'network-only';
+    return handler;
+  }
+
   // Built-in non-overridable rule: Precached / manifest files are ALWAYS served
   // from the active offline cache (cache-first). This guarantees that online
   // requests never bypass the staged cache or produce mixed old/new files.

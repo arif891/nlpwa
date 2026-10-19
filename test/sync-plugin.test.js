@@ -309,4 +309,113 @@ test('sync queue: authRequired items are excluded from default replayAll and can
   assert.equal(await queue.size(), 0);
 });
 
+test('sync client: destroy cleans up message event listener on navigator.serviceWorker', () => {
+  const listeners = [];
+  const fakeSW = {
+    addEventListener: (t, fn) => listeners.push(fn),
+    removeEventListener: (t, fn) => {
+      const idx = listeners.indexOf(fn);
+      if (idx !== -1) listeners.splice(idx, 1);
+    },
+  };
+
+  const origSW = globalThis.navigator?.serviceWorker;
+  if (!globalThis.navigator) globalThis.navigator = {};
+  globalThis.navigator.serviceWorker = fakeSW;
+
+  const client = new SyncClient();
+  assert.equal(listeners.length, 1);
+
+  client.destroy();
+  assert.equal(listeners.length, 0);
+
+  if (origSW) {
+    globalThis.navigator.serviceWorker = origSW;
+  } else {
+    delete globalThis.navigator.serviceWorker;
+  }
+});
+
+test('sync plugin: handleFetch routes non-GET mutation to networkOnly and invokes fetchDidFail on network error', async () => {
+  const { handleFetch } = await import('../src/sw/fetch/index.js');
+  const syncPlugin = new BackgroundSyncPlugin({ queueName: 'form-posts' });
+
+  // Init config with a plugin on a route matching POST
+  setupEnv(
+    () => {
+      throw new Error('Network offline');
+    },
+    {
+      routes: [
+        {
+          match: '/api/submit',
+          plugins: [syncPlugin],
+        },
+      ],
+    }
+  );
+
+  let respondedWithPromise = null;
+  const postReq = new Request('https://example.com/api/submit', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'test' }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const event = {
+    request: postReq,
+    respondWith(p) {
+      respondedWithPromise = p;
+    },
+    waitUntil(p) {},
+  };
+
+  handleFetch(event);
+  assert.ok(respondedWithPromise, 'handleFetch must not return early on POST when plugins/routes match');
+
+  const response = await respondedWithPromise;
+  assert.equal(response.status, 503);
+  assert.equal(await syncPlugin.queue.size(), 1, 'Failed POST request must be enqueued');
+});
+
+test('sync plugin: standalone fetch listener catches failed mutations when not handled by NLPWA', async () => {
+  const listeners = {};
+  globalThis.self = {
+    location: { origin: 'https://example.com' },
+    addEventListener(type, fn) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(fn);
+    },
+  };
+
+  globalThis.fetch = async () => {
+    throw new Error('Failed to fetch (offline)');
+  };
+
+  const plugin = new BackgroundSyncPlugin({ queueName: 'standalone-q' });
+  assert.ok(listeners['fetch'] && listeners['fetch'].length > 0, 'Standalone fetch listener registered');
+
+  const fetchHandler = listeners['fetch'][0];
+  let respondedWithPromise = null;
+  const postReq = new Request('https://example.com/api/orders', {
+    method: 'POST',
+    body: JSON.stringify({ orderId: 123 }),
+  });
+
+  const fakeEv = {
+    request: postReq,
+    respondWith(p) {
+      respondedWithPromise = p;
+    },
+    waitUntil(p) {},
+  };
+
+  fetchHandler(fakeEv);
+  assert.ok(respondedWithPromise, 'Standalone handler must call respondWith');
+
+  await assert.rejects(respondedWithPromise, /Failed to fetch/);
+  assert.equal(await plugin.queue.size(), 1, 'Mutation queued in standalone mode');
+});
+
+
 

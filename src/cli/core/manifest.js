@@ -14,7 +14,7 @@ export function hashFile(filePath) {
   return createHash('sha256').update(content).digest('hex').slice(0, 32);
 }
 
-function canonicalizeConfig(obj, depth = 0) {
+export function canonicalizeConfig(obj, depth = 0) {
   if (obj === null || typeof obj !== 'object') {
     if (typeof obj === 'function') return obj.toString();
     return obj;
@@ -27,7 +27,7 @@ function canonicalizeConfig(obj, depth = 0) {
   }
   const sorted = {};
   const keys = Object.keys(obj)
-    .filter((k) => depth > 0 || k !== 'version')
+    .filter((k) => (depth > 0 || k !== 'version') && k !== 'plugins')
     .sort();
   for (const k of keys) {
     sorted[k] = canonicalizeConfig(obj[k], depth + 1);
@@ -89,10 +89,17 @@ export function deriveAppVersion(rawConfig = {}, files = [], explicitVersion) {
  *
  * @param {string} baseDir
  * @param {string} endpoint
+ * @param {string} [base]
  * @returns {string}
  */
-export function getApiDiskPath(baseDir, endpoint) {
+export function getApiDiskPath(baseDir, endpoint, base = '') {
   let clean = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+  if (base) {
+    const cleanBase = base.replace(/^\/+|\/+$/g, '');
+    if (cleanBase && (clean === cleanBase || clean.startsWith(cleanBase + '/'))) {
+      clean = clean.slice(cleanBase.length).replace(/^\/+/, '');
+    }
+  }
   if (clean.endsWith('.json')) {
     return resolve(baseDir, clean);
   }

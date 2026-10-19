@@ -123,6 +123,27 @@ export class BackgroundSyncPlugin {
           if (event.waitUntil) event.waitUntil(promise);
         }
       });
+
+      // 3. Listen for fetch events in standalone mode (importScripts('/plugins/sync.sw.js'))
+      self.addEventListener('fetch', (event) => {
+        const { request } = event;
+        if (!request || !request.url || !request.url.startsWith('http')) return;
+        if (!this.allMethods && !this.methods.has(request.method)) return;
+
+        // Skip if handleFetch in NLPWA core already intercepted this request
+        if (event._nlpwaIntercepted) return;
+
+        event.respondWith(
+          (async () => {
+            try {
+              return await fetch(request.clone());
+            } catch (err) {
+              await this.fetchDidFail({ request, originalRequest: request, error: err, event });
+              throw err;
+            }
+          })()
+        );
+      });
     }
   }
 

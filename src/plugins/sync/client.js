@@ -9,15 +9,16 @@ export class SyncClient {
   constructor(defaultQueue = 'default') {
     this.defaultQueue = defaultQueue;
     this._listeners = new Map();
+    this._messageHandler = null;
     this._initListeners();
   }
 
   _initListeners() {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
       return;
     }
 
-    navigator.serviceWorker.addEventListener('message', (event) => {
+    this._messageHandler = (event) => {
       const type = event.data?.type;
       if (!type) return;
 
@@ -28,7 +29,17 @@ export class SyncClient {
       } else if (type === 'NLPWA_SYNC_ITEM_FAILED') {
         this._emit('failed', event.data);
       }
-    });
+    };
+
+    navigator.serviceWorker.addEventListener('message', this._messageHandler);
+  }
+
+  destroy() {
+    if (this._messageHandler && typeof navigator !== 'undefined' && navigator.serviceWorker) {
+      navigator.serviceWorker.removeEventListener('message', this._messageHandler);
+      this._messageHandler = null;
+    }
+    this._listeners.clear();
   }
 
   /**

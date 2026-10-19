@@ -93,7 +93,8 @@ export function onNoUpdate(callback) {
  */
 export function onUpdateFailed(callback) {
   return onSWMessage(MESSAGE_TYPES.UPDATE_FAILED, (data) => {
-    safeDispatchEvent('nlpwa:update-failed', {
+    const payload = {
+      errorCode: data.errorCode,
       version: data.version,
       failed: data.failed ?? [],
       failedDetails: data.failedDetails ?? {},
@@ -102,19 +103,13 @@ export function onUpdateFailed(callback) {
       nextRetryAt: data.nextRetryAt,
       persistent: Boolean(data.persistent),
       hasHashMismatch: Boolean(data.hasHashMismatch),
-    });
+      quotaExceeded: Boolean(data.quotaExceeded),
+    };
+
+    safeDispatchEvent('nlpwa:update-failed', payload);
 
     if (typeof callback === 'function') {
-      callback({
-        version: data.version,
-        failed: data.failed ?? [],
-        failedDetails: data.failedDetails ?? {},
-        error: data.error,
-        retryCount: data.retryCount,
-        nextRetryAt: data.nextRetryAt,
-        persistent: Boolean(data.persistent),
-        hasHashMismatch: Boolean(data.hasHashMismatch),
-      });
+      callback(payload);
     }
   });
 }

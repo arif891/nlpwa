@@ -65,12 +65,24 @@ async function precacheWithoutManifest() {
   try {
     const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
     if (configRes.ok) {
-      const cloned1 = configRes.clone();
-      const cloned2 = configPath !== rawConfigPath ? configRes.clone() : null;
-      const data = await configRes.json();
-      await offlineCache.put(configPath, cloned1);
-      if (cloned2) {
-        await offlineCache.put(rawConfigPath, cloned2);
+      const text = await configRes.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Invalid JSON in ${configPath} (HTML or non-JSON returned)`);
+      }
+      if (!data || typeof data !== 'object') {
+        throw new Error(`Expected JSON object in ${configPath}`);
+      }
+      const responseToStore = new Response(text, {
+        status: configRes.status,
+        statusText: configRes.statusText,
+        headers: configRes.headers,
+      });
+      await offlineCache.put(configPath, responseToStore.clone());
+      if (configPath !== rawConfigPath) {
+        await offlineCache.put(rawConfigPath, responseToStore);
       }
       updateActiveConfig(data);
     } else {
@@ -88,10 +100,19 @@ async function precacheWithoutManifest() {
     precache.map(async (url) => {
       const resolved = resolvePathWithBase(url, config.base);
       const req = new Request(new URL(resolved, self.location.href), { cache: 'reload' });
-      await offlineCache.add(req);
+      const res = await fetch(req);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const pathname = new URL(res.url || resolved, self.location.href).pathname;
+      const isHtmlExpected = pathname.endsWith('.html') || pathname.endsWith('/') || !pathname.includes('.');
+      const contentType = res.headers.get('content-type') || '';
+      if (!isHtmlExpected && contentType.includes('text/html')) {
+        throw new Error(`Received HTML content-type for non-HTML asset: ${url} (possible soft-404)`);
+      }
+      await offlineCache.put(req, res.clone());
       if (resolved !== url) {
-        const match = await offlineCache.match(req);
-        if (match) await offlineCache.put(url, match.clone());
+        await offlineCache.put(url, res);
       }
     })
   );

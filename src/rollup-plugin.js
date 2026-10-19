@@ -158,8 +158,8 @@ export function nlpwaPlugin(options = {}) {
       // 4. Emit update API outputs
       const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(runtimeConfig);
 
-      const versionOut = getApiDiskPath(distDir, versionEndpoint);
-      const infoOut = getApiDiskPath(distDir, infoEndpoint);
+      const versionOut = getApiDiskPath(distDir, versionEndpoint, runtimeConfig.base);
+      const infoOut = getApiDiskPath(distDir, infoEndpoint, runtimeConfig.base);
 
       mkdirSync(dirname(versionOut), { recursive: true });
       mkdirSync(dirname(infoOut), { recursive: true });

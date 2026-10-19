@@ -53,12 +53,28 @@ export async function withStore(mode, callback) {
     const tx = db.transaction(STORE_NAME, mode);
     const store = tx.objectStore(STORE_NAME);
 
+    let result;
+    let callbackDone = false;
+    let txCompleted = false;
+
     tx.onerror = () => reject(tx.error || new Error('Transaction error'));
     tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+    tx.oncomplete = () => {
+      txCompleted = true;
+      if (callbackDone) {
+        resolve(result);
+      }
+    };
 
     try {
       Promise.resolve(callback(store, tx))
-        .then(resolve)
+        .then((r) => {
+          result = r;
+          callbackDone = true;
+          if (txCompleted) {
+            resolve(result);
+          }
+        })
         .catch(reject);
     } catch (err) {
       reject(err);

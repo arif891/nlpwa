@@ -111,6 +111,7 @@ Request → network (within networkTimeoutMs) → store in runtime → return
 **Route example:**
 ```js
 { match: '/pages/**', strategy: 'network-first' },
+{ match: '/articles/**', strategy: 'network-first', fallbackOn5xx: true }, // Serves cached copy if server returns 500/502/503
 { match: '**',        strategy: 'network-first' },  // catch-all
 ```
 

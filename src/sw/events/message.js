@@ -8,6 +8,7 @@ import {
   getStaged,
   pinClient,
   getClientPinnedCache,
+  getClientPinnedVersion,
 } from '../cache/store.js';
 
 /**
@@ -78,9 +79,11 @@ export function handleMessage(config) {
         event.waitUntil((async () => {
           const clientId = event.source?.id;
           if (clientId) {
+            const active = await getActive();
             const cacheName = event.data?.cache || (await getActiveName(config.caches.offline));
-            pinClient(clientId, cacheName);
-            reply(MESSAGE_TYPES.CLIENT_PINNED, { clientId, cache: cacheName });
+            const version = event.data?.version || active?.version || null;
+            await pinClient(clientId, cacheName, version);
+            reply(MESSAGE_TYPES.CLIENT_PINNED, { clientId, cache: cacheName, version });
           }
         })());
         break;
@@ -92,10 +95,20 @@ export function handleMessage(config) {
             const staged = await getStaged();
             const clientId = event.source?.id;
             const pinnedCache = clientId ? getClientPinnedCache(clientId) : null;
-            let pinnedVersion = null;
-            if (pinnedCache) {
-              const match = pinnedCache.match(/@([^-]+)/);
-              pinnedVersion = match ? match[1] : (active?.version || null);
+            let pinnedVersion = clientId ? getClientPinnedVersion(clientId) : null;
+            if (!pinnedVersion && pinnedCache) {
+              const atIndex = pinnedCache.indexOf('@');
+              if (atIndex !== -1) {
+                const afterAt = pinnedCache.slice(atIndex + 1);
+                const lastHyphen = afterAt.lastIndexOf('-');
+                if (lastHyphen !== -1 && afterAt.length - lastHyphen === 5) {
+                  pinnedVersion = afterAt.slice(0, lastHyphen);
+                } else {
+                  pinnedVersion = afterAt;
+                }
+              } else {
+                pinnedVersion = active?.version || null;
+              }
             }
             reply(MESSAGE_TYPES.VERSION_INFO, {
               activeVersion: active?.version || null,

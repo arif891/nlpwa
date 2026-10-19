@@ -24,6 +24,7 @@ export async function isAlreadyStaged({
     if (allowOversizedUnverified || verify === 'warn') {
       return true;
     }
+    return false;
   }
   return hashMatches(await sha256Hex(await hit.arrayBuffer()), expected);
 }

@@ -64,7 +64,7 @@ async function _doUpdateCheck({ force = false } = {}) {
   try {
     const versionRes = await fetchServerVersion();
     if (versionRes?.notModified) {
-      serverVersion = active?.version;
+      serverVersion = versionRes.version ?? active?.version;
     } else {
       serverVersion = versionRes?.version;
     }
@@ -134,7 +134,8 @@ async function _doUpdateCheck({ force = false } = {}) {
   // Narrow lock: acquire only around staging cache writes and commit
   setUpdateStatus('staging');
   return withLock(async () => {
-    const result = await stageUpdate(serverManifest, { activeSnapshot: active, forceRefetch: swVersionChanged });
+    const currentActive = await loadCachedSnapshot();
+    const result = await stageUpdate(serverManifest, { activeSnapshot: currentActive, forceRefetch: swVersionChanged });
 
     if (result.status === 'incomplete') {
       setUpdateStatus('idle');

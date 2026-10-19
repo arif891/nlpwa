@@ -10,18 +10,26 @@ import { matchWithAliases } from './aliases.js';
  * @param {string|null} [clientId]
  * @returns {Promise<Response|undefined>}
  */
+async function cacheExists(name) {
+  if (typeof caches === 'undefined' || !name) return false;
+  if (typeof caches.has === 'function') {
+    return caches.has(name);
+  }
+  if (typeof caches.keys === 'function') {
+    const keys = await caches.keys();
+    return keys.includes(name);
+  }
+  return true;
+}
+
 export async function getFromOffline(request, matchOptions, clientId = null) {
   const config = getConfig();
   const { caches: cacheNames, retainPreviousVersionCache, base } = config;
 
   let cache;
   const pinnedName = clientId ? getClientPinnedCache(clientId) : null;
-  if (pinnedName) {
-    try {
-      cache = await caches.open(pinnedName);
-    } catch {
-      cache = await openActive(cacheNames.offline);
-    }
+  if (pinnedName && (await cacheExists(pinnedName))) {
+    cache = await caches.open(pinnedName);
   } else {
     cache = await openActive(cacheNames.offline);
   }
@@ -30,7 +38,7 @@ export async function getFromOffline(request, matchOptions, clientId = null) {
 
   if (!hit && retainPreviousVersionCache) {
     const active = await getActive();
-    if (active?.previousCache && active.previousCache !== pinnedName) {
+    if (active?.previousCache && active.previousCache !== pinnedName && (await cacheExists(active.previousCache))) {
       try {
         const prev = await caches.open(active.previousCache);
         hit = await matchWithAliases(prev, request, matchOptions, base, config);

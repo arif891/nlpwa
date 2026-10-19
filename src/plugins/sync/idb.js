@@ -88,11 +88,15 @@ export async function serializeRequest(request, metadata = {}) {
     }
   }
 
+  const hasIdempotency = headers.some(([k]) => k.toLowerCase() === 'idempotency-key' || k.toLowerCase() === 'x-idempotency-key');
+  const idempotencyKey = metadata.idempotencyKey || (hasIdempotency ? undefined : (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `nlpwa-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`));
+
   return {
     url: request.url,
     method: request.method,
     headers,
     body,
+    idempotencyKey,
     timestamp: Date.now(),
     retryCount: 0,
     ...metadata,
@@ -107,6 +111,9 @@ export async function serializeRequest(request, metadata = {}) {
  */
 export function deserializeRequest(record) {
   const headers = new Headers(record.headers || []);
+  if (record.idempotencyKey && !headers.has('idempotency-key') && !headers.has('x-idempotency-key')) {
+    headers.set('X-Idempotency-Key', record.idempotencyKey);
+  }
   const init = {
     method: record.method || 'POST',
     headers,

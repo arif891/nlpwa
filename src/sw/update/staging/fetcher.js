@@ -31,6 +31,9 @@ export async function fetchVerified({
         );
         return response;
       }
+      throw new Error(
+        `File size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds maxVerifyBytes threshold (${(maxVerifyBytes / (1024 * 1024)).toFixed(1)} MB) in strict mode. Set allowOversizedUnverified: true or increase maxVerifyBytes.`
+      );
     }
     const actual = await sha256Hex(await response.clone().arrayBuffer());
     if (!hashMatches(actual, expected)) {

@@ -2,6 +2,7 @@ import { logger } from '../logger.js';
 import { loadConfigFromCache } from '../config/index.js';
 import { sweepOrphanCaches } from '../update/commit.js';
 import {
+  getActive,
   getActiveName,
   initClientPins,
   pinClient,
@@ -39,10 +40,11 @@ export function handleActivate(config) {
         if (self.clients && typeof self.clients.matchAll === 'function') {
           try {
             const activeCache = await getActiveName(config.caches.offline);
+            const activeSnapshot = await getActive();
             const allClients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
             for (const client of allClients) {
               if (!getClientPinnedCache(client.id)) {
-                pinClient(client.id, activeCache);
+                pinClient(client.id, activeCache, activeSnapshot?.version || null);
               }
             }
             await pruneClientPins();

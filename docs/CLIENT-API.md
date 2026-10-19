@@ -252,14 +252,32 @@ document.addEventListener('nlpwa:update-prompt', (e) => {
 
 In modern web applications with multiple open tabs and client-side routing, Service Worker updates can cause race conditions if unmanaged.
 
-### 1. Form-Edit Protection
+### 1. Form-Edit Protection & Dirty Fields
 
-If `autoReload: true` or `reloadOnUpdateApplied: true` is configured, NLPWA checks `document.activeElement` before reloading. If the user is actively typing in:
-- `<input>` (text, number, email, password, etc.)
-- `<textarea>`
-- Any element with `contenteditable="true"` or `isContentEditable`
+If `autoReload: true` or `reloadOnUpdateApplied: true` is configured, NLPWA guards against discarding unsaved user data:
 
-NLPWA automatically **cancels the reload** and dispatches `onUpdatePrompt` / `nlpwa:update-prompt` instead. Unsaved user entries are never wiped without permission.
+1. **Active Focus Check**: If the user is currently focused on an `<input>`, `<textarea>`, `<select>`, or `contenteditable` element, the reload is immediately deferred.
+2. **Blurred Dirty Input Check**: Even if the user clicked away or blurred focus, NLPWA scans the DOM for any `<input>` or `<textarea>` where `value !== defaultValue`, or any container marked with `[data-dirty="true"]` or `[data-unsaved="true"]`.
+3. **Application State Integration (`shouldDeferReload`)**: For SPAs using React Hook Form, Formik, TanStack Form, or Vue/Pinia stores, pass a custom `shouldDeferReload` predicate:
+
+```javascript
+NLPWAClient.register('/sw.js', {
+  autoReload: true,
+  reloadOnUpdateApplied: true,
+
+  // Defer auto-reload if an in-memory form is dirty or a background job is running
+  shouldDeferReload: ({ version, reason }) => {
+    return formStore.isDirty || uploadQueue.hasPendingUploads();
+  },
+
+  // Called whenever an auto-reload is deferred to show a non-intrusive prompt
+  onUpdatePrompt: ({ version, reason }) => {
+    document.getElementById('update-notification').hidden = false;
+  },
+});
+```
+
+Unsaved user entries and form states are never wiped without permission.
 
 ### 2. Multi-Tab Coherence
 

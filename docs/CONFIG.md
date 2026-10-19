@@ -149,10 +149,23 @@ verifyHashes: 'warn'
 
 ### `maxVerifyBytes` · `number` · default: `20971520` (20 MB)
 
-Maximum file size in bytes to buffer and verify with in-memory SHA-256 hashing during staging. Files exceeding this threshold bypass in-memory verification (with a console warning) to protect devices from memory exhaustion. Set to `0` to disable the size limit.
+Maximum file size in bytes to buffer and verify with in-memory SHA-256 hashing during update staging. In strict verification mode (`verifyHashes: 'strict'`), files exceeding this threshold are rejected with an explicit error to prevent mobile out-of-memory browser crashes.
 
 ```js
 maxVerifyBytes: 20 * 1024 * 1024 // 20 MB
+```
+
+---
+
+### `allowOversizedUnverified` · `boolean` · default: `false`
+
+When set to `true`, files exceeding `maxVerifyBytes` bypass in-memory SHA-256 verification and are stored directly in `CacheStorage` with a console warning.
+
+> [!TIP]
+> **Best Practice**: Only core app shell files (HTML, JS, CSS, icons) should be placed in `precache`. Large media (videos, heavy 3D assets, AI weights) should be routed through runtime `cache-first` caching instead of `precache` to eliminate memory pressure entirely.
+
+```js
+allowOversizedUnverified: true
 ```
 
 ---
@@ -284,6 +297,18 @@ Can also be set globally in `config.js` to apply to all routes by default.
 ```js
 // Rethrow errors on API endpoints so client code can catch offline state
 { match: '/api/**', strategy: 'network-only', throwOnFailure: true }
+```
+
+#### `fallbackOn5xx` · `boolean` · default: `false`
+
+Controls whether server-side HTTP 5xx responses (500, 502, 503, 504) gracefully fall back to a previously cached copy instead of presenting an error page to the user.
+
+- `false` (default): HTTP 5xx responses are returned to the client as-is (standard Workbox behavior), ensuring developers and monitoring tools observe backend outages directly.
+- `true`: When a backend server errors or crashes with a 5xx status code, NLPWA checks the runtime or offline cache. If a cached copy exists, it serves the cached response instead of a broken page.
+
+```js
+// Gracefully serve cached articles if backend API or CMS gateway returns 502/503
+{ match: '/articles/**', strategy: 'network-first', fallbackOn5xx: true }
 ```
 
 #### `navigationFallback` / `offlineFallback` · `string` · default: `'/index.html'`

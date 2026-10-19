@@ -16,7 +16,7 @@
   "files": [
     "out",
     "bin",
-    "src/shared",
+    "src",
     "types",
     "test/helpers",
     "README.md",

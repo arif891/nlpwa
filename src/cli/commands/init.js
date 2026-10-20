@@ -62,8 +62,9 @@ export async function cmdInit(args) {
   let manifestCreated = false;
 
   if (shouldCreateManifest) {
-    const manifestPath = resolve(targetDir, 'manifest.webmanifest');
-    const iconsDir = resolve(targetDir, 'icons');
+    const manifestDir = resolve(targetDir, 'assets', 'other');
+    const manifestPath = resolve(manifestDir, 'manifest.webmanifest');
+    const iconsDir = resolve(targetDir, 'assets', 'image', 'icon');
 
     const appName = resolveAppName(targetDir, args.name);
     const shortName = args.shortName || appName.split(' ')[0] || 'App';
@@ -71,6 +72,7 @@ export async function cmdInit(args) {
     const bgColor = args.bgColor || '#0f172a';
 
     if (!existsSync(manifestPath)) {
+      mkdirSync(manifestDir, { recursive: true });
       const manifestObj = createManifest({
         name: appName,
         shortName,
@@ -78,7 +80,7 @@ export async function cmdInit(args) {
         bgColor,
       });
       writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2), 'utf8');
-      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} manifest.webmanifest (${appName})`);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} assets/other/manifest.webmanifest (${appName})`);
       manifestCreated = true;
     }
 
@@ -88,21 +90,21 @@ export async function cmdInit(args) {
     if (!existsSync(icon192Path)) {
       const png192 = createPngIcon(192, { themeColor, bgColor });
       writeFileSync(icon192Path, png192);
-      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} icons/icon-192.png`);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} assets/image/icon/icon-192.png`);
     }
 
     const icon512Path = resolve(iconsDir, 'icon-512.png');
     if (!existsSync(icon512Path)) {
       const png512 = createPngIcon(512, { themeColor, bgColor });
       writeFileSync(icon512Path, png512);
-      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} icons/icon-512.png`);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} assets/image/icon/icon-512.png`);
     }
 
     const iconSvgPath = resolve(iconsDir, 'icon.svg');
     if (!existsSync(iconSvgPath)) {
       const svg = createSvgIcon({ name: appName, shortName, themeColor, bgColor });
       writeFileSync(iconSvgPath, svg, 'utf8');
-      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} icons/icon.svg`);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} assets/image/icon/icon.svg`);
     }
   }
 
@@ -118,10 +120,10 @@ export async function cmdInit(args) {
 
     if (shouldCreateManifest) {
       precacheList.push(
-        "'/manifest.webmanifest'",
-        "'/icons/icon-192.png'",
-        "'/icons/icon-512.png'",
-        "'/icons/icon.svg'",
+        "'/assets/other/manifest.webmanifest'",
+        "'/assets/image/icon/icon-192.png'",
+        "'/assets/image/icon/icon-512.png'",
+        "'/assets/image/icon/icon.svg'",
       );
     }
 
@@ -157,9 +159,9 @@ ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
 
   ${c.bold}Next steps:${c.reset}
   1. Add PWA tags & client script to your HTML <head>:
-     ${c.cyan}<link rel="manifest" href="/manifest.webmanifest">
-     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
-     <link rel="apple-touch-icon" href="/icons/icon-192.png">
+     ${c.cyan}<link rel="manifest" href="/assets/other/manifest.webmanifest">
+     <link rel="icon" href="/assets/image/icon/icon.svg" type="image/svg+xml">
+     <link rel="apple-touch-icon" href="/assets/image/icon/icon-192.png">
      <meta name="theme-color" content="${args.themeColor || '#0ea5e9'}">
      <script src="/client.js"></script>${c.reset}
 

@@ -263,24 +263,25 @@ test('cli init: scaffolds nlpwa.config.js, manifest.webmanifest, icons, and copi
   assert.ok(!existsSync(join(root, 'config.json')), 'did not copy root config.json');
 
   // Verify web app manifest and icons
-  assert.ok(existsSync(join(root, 'manifest.webmanifest')), 'scaffolded manifest.webmanifest');
-  const manifest = JSON.parse(readFileSync(join(root, 'manifest.webmanifest'), 'utf8'));
+  assert.ok(existsSync(join(root, 'assets/other/manifest.webmanifest')), 'scaffolded manifest.webmanifest');
+  const manifest = JSON.parse(readFileSync(join(root, 'assets/other/manifest.webmanifest'), 'utf8'));
   assert.equal(manifest.name, 'Test PWA');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.icons.length, 3);
+  assert.equal(manifest.icons[0].src, '/assets/image/icon/icon-192.png');
 
-  assert.ok(existsSync(join(root, 'icons/icon-192.png')), 'generated icon-192.png');
-  assert.ok(existsSync(join(root, 'icons/icon-512.png')), 'generated icon-512.png');
-  assert.ok(existsSync(join(root, 'icons/icon.svg')), 'generated icon.svg');
+  assert.ok(existsSync(join(root, 'assets/image/icon/icon-192.png')), 'generated icon-192.png');
+  assert.ok(existsSync(join(root, 'assets/image/icon/icon-512.png')), 'generated icon-512.png');
+  assert.ok(existsSync(join(root, 'assets/image/icon/icon.svg')), 'generated icon.svg');
 
   // Verify PNG signature (first 8 bytes: 89 50 4E 47 0D 0A 1A 0A)
-  const pngBuf = readFileSync(join(root, 'icons/icon-192.png'));
+  const pngBuf = readFileSync(join(root, 'assets/image/icon/icon-192.png'));
   assert.deepEqual(Array.from(pngBuf.subarray(0, 8)), [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
 
   // Verify precache includes manifest and icons
   const configContent = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
-  assert.ok(configContent.includes("'/manifest.webmanifest'"));
-  assert.ok(configContent.includes("'/icons/icon-192.png'"));
+  assert.ok(configContent.includes("'/assets/other/manifest.webmanifest'"));
+  assert.ok(configContent.includes("'/assets/image/icon/icon-192.png'"));
 });
 
 test('cli init: --no-manifest flag skips manifest and icon generation', () => {
@@ -288,8 +289,8 @@ test('cli init: --no-manifest flag skips manifest and icon generation', () => {
   const res = spawnSync(process.execPath, [CLI, 'init', '--dir', root, '--no-manifest'], { encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);
   assert.ok(existsSync(join(root, 'nlpwa.config.js')));
-  assert.ok(!existsSync(join(root, 'manifest.webmanifest')));
-  assert.ok(!existsSync(join(root, 'icons')));
+  assert.ok(!existsSync(join(root, 'assets/other/manifest.webmanifest')));
+  assert.ok(!existsSync(join(root, 'assets/image/icon')));
 });
 
 test('cli update: --patch flag auto-increments base semver patch', () => {

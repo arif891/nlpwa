@@ -92,7 +92,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   let latestProgressPayload = null;
 
   const broadcastProgress = (payload) => {
-    if (activeSnapshot && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+    if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
       self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
         clients.forEach((c) => c.postMessage(payload));
       }).catch(() => {});
@@ -196,6 +196,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     clearTimeout(progressTimeout);
     progressTimeout = null;
   }
+  latestProgressPayload = null;
 
   const retryCount = failed.length ? staged.retryCount + 1 : 0;
 

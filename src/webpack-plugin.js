@@ -1,16 +1,8 @@
-import { writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
 import {
   findConfigFile,
   loadConfig,
-  syncSourceConfigVersion,
   incrementPatch,
-  deriveAppVersion,
-  hashFile,
-  collectTrackedFiles,
-  resolveUpdateEndpoints,
-  getApiDiskPath,
-  computeManifestHash,
+  emitBuildManifests,
 } from '../bin/build-utils.js';
 
 /**
@@ -34,97 +26,30 @@ export class NlpwaWebpackPlugin {
   apply(compiler) {
     const pluginName = 'NlpwaWebpackPlugin';
 
-    compiler.hooks.afterEmit.tapPromise(pluginName, async (compilation) => {
+    compiler.hooks.afterEmit.tapPromise(pluginName, async () => {
       if (this.options.generateManifest === false) return;
 
       const targetConfigPath = findConfigFile(this.options.config);
       const rawConfig = await loadConfig(targetConfigPath);
       const prevVersion = rawConfig.version ?? '1.0.0';
 
-      const distDir = resolve(
-        process.cwd(),
-        this.options.distDir || compiler.options.output?.path || './dist'
-      );
-      mkdirSync(distDir, { recursive: true });
-
-      // 1. Track offline cached files, expanding any precache globs
-      const { files, expandedPrecache } = collectTrackedFiles(rawConfig, distDir);
-
-      // 2. Resolve version
-      let appVersion;
+      let targetVersion;
       if (this.options.version) {
-        appVersion = this.options.version;
+        targetVersion = this.options.version;
       } else if (this.options.autoIncrement === true) {
-        appVersion = incrementPatch(prevVersion);
-      } else if (this.options.deriveVersion === false) {
-        appVersion = prevVersion;
+        targetVersion = incrementPatch(prevVersion);
       } else {
-        appVersion = deriveAppVersion(rawConfig, files);
+        targetVersion = prevVersion;
       }
 
-      // Sync version back to source config if requested
-      const shouldSyncSource =
-        this.options.syncSource === true ||
-        (this.options.autoIncrement === true && this.options.syncSource !== false);
-      if (shouldSyncSource && targetConfigPath && existsSync(targetConfigPath)) {
-        syncSourceConfigVersion(targetConfigPath, appVersion);
-      }
-
-      const runtimeConfig = {
-        ...rawConfig,
-        version: appVersion,
-        configPath: rawConfig.configPath || '/api/update/config.json',
-        updateAPI: rawConfig.updateAPI || {
-          version: '/api/update/version.json',
-          info: '/api/update/info.json',
-        },
-        precache: expandedPrecache,
-        routes: rawConfig.routes || [],
-      };
-
-      // 3. Emit config file in distDir
-      const cleanConfigPath = runtimeConfig.configPath.replace(/^\/+/, '');
-      const configJsonPath = resolve(distDir, cleanConfigPath);
-      mkdirSync(dirname(configJsonPath), { recursive: true });
-      const jsonIndent = this.options.pretty ? 2 : 0;
-      writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
-
-      // Update hash and size for config.json now that it is written
-      const configEntry = files.find((f) => f.path === runtimeConfig.configPath);
-      const configSize = statSync(configJsonPath).size;
-      if (configEntry) {
-        configEntry.hash = hashFile(configJsonPath);
-        configEntry.size = configSize;
-      } else {
-        files.unshift({
-          path: runtimeConfig.configPath,
-          hash: hashFile(configJsonPath),
-          size: configSize,
-        });
-      }
-
-      // 4. Emit update API outputs
-      const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(runtimeConfig);
-
-      const versionOut = getApiDiskPath(distDir, versionEndpoint, runtimeConfig.base);
-      const infoOut = getApiDiskPath(distDir, infoEndpoint, runtimeConfig.base);
-
-      mkdirSync(dirname(versionOut), { recursive: true });
-      mkdirSync(dirname(infoOut), { recursive: true });
-
-      const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
-      const versionPayload = {
-        version: appVersion,
-        ...(minVer ? { minVersion: minVer } : {}),
-      };
-      const infoPayload = {
-        version: appVersion,
-        ...(minVer ? { minVersion: minVer } : {}),
-        files,
-      };
-
-      writeFileSync(versionOut, JSON.stringify(versionPayload, null, jsonIndent), 'utf8');
-      writeFileSync(infoOut, JSON.stringify(infoPayload, null, jsonIndent), 'utf8');
+      const defaultDistDir = compiler.options.output?.path || './dist';
+      const { appVersion, cleanConfigPath, files } = emitBuildManifests({
+        options: this.options,
+        defaultDistDir,
+        rawConfig,
+        targetConfigPath,
+        targetVersion,
+      });
 
       console.log(`[NLPWA] Emitted ${cleanConfigPath} and update API (v${appVersion}, ${files.length} tracked offline files)`);
     });

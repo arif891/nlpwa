@@ -6,6 +6,8 @@
  */
 export function isSafePath(path) {
   if (typeof path !== 'string' || !path) return false;
+  // Reject ASCII control characters and null bytes
+  if (/[\x00-\x1f\x7f]/.test(path)) return false;
   // Reject absolute URLs with protocols (e.g. http:, https:, data:, javascript:)
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return false;
   // Reject backslashes anywhere in path (prevent Windows/URL parser normalization quirks)
@@ -20,6 +22,7 @@ export function isSafePath(path) {
   } catch {
     return false; // Malformed percent-encoding is rejected
   }
+  if (/[\x00-\x1f\x7f]/.test(decoded)) return false;
   if (decoded.includes('\\')) return false;
   // Reject path traversal with '..' segments (both literal and percent-encoded)
   if (/(?:^|\/)\.\.(?:\/|$)/.test(decoded) || /(?:^|\/)\.\.(?:\/|$)/.test(path)) return false;

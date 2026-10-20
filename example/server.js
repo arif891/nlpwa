@@ -4,7 +4,7 @@ import { resolve, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = resolve(fileURLToPath(import.meta.url), '..');
-const PORT = parseInt(process.env.PORT || '81', 10);
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',

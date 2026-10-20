@@ -48,6 +48,6 @@ export async function getActiveSnapshot(page, snapshotPath = '/_nlpwa/snapshot.j
  * Reset server version back to 1.0.0.
  */
 export async function resetServerVersion(request) {
-  const res = await request.post('http://localhost:81/api/reset-version');
+  const res = await request.post('/api/reset-version');
   return await res.json();
 }

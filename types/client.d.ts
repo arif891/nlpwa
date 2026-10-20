@@ -398,7 +398,9 @@ export interface NLPWAClientAPI {
   isInstallable: typeof isInstallable;
   onInstallable: typeof onInstallable;
   onAppInstalled: typeof onAppInstalled;
+  install: typeof promptInstall;
   promptInstall: typeof promptInstall;
+  checkUpdate: typeof requestUpdateCheck;
   isStoragePersistent: typeof isStoragePersistent;
   requestPersistentStorage: typeof requestPersistentStorage;
   setBadge: (count?: number | null) => Promise<boolean>;

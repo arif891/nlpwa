@@ -26,12 +26,12 @@ An interactive, production-ready demonstration of the **NLPWA** native-like Prog
 Start the local showcase server:
 
 ```bash
-# Run server (defaults to port 81, or PORT=3000 node example/server.js)
+# Run server (defaults to port 3000, or PORT=8080 node example/server.js)
 node example/server.js
 ```
 
 Then open your browser at:
-[http://localhost:81](http://localhost:81)
+[http://localhost:3000](http://localhost:3000)
 
 ---
 

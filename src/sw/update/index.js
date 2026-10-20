@@ -113,9 +113,9 @@ async function _doUpdateCheck({ force = false } = {}) {
     targetVersion: serverVersion,
   });
 
-  // A complete update is already staged and waiting for the next navigation.
+  // A complete update is already staged and waiting for the next navigation, and the server confirms it.
   if (staged?.complete && staged.swVersion === config.version
-      && (!serverVersion || serverVersion === staged.version)) {
+      && serverVersion && serverVersion === staged.version) {
     await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, staged: true });
     return { updated: true, version: staged.version, staged: true };
   }
@@ -158,6 +158,10 @@ async function _doUpdateCheck({ force = false } = {}) {
     serverManifest = await fetchServerInfo();
   } catch (err) {
     logger.warn('[NLPWA] Cannot reach manifest endpoint:', err.message);
+    if (staged?.complete && staged.swVersion === config.version) {
+      await broadcast({ type: MESSAGE_TYPES.UPDATE_READY, version: staged.version, staged: true });
+      return { updated: true, version: staged.version, staged: true };
+    }
     return { updated: false };
   }
 

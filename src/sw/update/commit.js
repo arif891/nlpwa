@@ -9,6 +9,7 @@ import {
 import { getSnapshotPath } from './manifest.js';
 import { setUpdateStatus, setCommitDeferred } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
+import { resolvePathWithBase } from '../../shared/url.js';
 
 /**
  * Make the staged update the live one. The switch itself is ONE write
@@ -47,8 +48,9 @@ export async function commitStaged(event) {
   // to determine retainPreviousVersionCache in a single atomic write.
   let retainPrevious = Boolean(config.retainPreviousVersionCache);
   try {
-    const configPath = config.configPath || '/api/update/config.json';
-    const stagedConfigRes = await cache.match(configPath);
+    const rawConfigPath = config.configPath || '/api/update/config.json';
+    const configPath = resolvePathWithBase(rawConfigPath, config.base);
+    const stagedConfigRes = (await cache.match(configPath)) || (configPath !== rawConfigPath ? await cache.match(rawConfigPath) : null);
     if (stagedConfigRes) {
       const stagedConfigJson = await stagedConfigRes.clone().json();
       if (typeof stagedConfigJson.retainPreviousVersionCache === 'boolean') {

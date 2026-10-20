@@ -242,6 +242,33 @@ export interface NLPWAConfig {
   cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
   /** Direct cacheKeyWillBeUsed hook shortcut */
   cacheKeyWillBeUsed?: (params: CacheKeyWillBeUsedParams) => Promise<Request | string> | Request | string;
+  /** Automatically clear app badge count when user clicks a notification (default: true) */
+  clearBadgeOnClick?: boolean;
+  /** Web Share Target configuration */
+  shareTarget?: ShareTargetConfig;
+  /** Web Share Target configuration alias */
+  share_target?: ShareTargetConfig;
+}
+
+export interface ShareTargetFileParam {
+  name: string;
+  accept?: string[];
+}
+
+export interface ShareTargetParams {
+  title?: string;
+  text?: string;
+  url?: string;
+  files?: ShareTargetFileParam[];
+}
+
+export interface ShareTargetConfig {
+  action: string;
+  method?: 'GET' | 'POST';
+  enctype?: 'application/x-www-form-urlencoded' | 'multipart/form-data';
+  params?: ShareTargetParams;
+  redirectUrl?: string;
+  maxFileBytes?: number;
 }
 
 declare const defaultConfig: NLPWAConfig;

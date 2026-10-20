@@ -6,11 +6,13 @@ export { getActiveSnapshotPaths, setActiveSnapshotPaths };
 let _lastVersionETag = null;
 let _lastVersionValue = null;
 let _lastMinVersion = null;
+let _lastVersionEndpoint = null;
 
 export function resetManifestMemo() {
   _lastVersionETag = null;
   _lastVersionValue = null;
   _lastMinVersion = null;
+  _lastVersionEndpoint = null;
 }
 
 /**
@@ -22,6 +24,13 @@ export async function fetchServerVersion() {
   const config = getConfig();
   const endpoints = getUpdateEndpoints();
   const versionEndpoint = endpoints.versionEndpoint;
+
+  if (_lastVersionEndpoint !== versionEndpoint) {
+    _lastVersionETag = null;
+    _lastVersionValue = null;
+    _lastMinVersion = null;
+    _lastVersionEndpoint = versionEndpoint;
+  }
 
   const baseTimeout = endpoints.timeoutMs ?? config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && baseTimeout > 0

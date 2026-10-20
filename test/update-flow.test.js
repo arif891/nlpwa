@@ -33,8 +33,10 @@ test('install: first install stages and goes live in one pass, then the first ch
   assert.equal((await getActive()).version, '1.0.0');
   assert.equal((await loadCachedSnapshot()).version, '1.0.0');
   assert.equal(server.fileCalls().length, 2, 'each file downloaded exactly once');
+  assert.equal(messages.filter((m) => m.type === 'STAGING_PROGRESS').length, 2, 'broadcasts progress during initial install');
 
   server.calls.length = 0;
+  messages.length = 0;
   const result = await checkForUpdate();
   assert.equal(result.updated, false);
   assert.deepEqual(server.fileCalls(), [], 'no second download on activate');

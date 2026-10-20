@@ -1,4 +1,4 @@
-import type { NLPWAConfig } from './config.d.ts';
+import type { NLPWAConfig } from './config';
 
 /**
  * Initialize the NLPWA Service Worker.
@@ -13,4 +13,4 @@ export type {
   FetchStrategy,
   UpdateAPIConfig,
   UpdateAPIConfigObject,
-} from './config.d.ts';
+} from './config';

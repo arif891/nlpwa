@@ -1,4 +1,4 @@
-import type { ReplayResult } from './sync.d.ts';
+import type { ReplayResult } from './sync';
 
 export interface PendingSyncItem {
   id: number;

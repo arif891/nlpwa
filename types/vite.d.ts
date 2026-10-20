@@ -1,5 +1,5 @@
 import type { Plugin } from 'rollup';
-import type { RollupPluginOptions } from './rollup.d.ts';
+import type { RollupPluginOptions } from './rollup';
 
 export type VitePluginOptions = RollupPluginOptions;
 

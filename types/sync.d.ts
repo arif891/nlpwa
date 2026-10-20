@@ -41,4 +41,4 @@ export class SyncQueue {
   }): Promise<ReplayResult>;
 }
 
-export { SyncClient, syncClient } from './sync-client.d.ts';
+export { SyncClient, syncClient } from './sync-client';

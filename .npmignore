@@ -1,7 +1,10 @@
 .git
 .gitignore
 .agents
-test
+test/*.test.js
+test-results
+playwright-report
+!test/helpers
 docs
 api
 example

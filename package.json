@@ -25,8 +25,15 @@
   "engines": {
     "node": ">=20"
   },
+  "main": "./out/client.js",
+  "module": "./out/client.esm.js",
   "types": "./types/index.d.ts",
   "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./out/client.esm.js",
+      "default": "./out/client.js"
+    },
     "./sw": {
       "types": "./types/sw.d.ts",
       "import": "./out/sw.module.js",
@@ -67,6 +74,7 @@
       "default": "./out/plugins/sync.client.js"
     },
     "./testing": {
+      "types": "./types/testing.d.ts",
       "default": "./test/helpers/fake-env.js"
     },
     "./package.json": "./package.json"

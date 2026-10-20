@@ -147,6 +147,12 @@ export interface NLPWAConfig {
   appVersion?: string;
   /** Minimum required version; clients below this version are prompted/forced to update */
   minVersion?: string;
+  /** Minimum supported version alias; clients below this version are prompted/forced to update */
+  minSupportedVersion?: string;
+  /** Custom Web Push notification event handler */
+  onPush?: (event: any) => Promise<void> | void;
+  /** Custom notification click event handler */
+  onNotificationClick?: (event: any) => Promise<void> | void;
   /** Path to runtime config.json file (default: '/config.json') */
   configPath?: string;
   /** Two-tier update check endpoints */

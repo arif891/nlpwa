@@ -22,6 +22,39 @@ async function broadcast(message) {
 }
 
 /**
+ * Enforce minimum supported version rules across Tier 1 (version.json) or Tier 2 (info.json).
+ * Unpins tabs below minVersion and broadcasts UPDATE_REQUIRED if needed.
+ *
+ * @param {Object|string|null} source - Version response or manifest object
+ * @param {Object} [options]
+ * @param {Object|null} [options.active] - Currently active snapshot
+ * @param {boolean} [options.alreadyEnforced] - Whether minVersion was already broadcasted in this check cycle
+ * @param {string|null} [options.targetVersion] - Target app version to include in broadcast
+ * @returns {Promise<boolean>} True if a minVersion was present and enforced
+ */
+async function enforceMinVersion(source, { active = null, alreadyEnforced = false, targetVersion = null } = {}) {
+  const minVersion = source?.minVersion || source?.minSupportedVersion || (typeof source === 'string' ? source : null);
+  if (!minVersion) return false;
+
+  await setMinVersion(minVersion);
+  const unpinned = await unpinClientsBelowVersion(minVersion);
+  const activeBelow = Boolean(active?.version && compare(active.version, minVersion) < 0);
+
+  if ((activeBelow || unpinned.length > 0) && !alreadyEnforced) {
+    logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${minVersion}). Update required.`);
+    await broadcast({
+      type: MESSAGE_TYPES.UPDATE_REQUIRED,
+      minVersion,
+      activeVersion: active?.version || null,
+      targetVersion: targetVersion || source?.version || null,
+      unpinnedClients: unpinned,
+    });
+  }
+
+  return true;
+}
+
+/**
  * Run a complete two-tier update check cycle:
  *
  *   1. Tier 1: lightweight version check (/api/update/version)
@@ -75,22 +108,10 @@ async function _doUpdateCheck({ force = false } = {}) {
   }
 
   // Check minimum supported version from Tier 1 if present
-  const tier1Min = versionRes?.minVersion || versionRes?.minSupportedVersion;
-  if (tier1Min) {
-    await setMinVersion(tier1Min);
-    const unpinned = await unpinClientsBelowVersion(tier1Min);
-    const activeBelow = Boolean(active?.version && compare(active.version, tier1Min) < 0);
-    if (activeBelow || unpinned.length > 0) {
-      logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${tier1Min}). Update required.`);
-      await broadcast({
-        type: MESSAGE_TYPES.UPDATE_REQUIRED,
-        minVersion: tier1Min,
-        activeVersion: active?.version || null,
-        targetVersion: serverVersion || null,
-        unpinnedClients: unpinned,
-      });
-    }
-  }
+  const tier1Enforced = await enforceMinVersion(versionRes, {
+    active,
+    targetVersion: serverVersion,
+  });
 
   // A complete update is already staged and waiting for the next navigation.
   if (staged?.complete && staged.swVersion === config.version
@@ -115,7 +136,9 @@ async function _doUpdateCheck({ force = false } = {}) {
         logger.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
         await clearStaged();
         if (staged.cache) {
-          await caches.delete(staged.cache).catch(() => {});
+          await caches.delete(staged.cache).catch((err) => {
+            logger.debug('[NLPWA] Failed to delete rolled-back staged cache:', err?.message || err);
+          });
         }
       });
     }
@@ -139,22 +162,11 @@ async function _doUpdateCheck({ force = false } = {}) {
   }
 
   // Check minimum supported version from Tier 2 manifest
-  const tier2Min = serverManifest?.minVersion || serverManifest?.minSupportedVersion || tier1Min;
-  if (tier2Min) {
-    await setMinVersion(tier2Min);
-    const unpinned = await unpinClientsBelowVersion(tier2Min);
-    const activeBelow = Boolean(active?.version && compare(active.version, tier2Min) < 0);
-    if ((activeBelow || unpinned.length > 0) && !tier1Min) {
-      logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${tier2Min}). Update required.`);
-      await broadcast({
-        type: MESSAGE_TYPES.UPDATE_REQUIRED,
-        minVersion: tier2Min,
-        activeVersion: active?.version || null,
-        targetVersion: serverManifest.version,
-        unpinnedClients: unpinned,
-      });
-    }
-  }
+  await enforceMinVersion(serverManifest, {
+    active,
+    alreadyEnforced: tier1Enforced,
+    targetVersion: serverManifest.version,
+  });
 
   if (isCurrent(serverManifest.version)) {
     await discardStaged();

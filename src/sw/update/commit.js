@@ -55,7 +55,9 @@ export async function commitStaged(event) {
         retainPrevious = stagedConfigJson.retainPreviousVersionCache;
       }
     }
-  } catch {}
+  } catch (err) {
+    logger.debug('[NLPWA] Failed to read retainPreviousVersionCache from staged config:', err?.message || err);
+  }
 
   await setActive({
     cache: staged.cache,
@@ -104,7 +106,9 @@ export async function commitStaged(event) {
       if (previousActive && typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
         self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
           clients.forEach((c) => c.postMessage({ type: MESSAGE_TYPES.UPDATE_APPLIED, version: staged.version }));
-        }).catch(() => {});
+        }).catch((err) => {
+          logger.debug('[NLPWA] Failed to broadcast UPDATE_APPLIED to clients:', err?.message || err);
+        });
       }
     } catch (err) {
       logger.warn('[NLPWA] Post-commit cleanup failed:', err?.message || err);

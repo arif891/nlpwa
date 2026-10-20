@@ -17,11 +17,11 @@ const cfg = () => JSON.stringify({
   version: '1',
   caches: { offline: 'offline', runtime: 'runtime' },
   routes: [{ match: '**', strategy: 'network-first' }],
-  precache: ['/config.json', '/app.js'],
+  precache: ['/api/update/config.json', '/app.js'],
 });
 
 test('minVersion: unpinClientsBelowVersion removes pins for versions older than minVersion', async () => {
-  const server = makeServer('1.0.0', { '/config.json': cfg(), '/app.js': 'app v1' });
+  const server = makeServer('1.0.0', { '/api/update/config.json': cfg(), '/app.js': 'app v1' });
   setupEnv(server.fetch);
 
   pinClient('tab-v1-old', 'offline@1.0.0-1', '1.0.0');
@@ -44,7 +44,7 @@ test('minVersion: unpinClientsBelowVersion removes pins for versions older than 
 
 test('minVersion: checkForUpdate broadcasts UPDATE_REQUIRED when active version < minVersion', async () => {
   // Initial install at 1.0.0
-  const server = makeServer('1.0.0', { '/config.json': cfg(), '/app.js': 'app v1' });
+  const server = makeServer('1.0.0', { '/api/update/config.json': cfg(), '/app.js': 'app v1' });
   setupEnv(server.fetch);
   await precacheFiles();
 
@@ -58,7 +58,7 @@ test('minVersion: checkForUpdate broadcasts UPDATE_REQUIRED when active version 
   };
 
   // Backend updates to 3.0.0 with minVersion 2.0.0 (breaking API changes)
-  server.set('3.0.0', { '/config.json': cfg(), '/app.js': 'app v3' }, '2.0.0');
+  server.set('3.0.0', { '/api/update/config.json': cfg(), '/app.js': 'app v3' }, '2.0.0');
 
   await checkForUpdate({ force: true });
 
@@ -69,7 +69,7 @@ test('minVersion: checkForUpdate broadcasts UPDATE_REQUIRED when active version 
 });
 
 test('minVersion: GET_VERSION reports updateRequired: true when client is below minVersion', async () => {
-  const server = makeServer('1.0.0', { '/config.json': cfg(), '/app.js': 'app v1' });
+  const server = makeServer('1.0.0', { '/api/update/config.json': cfg(), '/app.js': 'app v1' });
   setupEnv(server.fetch);
   await precacheFiles();
 

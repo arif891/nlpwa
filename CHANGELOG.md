@@ -2,6 +2,24 @@
 
 All notable changes to `nlpwa` will be documented in this file.
 
+## [0.2.1] - 2026-10-20
+
+### Bug Fixes
+
+#### Precache Without Manifest Fallback in Hashed Config Mode
+- **Fixed Precache Fallback**: Resolved an issue where `precacheWithoutManifest` was being incorrectly applied when the project used `hashAssets: true` (or implied by `hashSource: true`) but had not yet run `nlpwa update`.
+- **Context**: In hashed mode, `config.serverManifestPath` points to a file like `/_info/manifest.json`. When the client's `nlpwa` checks for an update (`checkForUpdate`), it calls `loadCachedSnapshot()`. If no update is active, `loadCachedSnapshot()` fails (returning `undefined`), and the logic falls back to the app shell precache.
+- **The Bug**:
+  - In hashed mode, `base === name` (e.g., `'offline' === 'offline'`) is true.
+  - However, the code was checking `config.cacheConfig.serverManifestPath && base !== name`. Since `config.cacheConfig.serverManifestPath` exists (pointing to `/_info/manifest.json`), the `else` block (the fallback precache) was **skipped**.
+  - This meant that a first-time user in hashed mode, or a user who hadn't run `nlpwa update` yet, would get an empty app shell because the fallback was blocked by the presence of the manifest path configuration.
+- **The Fix**:
+  - Added a check for `config.hashAssets` (or `config.hashSource`) to determine if the unversioned `offline` cache should be preserved.
+  - The logic now correctly falls back to `precacheWithoutManifest` even in hashed mode, as long as the unversioned `offline` cache represents the original app shell.
+  - The check `base !== name` is only relevant for non-hashed mode where the unversioned cache is a temporary migration artifact.
+- **Extracted `enforceMinVersion` Helper**: Extracted duplicated minimum supported version enforcement between Tier 1 (`/api/update/version`) and Tier 2 (`/api/update/info`) checks in `src/sw/update/index.js`, eliminating duplicate broadcast guards and ensuring unified client unpinning and notification.
+- **Improved Failure Observability**: Replaced silent error swallowing in `src/sw/update/commit.js` and `src/sw/update/index.js` (staged config parsing, client post-commit messaging, rolled-back staged cache deletion) with debug-level logging via `logger.debug`.
+
 ## [Unreleased] - 2026-10-19
 
 ### Modular Architecture Restructuring & File Decomposition

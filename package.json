@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/arif891/nlpwa.git"
+    "url": "git+https://github.com/arif891/nlpwa.git"
   },
   "homepage": "https://github.com/arif891/nlpwa#readme",
   "bugs": {
@@ -80,7 +80,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "nlpwa": "./bin/nlpwa.js"
+    "nlpwa": "bin/nlpwa.js"
   },
   "scripts": {
     "build": "rollup -c --environment PROD",

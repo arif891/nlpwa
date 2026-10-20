@@ -1,6 +1,6 @@
 {
   "name": "nlpwa",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Native-like PWA framework with install-time caching and OTA hash-based delta updates",
   "type": "module",
   "author": "Arif",

@@ -16,7 +16,9 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 - **Hash-verified OTA deltas** — Only modified files are downloaded; every asset is verified against SHA-256 hashes to prevent corruption or captive portal caching.
 - **5 configurable fetch strategies** — `cache-first`, `network-first`, `stale-while-revalidate`, `network-only`, and `cache-only` with glob route pattern matching.
 - **Background Sync & offline mutation queue** — Queue offline `POST`/`PUT`/`DELETE` mutations in IndexedDB with automatic replay, dead-letter storage, and session redirect protection.
-- **Form-edit protection & cross-tab coordination** — Background reloads are deferred while users are actively typing in inputs or textareas.
+- **Native PWA installation & persistent storage** — Automatic `beforeinstallprompt` capture with promise-based `.install()`, plus persistent storage protection against browser cache eviction.
+- **Unified reactive state store** — Synchronize connectivity, update staging status, installability, and OS badges across UI frameworks via `nlpwa.getState()` and `nlpwa.subscribe()`.
+- **OS Badging API & Web Share Target** — Set and clear native app icon badges (with silent fallback and automatic push clearance), and receive shared files and links directly from the OS Share sheet.
 - **Zero runtime dependencies** — Pre-bundled standalone engine (`sw.js`), runtime SDK (`client.js`), and starter configuration.
 
 ---
@@ -39,6 +41,13 @@ your-app/
 ├── sw.js            ← Service Worker engine (pre-built, drop-in)
 ├── client.js        ← Client runtime SDK (pre-built, drop-in)
 ├── nlpwa.config.js  ← Project configuration (app version, precache list, route strategies)
+├── assets/
+│   ├── other/
+│   │   └── manifest.webmanifest ← W3C Web App Manifest (standalone, shortcuts, launch handler)
+│   └── image/icon/
+│       ├── icon-192.png         ← 192x192 PNG icon
+│       ├── icon-512.png         ← 512x512 PNG icon
+│       └── icon.svg             ← Maskable vector icon
 └── index.html
 ```
 
@@ -60,9 +69,11 @@ export default {
   precache: [
     '/',
     '/index.html',
-    '/app.js',
-    '/styles.css',
-    '/icon-192.png',
+    '/client.js',
+    '/assets/other/manifest.webmanifest',
+    '/assets/image/icon/icon-192.png',
+    '/assets/image/icon/icon-512.png',
+    '/assets/image/icon/icon.svg',
   ],
 
   // Per-route fetch strategies (evaluated top-to-bottom)
@@ -79,27 +90,45 @@ export default {
 ### 3. Register from Your HTML
 
 ```html
-<!-- In index.html, before the closing </body> -->
-<script src="/client.js"></script>
-<script>
-  NLPWAClient.register('/sw.js', {
-    onUpdateReady: ({ version }) => {
-      document.getElementById('update-banner').hidden = false;
-    },
-    onUpdateRequired: ({ minVersion }) => {
-      alert(`A critical update (v${minVersion}+) is required by the server. Reloading...`);
-      window.location.reload();
-    },
-  });
-</script>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0ea5e9">
+  <link rel="manifest" href="/assets/other/manifest.webmanifest">
+  <link rel="icon" href="/assets/image/icon/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/image/icon/icon-192.png">
+  <script src="/client.js"></script>
+</head>
+<body>
+  <div id="update-banner" hidden>
+    A new version is available.
+    <button onclick="NLPWAClient.applyUpdate()">Refresh</button>
+  </div>
 
-<div id="update-banner" hidden>
-  A new version is available.
-  <button onclick="NLPWAClient.applyUpdate()">Refresh</button>
-</div>
+  <button id="install-btn" hidden onclick="NLPWAClient.nlpwa.install()">Install App</button>
+
+  <script>
+    const { nlpwa, register } = NLPWAClient;
+
+    // 1. Register Service Worker
+    register('/sw.js', {
+      onUpdateReady: ({ version }) => {
+        document.getElementById('update-banner').hidden = false;
+      },
+    });
+
+    // 2. Reactive status & install button
+    nlpwa.subscribe((state) => {
+      document.getElementById('install-btn').hidden = !state.isInstallable;
+    });
+  </script>
+</body>
+</html>
 ```
 
-*(Using a bundler? Import `import { register, applyUpdate } from 'nlpwa/client'` instead).*
+*(Using a bundler? Import `import { nlpwa, register, applyUpdate } from 'nlpwa/client'` instead).*
 
 ### 4. Build and Hash with the CLI
 

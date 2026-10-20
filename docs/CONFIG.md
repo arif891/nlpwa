@@ -721,6 +721,46 @@ export default {
 
 ---
 
+## OS & Push Integrations
+
+### `shareTarget` · `object` · default: `undefined`
+
+Configures the Service Worker to intercept Web Share Target POST/GET submissions from the OS share sheet.
+
+```js
+shareTarget: {
+  action: '/_share-target',     // URL intercepted by SW
+  redirectUrl: '/?shared=1',    // Target UI route after capturing share
+  params: {
+    title: 'title',
+    text: 'text',
+    url: 'url',
+    files: [{ name: 'files' }],
+  },
+}
+```
+
+When intercepted, the SW persists the payload in offline cache, broadcasts it to active tabs, and responds with an HTTP 303 redirect. The client retrieves the data via `nlpwa.getSharedData()` or `onShareTarget()`.
+
+### `clearBadgeOnClick` · `boolean` · default: `true`
+
+When `true`, clicking any push notification automatically clears the application icon badge count across Windows, macOS, Android, and iOS.
+
+### `onPush` · `(event: PushEvent) => void | Promise<void>`
+
+Custom push event hook. If returned promise is provided, SW passes it to `event.waitUntil()`.
+
+NLPWA handles standard push payloads automatically:
+- `{ title, body, icon, badge: 5 }` — Displays notification and updates OS app badge.
+- `{ badge: 0 }` — Clears OS app badge silently.
+- `{ type: "CHECK_UPDATE" }` — Triggers silent background update check and delta staging.
+
+### `onNotificationClick` · `(event: NotificationEvent) => void | Promise<void>`
+
+Custom notification click hook. By default, focuses an existing window matching the notification's target URL, or opens a new window.
+
+---
+
 ## Config Validation
 
 NLPWA validates your config at startup and logs any errors to the SW console

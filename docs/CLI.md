@@ -46,20 +46,32 @@ npx nlpwa --help
 
 ### `nlpwa init`
 
-Scaffolds the drop-in NLPWA engine and starter configuration into the target directory.
+Scaffolds the drop-in NLPWA engine, starter configuration, W3C Web App Manifest, and starter PNG/SVG icons into the target directory.
 
 ```bash
 # Initialize in current directory
 npx nlpwa init
 
-# Target a public or dist directory
-npx nlpwa init --dir ./public
+# Target a public or dist directory with custom metadata
+npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 ```
 
 **Files created:**
 - `sw.js` — Standalone, pre-bundled Service Worker engine.
 - `client.js` — Standalone, pre-bundled client runtime SDK (defining `window.NLPWAClient`).
-- `config.json` — Starter runtime configuration.
+- `nlpwa.config.js` — Starter configuration pre-populated with shell precache and route rules.
+- `assets/other/manifest.webmanifest` — W3C Web App Manifest with `standalone` display mode, maskable icons, and OS launch handler.
+- `assets/image/icon/icon-192.png` — Standard 192x192 PNG app icon (pure Node.js encoded, zero dependencies).
+- `assets/image/icon/icon-512.png` — High-resolution 512x512 PNG app icon.
+- `assets/image/icon/icon.svg` — Scalable vector icon.
+
+**Init Options:**
+- `--dir <path>` — Target directory (default: `.`)
+- `--name <name>` — App display name (auto-detected from `package.json` if omitted)
+- `--short-name <short>` — App short name for home screen and shortcuts
+- `--theme-color <hex>` — Brand theme color for mobile status bars (default: `#0ea5e9`)
+- `--bg-color <hex>` — Background color for splash screens (default: `#0f172a`)
+- `--no-manifest` — Skip creating `manifest.webmanifest` and icon files
 
 ---
 
@@ -152,6 +164,11 @@ npx nlpwa generate-offline --dir ./public
 |---|---|---|
 | `--dir <path>` | `./dist` or `./` | Target output directory containing built web assets. |
 | `--config <path>` | auto-detect | Path to config file (`nlpwa.config.js`, `config.js`, or `config.json`). |
+| `--name <string>` | auto-detected | Application name for PWA manifest (`init`). |
+| `--short-name <string>` | auto-detected | Application short name for PWA manifest (`init`). |
+| `--theme-color <hex>` | `#0ea5e9` | PWA brand theme color for manifest & status bar (`init`). |
+| `--bg-color <hex>` | `#0f172a` | PWA background color for splash screen (`init`). |
+| `--no-manifest` | `false` | Skip creating manifest and icons during `init`. |
 | `--version <string>` | hash-derived | Override auto-derived version with explicit string (e.g. `2.0.0` or git SHA). |
 | `--bump-patch` | `false` | Increment semver patch version (`1.0.0` → `1.0.1`) instead of appending content hash. |
 | `--sync-source` | `false` | Write updated version back into source `config.js` (opt-in). |

@@ -18,6 +18,12 @@ It is available as both an ES module (`import { register } from 'nlpwa/client'`)
 - [DOM Events Reference](#dom-events-reference)
 - [Multi-Tab Coherence & SPA Integration](#multi-tab-coherence--spa-integration)
 - [Storage Quota & Runtime Cache Cleanup](#storage-quota--runtime-cache-cleanup)
+- [Unified Singleton: `nlpwa` / `client`](#unified-singleton-nlpwa--client)
+- [Unified Reactive State Store: `getState()` & `subscribe()`](#unified-reactive-state-store-getstate--subscribe)
+- [PWA Installation Manager](#pwa-installation-manager)
+- [Persistent Storage: `isStoragePersistent()` & `requestPersistentStorage()`](#persistent-storage-isstoragepersistent--requestpersistentstorage)
+- [OS Badging API](#os-badging-api)
+- [Web Share Target API](#web-share-target-api)
 
 ---
 
@@ -408,3 +414,225 @@ All size options accept any of the following formats:
 | `'quota'` | `maxQuotaPercent`, `maxQuotaMB`, `preferLargest` | Checks origin quota via `navigator.storage.estimate()` and evicts until within threshold. |
 | `'pattern'` | `match` (glob pattern) | Evicts entries whose URLs match the specified glob. |
 | `'all'` | — | Evicts all entries in the `runtime` cache. |
+
+---
+
+## Unified Singleton: `nlpwa` / `client`
+
+The SDK provides a consolidated `nlpwa` (aliased as `client`) singleton that exposes all client capabilities in a single ergonomic object.
+
+```javascript
+import { nlpwa } from 'nlpwa/client';
+// or in browser without bundler:
+// const { nlpwa } = window.NLPWAClient;
+
+// Reactive state
+const state = nlpwa.getState();
+const unsubscribe = nlpwa.subscribe((state) => {
+  console.log('App state changed:', state);
+});
+
+// PWA Installation
+if (nlpwa.isInstallable()) {
+  await nlpwa.install();
+}
+
+// Storage Persistence
+await nlpwa.requestPersistentStorage();
+
+// Badging
+await nlpwa.setBadge(5);
+await nlpwa.clearBadge();
+
+// Web Share Target
+const sharedData = await nlpwa.getSharedData();
+nlpwa.onShareTarget((data) => {
+  console.log('Received shared content:', data);
+});
+
+// Updates
+await nlpwa.checkUpdate();
+await nlpwa.applyUpdate();
+```
+
+---
+
+## Unified Reactive State Store: `getState()` & `subscribe()`
+
+NLPWA maintains a centralized, reactive status store synchronizing network connectivity, update lifecycles, installation readiness, and OS badges into a single object.
+
+### Reading State Synchronously
+
+```javascript
+import { getState } from 'nlpwa/client';
+
+const state = getState();
+console.log(state);
+```
+
+### Subscribing to State Changes
+
+The listener receives the latest state immediately upon subscription, followed by any updates:
+
+```javascript
+import { subscribe } from 'nlpwa/client';
+
+const unsubscribe = subscribe((state) => {
+  // Sync your UI components or framework stores (React, Vue, Svelte)
+  updateStatusBanner(state.updateStatus);
+  installButton.hidden = !state.isInstallable;
+  offlineIndicator.hidden = state.online;
+});
+
+// Stop listening
+unsubscribe();
+```
+
+### `NLPWAState` Shape
+
+| Field | Type | Description |
+|---|---|---|
+| `online` | `boolean` | `true` if browser has active network connection; `false` if offline. |
+| `updateStatus` | `string` | Current lifecycle: `'idle'`, `'checking'`, `'staging'`, `'ready'`, `'applying'`, `'commit-deferred'`, or `'failed'`. |
+| `version` | `string \| null` | Running application version string. |
+| `activeVersion` | `string \| null` | Version currently serving cached requests. |
+| `stagedVersion` | `string \| null` | Newer version staged in the background (ready to apply). |
+| `minVersion` | `string \| null` | Minimum server-required version (if broadcast via Tier 1). |
+| `updateRequired` | `boolean` | `true` if current version is deprecated and an update must be applied. |
+| `isInstallable` | `boolean` | `true` if browser captured `beforeinstallprompt` and app is ready to install. |
+| `isInstalled` | `boolean` | `true` if app is launched in standalone mode or was already installed. |
+| `isStoragePersistent` | `boolean \| null` | `true` if browser granted persistent storage exemption from eviction. |
+| `badgeCount` | `number \| null` | Current numerical badge count or `null` if cleared/unset. |
+| `stagingProgress` | `object \| null` | Progress object `{ loaded, total, percent, file }` during staging. |
+
+---
+
+## PWA Installation Manager
+
+NLPWA automatically intercepts the browser's native `beforeinstallprompt` event, retains the deferred prompt across navigation, and exposes a clean promise-based trigger.
+
+```javascript
+import { isInstallable, isInstalled, onInstallable, promptInstall } from 'nlpwa/client';
+
+// Listen for install availability
+onInstallable(({ isInstallable }) => {
+  installButton.hidden = !isInstallable;
+});
+
+// Trigger prompt from a button click
+installButton.addEventListener('click', async () => {
+  const result = await promptInstall();
+  if (result.outcome === 'accepted') {
+    console.log('User installed the PWA!');
+  }
+});
+
+// Check standalone display mode
+if (isInstalled()) {
+  console.log('Running as an installed standalone app');
+}
+```
+
+---
+
+## Persistent Storage: `isStoragePersistent()` & `requestPersistentStorage()`
+
+Browsers may evict cached data under device storage pressure unless persistent storage is granted. NLPWA provides lightweight wrappers over the Storage API with silent degradation.
+
+```javascript
+import { isStoragePersistent, requestPersistentStorage } from 'nlpwa/client';
+
+// Check if persistent storage is already granted
+const isPersistent = await isStoragePersistent();
+
+// Request persistent storage (typically invoked after install or user login)
+const granted = await requestPersistentStorage();
+if (granted) {
+  console.log('Storage is protected from automatic browser eviction');
+}
+```
+
+---
+
+## OS Badging API
+
+Sets or clears app icon badges on supported desktop and mobile operating systems (Windows Taskbar, macOS Dock, Android, and iOS 16.4+). Degrades silently on unsupported browsers.
+
+```javascript
+import { isBadgingSupported, setAppBadge, clearAppBadge } from 'nlpwa/client';
+
+if (isBadgingSupported()) {
+  // Set numeric badge
+  await setAppBadge(3);
+
+  // Set uncounted dot badge
+  await setAppBadge();
+
+  // Clear badge
+  await clearAppBadge();
+}
+```
+
+> **Push Badging:** Badges can also be set directly by your push backend:
+> ```json
+> {
+>   "title": "New Message",
+>   "body": "You have a new message",
+>   "badge": 5
+> }
+> ```
+> When the user clicks the notification, the Service Worker automatically clears the badge.
+
+---
+
+## Web Share Target API
+
+Allows your PWA to receive shared links, text, and files directly from other native apps via the system Share sheet.
+
+### Manifest Configuration
+
+Generated automatically by `nlpwa init` or configured in `manifest.webmanifest`:
+
+```json
+{
+  "share_target": {
+    "action": "/_share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": ["*/*"]
+        }
+      ]
+    }
+  }
+}
+```
+
+### Receiving Shared Data in the Client
+
+When the OS launches your app from a Share action, the Service Worker intercepts the payload, issues a 303 redirect to your app, and makes the data accessible:
+
+```javascript
+import { getSharedData, onShareTarget } from 'nlpwa/client';
+
+// Option 1: Listen for incoming shares reactively
+onShareTarget((shared) => {
+  console.log('Title:', shared.title);
+  console.log('Text:', shared.text);
+  console.log('URL:', shared.url);
+  console.log('Files:', shared.files); // Array of { name, type, size, data }
+});
+
+// Option 2: Check for pending shared data on page load
+const pending = await getSharedData();
+if (pending) {
+  handleSharedContent(pending);
+}
+```
+

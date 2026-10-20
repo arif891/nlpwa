@@ -25,7 +25,7 @@ import { MESSAGE_TYPES } from '../src/shared/constants.js';
 
 const cfg = (extra = {}) => JSON.stringify({
   routes: [{ match: '**', strategy: 'cache-first' }],
-  precache: ['/app.js', '/config.json', '/index.html'],
+  precache: ['/app.js', '/api/update/config.json', '/index.html'],
   ...extra,
 });
 
@@ -39,7 +39,7 @@ const asNavigation = (r, resultingClientId = 'new-tab') => new Proxy(r, {
 
 test('client pinning: navigation fetch event pins resultingClientId to the active cache', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v1',
     '/index.html': '<html>v1</html>',
   });
@@ -64,7 +64,7 @@ test('client pinning: navigation fetch event pins resultingClientId to the activ
 
 test('client pinning: open tab running old code is served old unhashed files after another tab commits a new version', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v1 content',
     '/index.html': '<html>v1</html>',
   });
@@ -85,7 +85,7 @@ test('client pinning: open tab running old code is served old unhashed files aft
 
   // 2. A new version 1.0.1 is deployed and staged
   server.set('1.0.1', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v2 content',
     '/index.html': '<html>v2</html>',
   });
@@ -133,7 +133,7 @@ test('client pinning: open tab running old code is served old unhashed files aft
 
 test('client pinning: pinned caches are preserved during cleanupCaches while client tabs are open', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v1',
   });
   const caches = setupEnv(server.fetch);
@@ -144,14 +144,14 @@ test('client pinning: pinned caches are preserved during cleanupCaches while cli
   pinClient('tab-persistent', v1Cache);
 
   // Deploy and commit v2
-  server.set('1.0.1', { '/config.json': cfg(), '/app.js': 'app v2' });
+  server.set('1.0.1', { '/api/update/config.json': cfg(), '/app.js': 'app v2' });
   const m1 = await (await server.fetch(req('/api/update/info.json'))).json();
   await stageUpdate(m1);
   await commitStaged();
   const v2Cache = (await getActive()).cache;
 
   // Deploy and commit v3
-  server.set('1.0.2', { '/config.json': cfg(), '/app.js': 'app v3' });
+  server.set('1.0.2', { '/api/update/config.json': cfg(), '/app.js': 'app v3' });
   const m2 = await (await server.fetch(req('/api/update/info.json'))).json();
   await stageUpdate(m2);
   await commitStaged();
@@ -175,7 +175,7 @@ test('client pinning: pinned caches are preserved during cleanupCaches while cli
 });
 
 test('client pinning: pruneClientPins drops pins for clients no longer in self.clients', async () => {
-  const server = makeServer('1.0.0', { '/config.json': cfg(), '/app.js': 'app v1' });
+  const server = makeServer('1.0.0', { '/api/update/config.json': cfg(), '/app.js': 'app v1' });
   setupEnv(server.fetch);
   await precacheFiles();
 
@@ -194,7 +194,7 @@ test('client pinning: pruneClientPins drops pins for clients no longer in self.c
 });
 
 test('client pinning: stores and returns full content-hash or prerelease pinnedVersion without truncation', async () => {
-  const server = makeServer('1.0.0-a1b2c3d4e5f6', { '/config.json': cfg(), '/app.js': 'app v1' });
+  const server = makeServer('1.0.0-a1b2c3d4e5f6', { '/api/update/config.json': cfg(), '/app.js': 'app v1' });
   setupEnv(server.fetch);
   await precacheFiles();
 
@@ -221,7 +221,7 @@ test('client pinning: stores and returns full content-hash or prerelease pinnedV
 
 test('client pinning: getFromOffline falls back to active cache if pinned cache is missing/evicted', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app active v1',
   });
   setupEnv(server.fetch);
@@ -242,7 +242,7 @@ test('client pinning: getFromOffline falls back to active cache if pinned cache 
 
 test('client pinning: commitStaged prunes dead client pins across updates so old offline caches are freed', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v1',
     '/index.html': '<html>v1</html>',
   });
@@ -258,7 +258,7 @@ test('client pinning: commitStaged prunes dead client pins across updates so old
 
   // Stage and commit v2
   server.set('2.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v2',
     '/index.html': '<html>v2</html>',
   });
@@ -272,7 +272,7 @@ test('client pinning: commitStaged prunes dead client pins across updates so old
 
   // Stage and commit v3
   server.set('3.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v3',
     '/index.html': '<html>v3</html>',
   });
@@ -291,7 +291,7 @@ test('client pinning: commitStaged prunes dead client pins across updates so old
 
 test('client pinning: PIN_CLIENT message validates cacheName prefix', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v1',
   });
   setupEnv(server.fetch);
@@ -332,7 +332,7 @@ test('client pinning: PIN_CLIENT message validates cacheName prefix', async () =
 
 test('client pinning: pin is durable across SW restart before subresource fetch, preventing version skew', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v1',
     '/index.html': '<html>v1</html>',
   });
@@ -363,7 +363,7 @@ test('client pinning: pin is durable across SW restart before subresource fetch,
 
   // 2. A new version 2.0.0 is deployed, staged, and committed
   server.set('2.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v2',
     '/index.html': '<html>v2</html>',
   });
@@ -401,7 +401,7 @@ test('client pinning: pin is durable across SW restart before subresource fetch,
 
 test('client pinning: pruneClientPins honors grace period and does NOT drop newly navigating tabs', async () => {
   const server = makeServer('1.0.0', {
-    '/config.json': cfg(),
+    '/api/update/config.json': cfg(),
     '/app.js': 'app v1',
   });
   setupEnv(server.fetch);

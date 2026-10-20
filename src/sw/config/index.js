@@ -67,7 +67,7 @@ export function getConfig() {
 
 /**
  * Update the active in-memory configuration with runtime config
- * (e.g. loaded from /config.json in the offline cache).
+ * (e.g. loaded from /api/update/config.json in the offline cache).
  *
  * @param {Object} runtimeConfig
  * @returns {typeof DEFAULTS}
@@ -134,7 +134,7 @@ export function ensureConfigReady() {
 export async function loadConfigFromCache() {
   const config = _config || initConfig();
   const baseName = config.caches?.offline || 'offline';
-  const configPath = resolvePathWithBase(config.configPath || '/config.json', config.base);
+  const configPath = resolvePathWithBase(config.configPath || '/api/update/config.json', config.base);
 
   try {
     const cache = await openActive(baseName);

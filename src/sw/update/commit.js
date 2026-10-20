@@ -47,8 +47,8 @@ export async function commitStaged(event) {
   // to determine retainPreviousVersionCache in a single atomic write.
   let retainPrevious = Boolean(config.retainPreviousVersionCache);
   try {
-    const configPath = config.configPath || '/config.json';
-    const stagedConfigRes = (await cache.match(configPath)) || (await cache.match('/config.json'));
+    const configPath = config.configPath || '/api/update/config.json';
+    const stagedConfigRes = await cache.match(configPath);
     if (stagedConfigRes) {
       const stagedConfigJson = await stagedConfigRes.clone().json();
       if (typeof stagedConfigJson.retainPreviousVersionCache === 'boolean') {

@@ -38,7 +38,7 @@ export function makeServer(version, files, minVersion = null) {
     }
     return new Response('not found', { status: 404 });
   };
-  state.fileCalls = () => state.calls.filter((p) => !p.startsWith('/api/'));
+  state.fileCalls = () => state.calls.filter((p) => p !== '/api/update/version' && p !== '/api/update/version.json' && p !== '/api/update/info' && p !== '/api/update/info.json');
   return state;
 }
 

@@ -26,9 +26,9 @@ export const DEFAULTS = {
 
   /**
    * Path to the runtime config.json file (stored in and read from offline cache).
-   * Default: '/config.json'
+   * Default: '/api/update/config.json'
    */
-  configPath: '/config.json',
+  configPath: '/api/update/config.json',
 
   /**
    * Server endpoints for two-tier update checks:

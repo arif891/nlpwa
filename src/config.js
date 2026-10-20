@@ -10,7 +10,7 @@ export default {
   version: '1.0.0',
 
   // Path to runtime config file (served by web server, stored in offline cache)
-  configPath: '/config.json',
+  configPath: '/api/update/config.json',
 
   // Two-tier update check endpoints
   updateAPI: {

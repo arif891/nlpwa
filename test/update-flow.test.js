@@ -11,7 +11,7 @@ import { loadCachedSnapshot } from '../src/sw/update/manifest.js';
 import { getConfig } from '../src/sw/config/index.js';
 
 const cfg = (extra = {}) => JSON.stringify({ routes: [{ match: '**', strategy: 'network-first' }], precache: ['/app.js'], ...extra });
-const v1 = { '/config.json': cfg(), '/app.js': 'app v1' };
+const v1 = { '/api/update/config.json': cfg(), '/app.js': 'app v1' };
 
 // Node's Request refuses mode 'navigate', so present a normal request as one
 const asNavigation = (r) => new Proxy(r, {
@@ -48,14 +48,15 @@ test('install: precache fallback when there is no update manifest (and no stale 
   let manifestUp = false; // `nlpwa update` hasn't been deployed yet at install time
   setupEnv(async (r) => {
     seen.push(r.cache);
-    if (!manifestUp && new URL(r.url).pathname.startsWith('/api/')) return new Response('', { status: 404 });
+    const p = new URL(r.url).pathname;
+    if (!manifestUp && (p.includes('/version') || p.includes('/info'))) return new Response('', { status: 404 });
     return server.fetch(r);
   }, { precache: ['/app.js'] });
 
   await precacheFiles();
   const cache = await caches.open('offline');
   assert.ok(await cache.match(req('/app.js')));
-  assert.ok(await cache.match(req('/config.json')));
+  assert.ok(await cache.match(req('/api/update/config.json')));
   assert.ok(seen.includes('reload') || seen.includes('no-store'));
 
   // once the manifest exists, the next check builds the hashed snapshot and switches over
@@ -189,7 +190,7 @@ test('config.json travels with the app shell: routes change only when the update
   assert.equal(getConfig().routes[0].strategy, 'network-first');
 
   const next = cfg({ routes: [{ match: '**', strategy: 'cache-first' }] });
-  server.set('1.0.1', { ...v1, '/config.json': next });
+  server.set('1.0.1', { ...v1, '/api/update/config.json': next });
   await checkForUpdate();
   assert.equal(getConfig().routes[0].strategy, 'network-first', 'old routes until commit');
   await commitIfReady();
@@ -229,7 +230,7 @@ test('update: retry backoff activates after MAX_RETRY_ATTEMPTS, periodic skips, 
 test('update: clearRuntimeOnUpdate clears runtime cache upon commit', async () => {
   const server = makeServer('1.0.0', {
     ...v1,
-    '/config.json': cfg({ clearRuntimeOnUpdate: true }),
+    '/api/update/config.json': cfg({ clearRuntimeOnUpdate: true }),
   });
   fakeSelf();
   const caches = setupEnv(server.fetch);
@@ -244,7 +245,7 @@ test('update: clearRuntimeOnUpdate clears runtime cache upon commit', async () =
   server.set('1.0.1', {
     ...v1,
     '/app.js': 'app v2',
-    '/config.json': cfg({ clearRuntimeOnUpdate: true }),
+    '/api/update/config.json': cfg({ clearRuntimeOnUpdate: true }),
   });
   await checkForUpdate();
   await commitIfReady();
@@ -371,7 +372,7 @@ test('router: built-in non-overridable rule serves precached/manifest files from
     { match: '**', strategy: 'network-first' },
   ];
   const customConfig = { routes, precache: ['/app.js', '/index.html'] };
-  const v = { '/config.json': JSON.stringify(customConfig), '/app.js': 'offline app v1' };
+  const v = { '/api/update/config.json': JSON.stringify(customConfig), '/app.js': 'offline app v1' };
   const server = makeServer('1.0.0', v);
   fakeSelf();
   setupEnv(server.fetch, customConfig);
@@ -389,8 +390,8 @@ test('router: built-in non-overridable rule serves precached/manifest files from
 });
 
 test('update: rollback to active version while an update is staged discards the staged update', async () => {
-  const v1 = { '/config.json': cfg(), '/app.js': 'app v1' };
-  const v2 = { '/config.json': cfg(), '/app.js': 'app v2' };
+  const v1 = { '/api/update/config.json': cfg(), '/app.js': 'app v1' };
+  const v2 = { '/api/update/config.json': cfg(), '/app.js': 'app v2' };
   const server = makeServer('1.0.0', v1);
   const messages = fakeSelf();
   setupEnv(server.fetch);
@@ -462,8 +463,8 @@ test('update: supports ETag and If-None-Match 304 on version check', async () =>
 });
 
 test('update: 304 on version check preserves staged update and does not discard staging cache', async () => {
-  const v1 = { '/config.json': cfg(), '/app.js': 'app v1' };
-  const v2 = { '/config.json': cfg(), '/app.js': 'app v2' };
+  const v1 = { '/api/update/config.json': cfg(), '/app.js': 'app v1' };
+  const v2 = { '/api/update/config.json': cfg(), '/app.js': 'app v2' };
   const server = makeServer('1.0.0', v1);
   const messages = fakeSelf();
 

@@ -10,7 +10,7 @@ import { stageUpdate } from '../src/sw/update/stage.js';
 import { register } from '../src/client/register.js';
 
 const cfg = (extra = {}) => JSON.stringify({ routes: [{ match: '**', strategy: 'network-first' }], precache: ['/app.js'], ...extra });
-const v1 = { '/config.json': cfg(), '/app.js': 'app v1' };
+const v1 = { '/api/update/config.json': cfg(), '/app.js': 'app v1' };
 
 test('status bug: manifest fetch failure resets status from checking to idle', async () => {
   // Server returns 500 for manifest fetch
@@ -106,7 +106,7 @@ test('crash window: commitStaged guards against re-committing already active cac
 test('commit: retainPreviousVersionCache is read from the newly loaded config', async () => {
   // Start with default config (retainPreviousVersionCache: true)
   const server = makeServer('1.0.0', {
-    '/config.json': cfg({ retainPreviousVersionCache: true }),
+    '/api/update/config.json': cfg({ retainPreviousVersionCache: true }),
     '/app.js': 'app v1',
   });
   const caches = setupEnv(server.fetch);
@@ -115,7 +115,7 @@ test('commit: retainPreviousVersionCache is read from the newly loaded config', 
 
   // v2 config has retainPreviousVersionCache: false
   server.set('2.0.0', {
-    '/config.json': cfg({ retainPreviousVersionCache: false }),
+    '/api/update/config.json': cfg({ retainPreviousVersionCache: false }),
     '/app.js': 'app v2',
   });
 

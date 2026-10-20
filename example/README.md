@@ -39,5 +39,5 @@ Then open your browser at:
 
 ```bash
 # Regenerate update API endpoints and manifest hashes:
-nlpwa update --dir ./example --config ./example/config.json
+nlpwa update --dir ./example --config ./example/nlpwa.config.js
 ```

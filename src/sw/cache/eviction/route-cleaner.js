@@ -86,7 +86,7 @@ async function evictNonCacheable(cache, cacheName, protectedPaths) {
  */
 export async function evictByRoute() {
   const config = getConfig();
-  const { caches: cacheNames, configPath = '/config.json', base } = config;
+  const { caches: cacheNames, configPath = '/api/update/config.json', base } = config;
 
   const normalizedConfigPath = resolvePathWithBase(configPath, base);
   const protectedPaths = new Set([

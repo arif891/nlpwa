@@ -192,7 +192,7 @@ test('precacheWithoutManifest: guards against HTML soft-404 responses', async ()
 test('loadConfigFromCache: rehydrates runtime config from offline cache', async () => {
   const caches = setupEnv(async () => new Response('ok'));
   await (await caches.open('offline')).put(
-    req('/config.json'),
+    req('/api/update/config.json'),
     new Response(JSON.stringify({ version: '1.0.0', networkTimeoutMs: 12345 }), {
       headers: { 'Content-Type': 'application/json' },
     }),
@@ -260,7 +260,7 @@ test('ensureConfigReady: synchronizes and reflects new config after loadConfigFr
   const cache = await openActive('offline');
 
   await cache.put(
-    req('/config.json'),
+    req('/api/update/config.json'),
     new Response(JSON.stringify({ version: '1.0.0', customField: 'initial' }), {
       headers: { 'Content-Type': 'application/json' },
     }),
@@ -273,7 +273,7 @@ test('ensureConfigReady: synchronizes and reflects new config after loadConfigFr
 
   // Simulate committing a new config.json
   await cache.put(
-    req('/config.json'),
+    req('/api/update/config.json'),
     new Response(JSON.stringify({ version: '1.0.1', customField: 'updated' }), {
       headers: { 'Content-Type': 'application/json' },
     }),
@@ -362,7 +362,7 @@ test('updateActiveConfig: runtime config.json with snapshotCachePath: /evil.json
 
 test('commitStaged: retainPreviousVersionCache keeps prior active cache and serves old chunks', async () => {
   const routes = [{ match: '**', strategy: 'cache-first' }];
-  const v1 = { '/config.json': JSON.stringify({ version: '1.0.0', retainPreviousVersionCache: true, routes }), '/app.js': 'v1', '/chunk-v1.js': 'chunk v1' };
+  const v1 = { '/api/update/config.json': JSON.stringify({ version: '1.0.0', retainPreviousVersionCache: true, routes }), '/app.js': 'v1', '/chunk-v1.js': 'chunk v1' };
   const server = makeServer('1.0.0', v1);
   const caches = setupEnv(server.fetch, { retainPreviousVersionCache: true, routes });
 
@@ -372,7 +372,7 @@ test('commitStaged: retainPreviousVersionCache keeps prior active cache and serv
   const activeV1 = (await getActive()).cache;
 
   // New version replaces chunk-v1 with chunk-v2
-  server.set('1.0.1', { '/config.json': JSON.stringify({ version: '1.0.1', retainPreviousVersionCache: true, routes }), '/app.js': 'v2', '/chunk-v2.js': 'chunk v2' });
+  server.set('1.0.1', { '/api/update/config.json': JSON.stringify({ version: '1.0.1', retainPreviousVersionCache: true, routes }), '/app.js': 'v2', '/chunk-v2.js': 'chunk v2' });
   const r2 = await stageUpdate(await fetchServerInfo());
   assert.equal(r2.status, 'ready');
 
@@ -397,7 +397,7 @@ test('commitStaged: retainPreviousVersionCache keeps prior active cache and serv
 
 test('sweepOrphanCaches: retains active.previousCache on SW activation', async () => {
   const routes = [{ match: '**', strategy: 'cache-first' }];
-  const v1 = { '/config.json': JSON.stringify({ version: '1.0.0', retainPreviousVersionCache: true, routes }), '/app.js': 'v1', '/chunk-v1.js': 'chunk v1' };
+  const v1 = { '/api/update/config.json': JSON.stringify({ version: '1.0.0', retainPreviousVersionCache: true, routes }), '/app.js': 'v1', '/chunk-v1.js': 'chunk v1' };
   const server = makeServer('1.0.0', v1);
   const caches = setupEnv(server.fetch, { retainPreviousVersionCache: true, routes });
 
@@ -407,7 +407,7 @@ test('sweepOrphanCaches: retains active.previousCache on SW activation', async (
   const activeV1 = (await getActive()).cache;
 
   // New version replaces chunk-v1 with chunk-v2
-  server.set('1.0.1', { '/config.json': JSON.stringify({ version: '1.0.1', retainPreviousVersionCache: true, routes }), '/app.js': 'v2', '/chunk-v2.js': 'chunk v2' });
+  server.set('1.0.1', { '/api/update/config.json': JSON.stringify({ version: '1.0.1', retainPreviousVersionCache: true, routes }), '/app.js': 'v2', '/chunk-v2.js': 'chunk v2' });
   const r2 = await stageUpdate(await fetchServerInfo());
   assert.equal(r2.status, 'ready');
   assert.equal(await commitStaged(), true);
@@ -782,7 +782,7 @@ test('glob: caps _regexCache and clearGlobCache clears cache', async () => {
   await afterEmitHook({});
 
   // Verify outputs
-  const emittedConfig = JSON.parse(readFileSync(join(distDir, 'config.json'), 'utf8'));
+  const emittedConfig = JSON.parse(readFileSync(join(distDir, 'api/update/config.json'), 'utf8'));
   assert.equal(emittedConfig.version, '1.2.1');
   assert.deepEqual(emittedConfig.precache, ['/index.html']);
 
@@ -793,6 +793,6 @@ test('glob: caps _regexCache and clearGlobCache clears cache', async () => {
   assert.equal(infoApi.version, '1.2.1');
   assert.ok(Array.isArray(infoApi.files));
   assert.ok(infoApi.files.some((f) => f.path === '/index.html'));
-  assert.ok(infoApi.files.some((f) => f.path === '/config.json'));
+  assert.ok(infoApi.files.some((f) => f.path === '/api/update/config.json'));
 });
 

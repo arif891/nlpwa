@@ -96,7 +96,7 @@ npx nlpwa update --dir ./dist --config ./src/nlpwa.config.js
 ```
 
 **Outputs generated in target directory:**
-- `<dir>/config.json` — Compiled runtime config for the Service Worker.
+- `<dir>/api/update/config.json` — Compiled runtime config for the Service Worker.
 - `<dir>/api/update/version.json` — Tier 1 lightweight version endpoint:
   ```json
   { "version": "1.0.0-a1b2c3d4e5f6" }

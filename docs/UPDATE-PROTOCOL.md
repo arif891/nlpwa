@@ -42,10 +42,10 @@ Fetched **only** if Tier 1 reports a different version (or the SW engine version
 {
   "version": "1.0.1",
   "files": [
-    { "path": "/config.json",       "hash": "15142550a1b2c3d4e5f6789012345678" },
-    { "path": "/index.html",        "hash": "d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2" },
-    { "path": "/app.js",            "hash": "a1b2c3d4e5f6789012345678abcdef01" },
-    { "path": "/styles/main.css",   "hash": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" }
+    { "path": "/api/update/config.json", "hash": "15142550a1b2c3d4e5f6789012345678" },
+    { "path": "/index.html",             "hash": "d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2" },
+    { "path": "/app.js",                 "hash": "a1b2c3d4e5f6789012345678abcdef01" },
+    { "path": "/styles/main.css",        "hash": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" }
   ]
 }
 ```
@@ -74,7 +74,7 @@ Fetched **only** if Tier 1 reports a different version (or the SW engine version
 The build tool tracks **only offline cached files and the config file**:
 
 ✅ **Tracked in Manifest:**
-- `/config.json` (runtime configuration file)
+- `/api/update/config.json` (runtime configuration file)
 - All files declared in `config.precache` (the app shell)
 
 ❌ **Not Tracked in Manifest:**
@@ -229,7 +229,7 @@ Commit happens smoothly without breaking running pages:
 commitStaged():
   1. Atomic switch: write /_nlpwa/active.json pointer in nlpwa-meta.
   2. Clear /_nlpwa/staged.json in nlpwa-meta.
-  3. Reload /config.json into in-memory SW router.
+  3. Reload /api/update/config.json into in-memory SW router.
   4. Evict modified & removed entries from runtime cache.
   5. Route-aware eviction on runtime cache.
   6. Prune old offline@... caches.

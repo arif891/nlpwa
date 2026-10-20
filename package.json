@@ -46,7 +46,11 @@
     },
     "./config.json": {
       "types": "./types/config.d.ts",
-      "default": "./out/config.json"
+      "default": "./out/api/update/config.json"
+    },
+    "./api/update/config.json": {
+      "types": "./types/config.d.ts",
+      "default": "./out/api/update/config.json"
     },
     "./rollup": {
       "types": "./types/rollup.d.ts",
@@ -88,7 +92,7 @@
     "build:prod": "rollup -c --environment PROD",
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
-    "sync:example": "node ./bin/nlpwa.js update --config example/config.json --dir example --version 1.0.0 --pretty",
+    "sync:example": "node ./bin/nlpwa.js update --config example/nlpwa.config.js --dir example --version 1.0.0 --pretty",
     "check:drift": "git diff --exit-code example/",
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa": "node ./bin/nlpwa.js",

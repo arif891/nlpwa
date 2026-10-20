@@ -128,7 +128,7 @@ src/
 │
 ├── rollup-plugin.js                ← Bundler plugin for Vite / Rollup integration
 ├── webpack-plugin.js               ← Bundler plugin for Webpack integration
-└── config.js                       ← Starter config template (emits out/config.json)
+└── src/config.js                   ← Starter config template (emits out/api/update/config.json)
 ```
 
 ---
@@ -141,7 +141,7 @@ CacheStorage
 │   ├── /_nlpwa/active.json         { cache, version, swVersion } - which offline cache is live
 │   └── /_nlpwa/staged.json         { cache, version, complete, evict, ... } - update waiting to go live
 ├── offline@1.0.1-k3x9              ACTIVE version: app shell + runtime config + snapshot
-│   ├── /config.json                Runtime config (routes, precache, endpoints)
+│   ├── /api/update/config.json     Runtime config (routes, precache, endpoints)
 │   └── /_nlpwa/snapshot.json       Hash map of this version; written last = "complete"
 ├── offline@1.0.2-m1q7              STAGED version (only exists while an update waits)
 └── runtime                         Lazily cached responses (filled by fetch strategies)
@@ -155,8 +155,8 @@ CacheStorage
 
 ### Why store the config & snapshot inside the versioned cache?
 
-- **Zero network roundtrips at fetch time**: The SW loads `/config.json` directly from the active cache.
-- **OTA Route updates**: Updating `config.js` does NOT require a byte-level reinstall of `sw.js`. The new `config.json` is staged with the rest of the version and its routes apply when that version goes live.
+- **Zero network roundtrips at fetch time**: The SW loads `/api/update/config.json` directly from the active cache.
+- **OTA Route updates**: Updating `nlpwa.config.js` does NOT require a byte-level reinstall of `sw.js`. The new `/api/update/config.json` is staged with the rest of the version and its routes apply when that version goes live.
 - **Persistence**: Survives SW restarts without requiring IndexedDB.
 
 ---

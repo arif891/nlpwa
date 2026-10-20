@@ -72,7 +72,7 @@ export async function cmdUpdate(args) {
   const runtimeConfig = {
     ...rawConfig,
     version: newVersion,
-    configPath: rawConfig.configPath || '/config.json',
+    configPath: rawConfig.configPath || '/api/update/config.json',
     updateAPI: rawConfig.updateAPI || {
       version: defaultVersionEndpoint,
       info: defaultInfoEndpoint,
@@ -82,22 +82,23 @@ export async function cmdUpdate(args) {
   };
 
   // 3. Write runtime config into target directory (with expanded precache paths)
-  const cleanConfigPath = (runtimeConfig.configPath || '/config.json').replace(/^\/+/, '');
+  const runtimeConfigPath = runtimeConfig.configPath || '/api/update/config.json';
+  const cleanConfigPath = runtimeConfigPath.replace(/^\/+/, '');
   const configJsonPath = resolve(targetDir, cleanConfigPath);
   mkdirSync(dirname(configJsonPath), { recursive: true });
   const jsonIndent = args.pretty ? 2 : 0;
   writeFileSync(configJsonPath, JSON.stringify(runtimeConfig, null, jsonIndent), 'utf8');
-  console.log(`  ${c.green}+${c.reset} ${c.cyan}/${cleanConfigPath}${c.reset} (generated from config.js)`);
+  console.log(`  ${c.green}+${c.reset} ${c.cyan}/${cleanConfigPath}${c.reset} (generated from config)`);
 
   // Update hash and size for config.json now that it is written
-  const configEntry = files.find(f => f.path === (runtimeConfig.configPath || '/config.json'));
+  const configEntry = files.find(f => f.path === runtimeConfigPath);
   const configSize = statSync(configJsonPath).size;
   if (configEntry) {
     configEntry.hash = hashFile(configJsonPath);
     configEntry.size = configSize;
   } else {
     files.unshift({
-      path: runtimeConfig.configPath || '/config.json',
+      path: runtimeConfigPath,
       hash: hashFile(configJsonPath),
       size: configSize,
     });

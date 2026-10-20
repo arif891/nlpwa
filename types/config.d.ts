@@ -153,7 +153,7 @@ export interface NLPWAConfig {
   onPush?: (event: any) => Promise<void> | void;
   /** Custom notification click event handler */
   onNotificationClick?: (event: any) => Promise<void> | void;
-  /** Path to runtime config.json file (default: '/config.json') */
+  /** Path to runtime config.json file (default: '/api/update/config.json') */
   configPath?: string;
   /** Two-tier update check endpoints */
   updateAPI?: UpdateAPIConfig;

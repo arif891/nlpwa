@@ -73,7 +73,7 @@ export class NlpwaWebpackPlugin {
       const runtimeConfig = {
         ...rawConfig,
         version: appVersion,
-        configPath: rawConfig.configPath || '/config.json',
+        configPath: rawConfig.configPath || '/api/update/config.json',
         updateAPI: rawConfig.updateAPI || {
           version: '/api/update/version.json',
           info: '/api/update/info.json',

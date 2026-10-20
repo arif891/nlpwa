@@ -16,15 +16,15 @@ initSW({
   version: '1',
 
   // Path to runtime config file (read from and stored in offline cache)
-  configPath: '/config.json',
+  configPath: '/api/update/config.json',
 });
 ```
 
 ---
 
-## 2. Application Configuration (`config.json` or `config.js`)
+## 2. Application Configuration (`nlpwa.config.js`)
 
-Developers define routes, precached shell files, and update settings in `config.json` (or `config.js` when using a bundler). In standalone mode, `/config.json` is read directly from the web server into the `offline` cache. When using `nlpwa update`, the CLI automatically compiles and syncs the runtime `config.json`.
+Developers define routes, precached shell files, and update settings in `nlpwa.config.js`. In standalone mode, `/api/update/config.json` is read directly from the web server into the `offline` cache. When using `nlpwa update`, the CLI automatically compiles and emits the runtime `api/update/config.json`.
 
 ```js
 export default {
@@ -71,15 +71,15 @@ The deployed version of your web application.
 
 ---
 
-### `configPath` · `string` · default: `'/config.json'`
-The URL pathname where `config.json` is served and cached in the `offline` store.
+### `configPath` · `string` · default: `'/api/update/config.json'`
+The URL pathname where `api/update/config.json` is served and cached in the `offline` store.
 
 ---
 
 ### `updateAPI` · `object` | `Array`
 Defines the two-tier update check endpoints:
 - `version`: Lightweight endpoint returning `{ "version": "1.0.1" }` (~20 bytes). Polled periodically or on focus.
-- `info`: Full manifest endpoint returning `{ "version": "1.0.1", "files": [ { "path": "/config.json", "hash": "..." }, ... ] }`. Only downloaded when a newer version exists.
+- `info`: Full manifest endpoint returning `{ "version": "1.0.1", "files": [ { "path": "/api/update/config.json", "hash": "..." }, ... ] }`. Only downloaded when a newer version exists.
 
 ```js
 updateAPI: {
@@ -657,11 +657,11 @@ initSW({
   version: '1',
 
   // Path to runtime config file (read from and stored in offline cache)
-  configPath: '/config.json',
+  configPath: '/api/update/config.json',
 });
 ```
 
-### `config.js` (Application Configuration)
+### `nlpwa.config.js` (Application Configuration)
 
 ```js
 export default {

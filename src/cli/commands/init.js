@@ -16,7 +16,6 @@ export async function cmdInit(args) {
   const filesToCopy = [
     { src: 'sw.js',        dest: 'sw.js',        required: true },
     { src: 'client.js',    dest: 'client.js',    required: true },
-    { src: 'config.json',  dest: 'config.json',  required: false, checkExisting: true },
   ];
 
   const missing = [];
@@ -24,11 +23,6 @@ export async function cmdInit(args) {
   for (const item of filesToCopy) {
     const srcPath = resolve(outDir, item.src);
     const destPath = resolve(targetDir, item.dest);
-
-    if (item.checkExisting && existsSync(destPath)) {
-      console.log(`  ${c.dim}-${c.reset} ${c.yellow}Already exists, kept:${c.reset} ${item.dest}`);
-      continue;
-    }
 
     if (existsSync(srcPath)) {
       copyFileSync(srcPath, destPath);
@@ -39,11 +33,9 @@ export async function cmdInit(args) {
     }
   }
 
-  const configJsPath = resolve(targetDir, 'config.js');
   const nlpwaConfigJsPath = resolve(targetDir, 'nlpwa.config.js');
-  const configJsonPath = resolve(targetDir, 'config.json');
 
-  if (!existsSync(configJsPath) && !existsSync(nlpwaConfigJsPath) && !existsSync(configJsonPath)) {
+  if (!existsSync(nlpwaConfigJsPath)) {
     const starterConfigJs = `/**
  * NLPWA Configuration
  * https://github.com/arif891/nlpwa
@@ -61,8 +53,8 @@ export default {
   ],
 };
 `;
-    writeFileSync(configJsPath, starterConfigJs, 'utf8');
-    console.log(`  ${c.green}+${c.reset} ${c.bold}Scaffolded starter config:${c.reset} config.js`);
+    writeFileSync(nlpwaConfigJsPath, starterConfigJs, 'utf8');
+    console.log(`  ${c.green}+${c.reset} ${c.bold}Scaffolded starter config:${c.reset} nlpwa.config.js`);
   }
 
   if (missing.length > 0) {

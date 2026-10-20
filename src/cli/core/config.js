@@ -33,11 +33,12 @@ export function findConfigFile(explicitPath, cwd = process.cwd()) {
   }
 
   const candidates = [
-    './config.js',
     './nlpwa.config.js',
+    './nlpwa.config.mjs',
+    './nlpwa.config.json',
+    './config.js',
     './src/config.js',
     './config.json',
-    './nlpwa.config.json',
   ];
 
   for (const candidate of candidates) {

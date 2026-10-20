@@ -2,9 +2,9 @@
   "version": "1.0.0",
   "files": [
     {
-      "path": "/config.json",
-      "hash": "366a272cb63dc8172655eb389d13da78",
-      "size": 831
+      "path": "/api/update/config.json",
+      "hash": "14703cac50950d771ffc34924a70c774",
+      "size": 842
     },
     {
       "path": "/",

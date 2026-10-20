@@ -17,8 +17,8 @@ export default async () => {
     async writeBundle() {
       const { default: config } = await import('./src/config.js');
       const { writeFileSync, mkdirSync } = await import('node:fs');
-      mkdirSync('out', { recursive: true });
-      writeFileSync('out/config.json', JSON.stringify(config, null, 2), 'utf8');
+      mkdirSync('out/api/update', { recursive: true });
+      writeFileSync('out/api/update/config.json', JSON.stringify(config, null, 2), 'utf8');
     },
   };
 
@@ -37,7 +37,7 @@ export default async () => {
 
         const { cmdUpdate } = await import('./src/cli/commands/update.js');
         await cmdUpdate({
-          config: 'example/config.json',
+          config: 'example/nlpwa.config.js',
           dir: 'example',
           version: '1.0.0',
           pretty: true,

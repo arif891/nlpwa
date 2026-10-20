@@ -43,7 +43,7 @@ const server = createServer(async (req, res) => {
     try {
       const versionFile = join(__dirname, 'api/update/version.json');
       const infoFile = join(__dirname, 'api/update/info.json');
-      const configFile = join(__dirname, 'config.json');
+      const configFile = join(__dirname, 'api/update/config.json');
 
       const current = JSON.parse(readFileSync(versionFile, 'utf8'));
       const parts = current.version.split('.').map(Number);
@@ -64,7 +64,7 @@ const server = createServer(async (req, res) => {
         const info = JSON.parse(readFileSync(infoFile, 'utf8'));
         info.version = newVersion;
         if (info.files && info.files.length > 0) {
-          const cfgEntry = info.files.find(f => f.path === '/config.json') || info.files[0];
+          const cfgEntry = info.files.find(f => f.path === '/api/update/config.json') || info.files[0];
           cfgEntry.hash = newHash;
         }
         writeFileSync(infoFile, JSON.stringify(info, null, 2), 'utf8');
@@ -83,7 +83,7 @@ const server = createServer(async (req, res) => {
     try {
       const versionFile = join(__dirname, 'api/update/version.json');
       const infoFile = join(__dirname, 'api/update/info.json');
-      const configFile = join(__dirname, 'config.json');
+      const configFile = join(__dirname, 'api/update/config.json');
 
       const configData = JSON.parse(readFileSync(configFile, 'utf8'));
       configData.version = '1.0.0';
@@ -98,7 +98,7 @@ const server = createServer(async (req, res) => {
         const info = JSON.parse(readFileSync(infoFile, 'utf8'));
         info.version = '1.0.0';
         if (info.files && info.files.length > 0) {
-          const cfgEntry = info.files.find(f => f.path === '/config.json') || info.files[0];
+          const cfgEntry = info.files.find(f => f.path === '/api/update/config.json') || info.files[0];
           cfgEntry.hash = baseHash;
         }
         writeFileSync(infoFile, JSON.stringify(info, null, 2), 'utf8');

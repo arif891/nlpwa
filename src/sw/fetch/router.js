@@ -46,7 +46,7 @@ export function isManifestFile(requestUrl, config = getConfig()) {
   }
 
   // 1. Runtime config file is always an app shell asset
-  const configPath = config.configPath || '/config.json';
+  const configPath = config.configPath || '/api/update/config.json';
   if (pathname === configPath) return true;
 
   // 2. Precache files and glob patterns

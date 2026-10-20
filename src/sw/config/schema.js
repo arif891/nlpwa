@@ -93,7 +93,7 @@ export function validateConfig(config) {
   }
 
   if (config.configPath && typeof config.configPath !== 'string') {
-    errors.push('config.configPath must be a string (e.g. "/config.json")');
+    errors.push('config.configPath must be a string (e.g. "/api/update/config.json")');
   }
 
   // Validate updateAPI (object with { version, info } or array format)

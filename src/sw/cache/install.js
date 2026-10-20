@@ -57,7 +57,7 @@ export async function precacheFiles() {
 
 async function precacheWithoutManifest() {
   const config = getConfig();
-  const rawConfigPath = config.configPath || '/config.json';
+  const rawConfigPath = config.configPath || '/api/update/config.json';
   const configPath = resolvePathWithBase(rawConfigPath, config.base);
   
   const offlineCache = await openActive(config.caches.offline);

@@ -9,14 +9,14 @@ import { sha256Hex, hashMatches } from '../src/shared/hash.js';
 
 const CLI = fileURLToPath(new URL('../bin/nlpwa.js', import.meta.url));
 
-/** A throwaway project with a config.json source and a dist/ holding one precached file. */
+/** A throwaway project with an nlpwa.config.js source and a dist/ holding one precached file. */
 function makeProject() {
   const root = mkdtempSync(join(tmpdir(), 'nlpwa-cli-'));
   mkdirSync(join(root, 'dist'));
   writeFileSync(join(root, 'dist', 'index.html'), '<h1>hello</h1>');
   writeFileSync(
-    join(root, 'config.json'),
-    JSON.stringify({ version: '1.0.0', precache: ['/index.html'] }),
+    join(root, 'nlpwa.config.js'),
+    `export default { version: '1.0.0', precache: ['/index.html'] };\n`,
   );
   return root;
 }
@@ -24,7 +24,7 @@ function makeProject() {
 function runUpdate(root, extra = []) {
   return spawnSync(
     process.execPath,
-    [CLI, 'update', '--config', join(root, 'config.json'), '--dir', join(root, 'dist'), ...extra],
+    [CLI, 'update', '--config', join(root, 'nlpwa.config.js'), '--dir', join(root, 'dist'), ...extra],
     { cwd: root, encoding: 'utf8' },
   );
 }
@@ -38,15 +38,15 @@ test('cli update: emits manifest-hash derived version and preserves source confi
   const info = JSON.parse(readFileSync(join(root, 'dist/api/update/info.json'), 'utf8'));
   assert.match(version.version, /^1\.0\.0-[0-9a-f]{12}$/);
   assert.equal(version.version, info.version);
-  assert.deepEqual(info.files.map((f) => f.path).sort(), ['/config.json', '/index.html']);
+  assert.deepEqual(info.files.map((f) => f.path).sort(), ['/api/update/config.json', '/index.html']);
   for (const file of info.files) {
     assert.equal(typeof file.size, 'number', `file ${file.path} has size property`);
     assert.ok(file.size > 0, `file ${file.path} has positive size`);
   }
 
-  // Source config.json must NOT be mutated
-  const sourceConfig = JSON.parse(readFileSync(join(root, 'config.json'), 'utf8'));
-  assert.equal(sourceConfig.version, '1.0.0', 'source config.json was not mutated');
+  // Source nlpwa.config.js must NOT be mutated
+  const sourceConfig = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.ok(sourceConfig.includes("version: '1.0.0'"), 'source nlpwa.config.js was not mutated');
 });
 
 test('cli update: rebuilds of identical content are strictly idempotent', () => {
@@ -84,14 +84,14 @@ test('cli update: changing config settings (throwOnFailure, timeouts, intervals)
 
   // Change config fields without touching any tracked files
   writeFileSync(
-    join(root, 'config.json'),
-    JSON.stringify({
+    join(root, 'nlpwa.config.js'),
+    `export default ${JSON.stringify({
       version: '1.0.0',
       precache: ['/index.html'],
       throwOnFailure: true,
       networkTimeoutMs: 5000,
       navigationFallback: '/offline.html',
-    }),
+    })};`,
   );
 
   runUpdate(root);
@@ -136,7 +136,7 @@ test('cli build: acts as alias for update', () => {
   const root = makeProject();
   const res = spawnSync(
     process.execPath,
-    [CLI, 'build', '--config', join(root, 'config.json'), '--dir', join(root, 'dist')],
+    [CLI, 'build', '--config', join(root, 'nlpwa.config.js'), '--dir', join(root, 'dist')],
     { cwd: root, encoding: 'utf8' },
   );
   assert.equal(res.status, 0, res.stderr);
@@ -151,11 +151,11 @@ test('cli update: expands glob patterns in precache across directories', () => {
   writeFileSync(join(root, 'dist/assets/icons/icon-192.png'), 'png192');
   writeFileSync(join(root, 'dist/assets/icons/icon-512.png'), 'png512');
   writeFileSync(
-    join(root, 'config.json'),
-    JSON.stringify({
+    join(root, 'nlpwa.config.js'),
+    `export default ${JSON.stringify({
       version: '1.0.0',
       precache: ['/index.html', '/assets/icons/**'],
-    }),
+    })};`,
   );
 
   const res = runUpdate(root);
@@ -164,13 +164,13 @@ test('cli update: expands glob patterns in precache across directories', () => {
   const info = JSON.parse(readFileSync(join(root, 'dist/api/update/info.json'), 'utf8'));
   const paths = info.files.map((f) => f.path).sort();
   assert.deepEqual(paths, [
+    '/api/update/config.json',
     '/assets/icons/icon-192.png',
     '/assets/icons/icon-512.png',
-    '/config.json',
     '/index.html',
   ]);
 
-  const configJson = JSON.parse(readFileSync(join(root, 'dist/config.json'), 'utf8'));
+  const configJson = JSON.parse(readFileSync(join(root, 'dist/api/update/config.json'), 'utf8'));
   assert.deepEqual(configJson.precache.sort(), [
     '/assets/icons/icon-192.png',
     '/assets/icons/icon-512.png',
@@ -178,11 +178,10 @@ test('cli update: expands glob patterns in precache across directories', () => {
   ]);
 });
 
-test('cli help: init documents copying config.json (not config.js)', () => {
+test('cli help: init documents copying nlpwa.config.js', () => {
   const res = spawnSync(process.execPath, [CLI, '--help'], { encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and config\.json/);
-  assert.doesNotMatch(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and config\.js\b/);
+  assert.match(res.stdout, /init\s+Scaffolds or copies sw\.js, client\.js, and nlpwa\.config\.js/);
 });
 
 test('cli add: lists available plugins when no plugin name is provided', () => {
@@ -227,13 +226,13 @@ test('cli update: marks oversized files and skipVerifyGlobs with skipVerify: tru
   const root = makeProject();
   writeFileSync(join(root, 'dist', 'model.wasm'), Buffer.alloc(100, 'w'));
   writeFileSync(
-    join(root, 'config.json'),
-    JSON.stringify({
+    join(root, 'nlpwa.config.js'),
+    `export default ${JSON.stringify({
       version: '1.0.0',
       maxVerifyBytes: 50,
       skipVerifyGlobs: ['**/*.wasm'],
       precache: ['/index.html', '/model.wasm'],
-    }),
+    })};`,
   );
 
   const res = runUpdate(root);
@@ -247,6 +246,21 @@ test('cli update: marks oversized files and skipVerifyGlobs with skipVerify: tru
   const htmlEntry = info.files.find((f) => f.path === '/index.html');
   assert.ok(htmlEntry);
   assert.equal(htmlEntry.skipVerify, undefined, 'normal files should not have skipVerify: true');
+});
+
+test('cli init: scaffolds nlpwa.config.js and copies sw.js and client.js', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-init-'));
+  const outDir = fileURLToPath(new URL('../out', import.meta.url));
+  mkdirSync(outDir, { recursive: true });
+  if (!existsSync(join(outDir, 'sw.js'))) writeFileSync(join(outDir, 'sw.js'), '// sw');
+  if (!existsSync(join(outDir, 'client.js'))) writeFileSync(join(outDir, 'client.js'), '// client');
+
+  const res = spawnSync(process.execPath, [CLI, 'init', '--dir', root], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.ok(existsSync(join(root, 'nlpwa.config.js')), 'scaffolded nlpwa.config.js');
+  assert.ok(existsSync(join(root, 'sw.js')), 'copied sw.js');
+  assert.ok(existsSync(join(root, 'client.js')), 'copied client.js');
+  assert.ok(!existsSync(join(root, 'config.json')), 'did not copy root config.json');
 });
 
 test('cli update: --patch flag auto-increments base semver patch', () => {

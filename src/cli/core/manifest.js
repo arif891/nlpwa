@@ -43,7 +43,7 @@ export function canonicalizeConfig(obj, depth = 0) {
  * @returns {string} 12-character hex hash
  */
 export function computeManifestHash(files = [], config = {}) {
-  const configPath = config?.configPath || '/config.json';
+  const configPath = config?.configPath || '/api/update/config.json';
 
   const sortedFiles = files
     .filter((f) => f.path !== configPath)
@@ -137,7 +137,7 @@ function walkFiles(dir) {
  * }}
  */
 export function collectTrackedFiles(runtimeConfig, targetDir) {
-  const configPath = runtimeConfig.configPath || '/config.json';
+  const configPath = runtimeConfig.configPath || '/api/update/config.json';
   const trackedUrlPaths = Array.from(new Set([
     configPath,
     ...(runtimeConfig.precache || []),
@@ -207,7 +207,7 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
           size: fileSize,
           ...(skipVerify ? { skipVerify: true } : {}),
         });
-      } else {
+      } else if (urlPath !== configPath) {
         missing.push({ path: urlPath, diskPath });
       }
     }

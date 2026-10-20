@@ -1,6 +1,6 @@
 export default {
   version: '1.0.0',
-  configPath: '/config.json',
+  configPath: '/api/update/config.json',
   updateAPI: {
     version: '/api/update/version.json',
     info: '/api/update/info.json',

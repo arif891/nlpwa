@@ -1,5 +1,6 @@
 import { readMeta, writeMeta, deleteMeta } from './store.js';
 import { compare } from '../../../shared/version.js';
+import { logger } from '../../logger.js';
 
 const PINS_KEY = '/_nlpwa/client-pins.json';
 const _clientPins = new Map();
@@ -13,17 +14,20 @@ export async function initClientPins() {
     if (stored && typeof stored === 'object') {
       for (const [clientId, val] of Object.entries(stored)) {
         if (typeof val === 'string') {
-          _clientPins.set(clientId, { cache: val, version: null, pinnedAt: 0 });
+          _clientPins.set(clientId, { cache: val, version: null, pinnedAt: 0, lastSeenAt: Date.now() });
         } else if (val && typeof val === 'object' && typeof val.cache === 'string') {
           _clientPins.set(clientId, {
             cache: val.cache,
             version: val.version || null,
             pinnedAt: val.pinnedAt || 0,
+            lastSeenAt: val.lastSeenAt || val.pinnedAt || Date.now(),
           });
         }
       }
     }
-  } catch {}
+  } catch (err) {
+    logger.debug('[NLPWA] Failed to initialize client pins from storage:', err?.message || err);
+  }
   _pinsLoaded = true;
 }
 
@@ -45,7 +49,9 @@ export async function flushClientPins() {
     try {
       const obj = Object.fromEntries(_clientPins);
       await writeMeta(PINS_KEY, obj);
-    } catch {}
+    } catch (err) {
+      logger.debug('[NLPWA] Failed to flush client pins to storage:', err?.message || err);
+    }
     if (_needsWrite) {
       _needsWrite = false;
       return doWrite();
@@ -61,8 +67,21 @@ export async function flushClientPins() {
 
 export function pinClient(clientId, cacheName, version = null, pinnedAt = Date.now()) {
   if (!clientId || !cacheName) return Promise.resolve();
-  _clientPins.set(clientId, { cache: cacheName, version: version || null, pinnedAt });
+  _clientPins.set(clientId, {
+    cache: cacheName,
+    version: version || null,
+    pinnedAt,
+    lastSeenAt: pinnedAt,
+  });
   return flushClientPins();
+}
+
+export function touchClientPin(clientId) {
+  if (!clientId) return;
+  const pin = _clientPins.get(clientId);
+  if (pin && typeof pin === 'object') {
+    pin.lastSeenAt = Date.now();
+  }
 }
 
 export function unpinClient(clientId) {
@@ -108,19 +127,24 @@ export async function pruneClientPins(graceMs = PIN_GRACE_PERIOD_MS) {
     let changed = false;
     for (const [id, pin] of _clientPins.entries()) {
       if (!liveIds.has(id)) {
-        // Protect recently created pins from being prematurely pruned before the tab appears in clients.matchAll
-        const pinnedAt = typeof pin === 'object' ? (pin?.pinnedAt || 0) : 0;
-        if (now - pinnedAt < graceMs) {
+        // Protect recently created or recently active pins from being prematurely pruned
+        // if a backgrounded tab or frozen tab does not appear in clients.matchAll
+        const lastSeen = typeof pin === 'object' ? (pin?.lastSeenAt || pin?.pinnedAt || 0) : 0;
+        if (now - lastSeen < graceMs) {
           continue;
         }
         _clientPins.delete(id);
         changed = true;
+      } else if (typeof pin === 'object') {
+        pin.lastSeenAt = now;
       }
     }
     if (changed) {
       await flushClientPins();
     }
-  } catch {}
+  } catch (err) {
+    logger.debug('[NLPWA] Failed to prune client pins:', err?.message || err);
+  }
 }
 
 /**

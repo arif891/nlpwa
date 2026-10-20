@@ -1,5 +1,6 @@
 import { logger } from '../../logger.js';
 import { sha256Hex, hashMatches } from '../../../shared/hash.js';
+import { DEFAULT_STAGING_FETCH_TIMEOUT_MS } from '../../../shared/constants.js';
 
 /**
  * Fetch a file fresh from the network and check it against its manifest hash.
@@ -15,9 +16,10 @@ export async function fetchVerified({
   fileSize = null,
   allowOversizedUnverified = true,
   skipVerify = false,
+  timeoutMs = DEFAULT_STAGING_FETCH_TIMEOUT_MS,
 } = {}) {
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(30000)
+    ? AbortSignal.timeout(timeoutMs)
     : undefined;
   const response = await fetch(path, { cache: 'no-store', signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

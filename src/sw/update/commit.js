@@ -7,7 +7,7 @@ import {
   cleanupCaches, getAllPinnedCaches, pruneClientPins, withLock,
 } from '../cache/store.js';
 import { getSnapshotPath } from './manifest.js';
-import { setUpdateStatus } from './status.js';
+import { setUpdateStatus, setCommitDeferred } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 
 /**
@@ -123,6 +123,7 @@ export async function commitStaged(event) {
     await cleanupPromise;
   }
 
+  setCommitDeferred(false);
   logger.log(`[NLPWA] Switched to v${staged.version}`);
   return true;
 }
@@ -134,7 +135,17 @@ export async function commitStaged(event) {
  * @param {ExtendableEvent} [event]
  */
 export async function commitIfReady(event) {
-  return withLock(() => commitStaged(event), false);
+  const staged = await getStaged();
+  if (!staged?.complete) return false;
+
+  const committed = await withLock(() => commitStaged(event), false);
+  if (!committed) {
+    setCommitDeferred(true);
+    logger.debug('[NLPWA] Commit deferred: operation lock busy.');
+  } else {
+    setCommitDeferred(false);
+  }
+  return committed;
 }
 
 /** Delete offline caches left behind by interrupted or superseded updates. */

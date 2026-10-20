@@ -48,10 +48,16 @@ export function handleActivate(config) {
               }
             }
             await pruneClientPins();
-          } catch {}
+          } catch (err) {
+            logger.debug('[NLPWA] Failed to reconcile client pins on activation:', err?.message || err);
+          }
         }
-        await sweepOrphanCaches().catch(() => {});
-        await loadConfigFromCache().catch(() => {});
+        await sweepOrphanCaches().catch((err) => {
+          logger.debug('[NLPWA] Failed to sweep orphan caches on activation:', err?.message || err);
+        });
+        await loadConfigFromCache().catch((err) => {
+          logger.debug('[NLPWA] Failed to load config from cache on activation:', err?.message || err);
+        });
       })()
     );
   };

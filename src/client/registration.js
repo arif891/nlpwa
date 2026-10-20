@@ -53,7 +53,13 @@ export async function register(swUrl = '/sw.js', options = {}) {
   }
 
   // ── Update-ready handler ───────────────────────────────────────────────────
+  let lastReadyVersion = null;
   const unsubscribeUpdate = onUpdateReady((data) => {
+    if (data?.version && data.version === lastReadyVersion && !data.force) {
+      return;
+    }
+    lastReadyVersion = data?.version || null;
+
     if (typeof options.onUpdateReady === 'function') {
       options.onUpdateReady(data);
     }
@@ -80,6 +86,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
   // ── Update-applied handler (cross-tab coordination) ────────────────────────
   let unsubscribeApplied = onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, (data) => {
     if (data?.applied === false) return;
+    lastReadyVersion = null;
 
     document.dispatchEvent(
       new CustomEvent('nlpwa:update-applied', {

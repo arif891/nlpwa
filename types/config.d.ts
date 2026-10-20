@@ -145,9 +145,14 @@ export interface NLPWAConfig {
   version?: string;
   /** App version override when distinct from SW version */
   appVersion?: string;
-  /** Minimum required version; clients below this version are prompted/forced to update */
+  /**
+   * Minimum required version (base semver, e.g. "2.0.0").
+   * Tabs running an active or pinned version below this semver are unpinned and prompted to update immediately.
+   * Note: Semver comparison evaluates base semver (major.minor.patch); digest/hash suffixes (e.g. 1.0.0-<hash>)
+   * are non-monotonic content digests and are ignored for minVersion comparison.
+   */
   minVersion?: string;
-  /** Minimum supported version alias; clients below this version are prompted/forced to update */
+  /** Minimum supported version alias (same semantics as minVersion) */
   minSupportedVersion?: string;
   /** Custom Web Push notification event handler */
   onPush?: (event: any) => Promise<void> | void;

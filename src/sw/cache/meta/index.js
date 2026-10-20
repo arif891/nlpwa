@@ -29,6 +29,7 @@ import {
 import {
   initClientPins,
   pinClient,
+  touchClientPin,
   unpinClient,
   getClientPinnedCache,
   getClientPinnedVersion,
@@ -108,6 +109,7 @@ export {
   clearStaged,
   initClientPins,
   pinClient,
+  touchClientPin,
   unpinClient,
   getClientPinnedCache,
   getClientPinnedVersion,

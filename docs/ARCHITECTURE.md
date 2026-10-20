@@ -52,16 +52,16 @@ src/
 │   │   │   └── lock.js             Cooperative operation lock (Web Locks API + memory mutex)
 │   │   ├── offline/                Precache & app shell store
 │   │   │   ├── store.js            getFromOffline(), putInOffline(), deleteFromOffline()
-│   │   │   ├── aliases.js          matchWithAliases() — clean URLs, directory index, subpath bases
-│   │   │   └── install.js          precacheFiles() — install-time stage + commit (manifest-driven)
+│   │   │   └── aliases.js          matchWithAliases() — clean URLs, directory index, subpath bases
 │   │   ├── runtime/                Dynamic lazy cache store
-│   │   │   ├── store.js            getFromRuntime(), putInRuntime(), evictFromRuntime(), clearAllCaches()
-│   │   │   └── keys.js             cleanTrackingParams() — strips marketing/analytics query parameters
+│   │   │   └── store.js            getFromRuntime(), putInRuntime(), evictFromRuntime(), clearAllCaches()
 │   │   ├── eviction/               Storage inspection & eviction policies
 │   │   │   ├── quota.js            getStorageQuotaInfo() using navigator.storage.estimate()
 │   │   │   ├── size.js             resolveByteSize() for parsing bytes, KB, MB, GB, '50MB'
 │   │   │   ├── policies.js         cleanRuntimeCache() (LRU, largest, max-age, quota, pattern, all)
 │   │   │   └── route-cleaner.js    evictByRoute(), isCacheableUrl() — route-aware invalidation
+│   │   ├── install.js              precacheFiles() — install-time stage + commit (manifest-driven)
+│   │   ├── keys.js                 cleanTrackingParams() — strips marketing/analytics query parameters
 │   │   ├── tag.js                  tagResponse() — injects X-Cache-Status headers
 │   │   └── index.js                Barrel re-export
 │   ├── fetch/                      ← Fetch interception & request pipeline

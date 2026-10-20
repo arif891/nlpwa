@@ -1,5 +1,5 @@
 import { MESSAGE_TYPES } from '../../shared/constants.js';
-import { checkForUpdate, getUpdateStatus } from '../update/index.js';
+import { checkForUpdate, getUpdateStatus, isCommitDeferred } from '../update/index.js';
 import { commitIfReady } from '../update/commit.js';
 import { getStorageQuotaInfo, cleanRuntimeCache } from '../cache/cleanup.js';
 import {
@@ -114,15 +114,10 @@ export function handleMessage(config) {
             const pinnedCache = clientId ? getClientPinnedCache(clientId) : null;
             let pinnedVersion = clientId ? getClientPinnedVersion(clientId) : null;
             if (!pinnedVersion && pinnedCache) {
-              const atIndex = pinnedCache.indexOf('@');
-              if (atIndex !== -1) {
-                const afterAt = pinnedCache.slice(atIndex + 1);
-                const lastHyphen = afterAt.lastIndexOf('-');
-                if (lastHyphen !== -1 && afterAt.length - lastHyphen === 5) {
-                  pinnedVersion = afterAt.slice(0, lastHyphen);
-                } else {
-                  pinnedVersion = afterAt;
-                }
+              if (active && pinnedCache === active.cache) {
+                pinnedVersion = active.version;
+              } else if (staged && pinnedCache === staged.cache) {
+                pinnedVersion = staged.version;
               } else {
                 pinnedVersion = active?.version || null;
               }
@@ -153,7 +148,10 @@ export function handleMessage(config) {
         event.waitUntil((async () => {
           try {
             const status = await getUpdateStatus();
-            reply(MESSAGE_TYPES.STATUS_INFO, { status });
+            reply(MESSAGE_TYPES.STATUS_INFO, {
+              status,
+              commitDeferred: isCommitDeferred(),
+            });
           } catch (err) {
             reply(MESSAGE_TYPES.STATUS_INFO, null, err);
           }

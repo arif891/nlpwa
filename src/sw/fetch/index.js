@@ -2,7 +2,7 @@ import { ensureConfigReady, getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
 import { resolveStrategy } from './router.js';
 import { commitIfReady } from '../update/commit.js';
-import { initClientPins, pinClient, getClientPinnedCache, getActiveName, getActive } from '../cache/store.js';
+import { initClientPins, pinClient, touchClientPin, getClientPinnedCache, getActiveName, getActive } from '../cache/store.js';
 
 /**
  * Handle all `fetch` events from the Service Worker.
@@ -56,6 +56,8 @@ export function handleFetch(event) {
         const activeCacheName = await getActiveName(getConfig().caches.offline);
         const activeSnapshot = await getActive();
         pinPromise = pinClient(event.clientId, activeCacheName, activeSnapshot?.version || null);
+      } else if (event.clientId) {
+        touchClientPin(event.clientId);
       }
 
       if (pinPromise) {

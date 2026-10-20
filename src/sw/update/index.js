@@ -4,11 +4,11 @@ import { getStaged, clearStaged, withLock, setMinVersion, unpinClientsBelowVersi
 import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
 import { commitStaged } from './commit.js';
-import { setUpdateStatus, getUpdateStatus, getCurrentStatus } from './status.js';
+import { setUpdateStatus, getUpdateStatus, getCurrentStatus, isCommitDeferred, setCommitDeferred } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 import { compare } from '../../shared/version.js';
 
-export { setUpdateStatus, getUpdateStatus };
+export { setUpdateStatus, getUpdateStatus, getCurrentStatus, isCommitDeferred, setCommitDeferred };
 
 /**
  * Notify all connected clients with a postMessage.

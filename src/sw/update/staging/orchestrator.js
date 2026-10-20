@@ -4,7 +4,13 @@ import { openActive, getStaged, setStaged } from '../../cache/store.js';
 import { computeDiff, isSafePath } from '../diff.js';
 import { writeSnapshot } from '../manifest.js';
 import { cleanRuntimeCache } from '../../cache/cleanup.js';
-import { MAX_RETRY_ATTEMPTS, FETCH_CONCURRENCY, MESSAGE_TYPES } from '../../../shared/constants.js';
+import {
+  MAX_RETRY_ATTEMPTS,
+  FETCH_CONCURRENCY,
+  MESSAGE_TYPES,
+  DEFAULT_PROGRESS_THROTTLE_MS,
+  MAX_BACKOFF_MS,
+} from '../../../shared/constants.js';
 import { resolvePathWithBase } from '../../../shared/url.js';
 import { mapConcurrent } from '../../../shared/async.js';
 import { isAlreadyStaged } from './verifier.js';
@@ -116,7 +122,8 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       return;
     }
 
-    if (now - lastProgressBroadcast >= 250) {
+    const throttleMs = config.progressThrottleMs ?? DEFAULT_PROGRESS_THROTTLE_MS;
+    if (now - lastProgressBroadcast >= throttleMs) {
       if (progressTimeout) {
         clearTimeout(progressTimeout);
         progressTimeout = null;
@@ -130,7 +137,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         if (latestProgressPayload) {
           broadcastProgress(latestProgressPayload);
         }
-      }, 250 - (now - lastProgressBroadcast));
+      }, throttleMs - (now - lastProgressBroadcast));
     }
   };
 
@@ -202,7 +209,8 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
 
     let nextRetryAt = null;
     if (retryCount >= MAX_RETRY_ATTEMPTS) {
-      const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), 3600000);
+      const maxBackoff = config.maxBackoffMs ?? MAX_BACKOFF_MS;
+      const backoffMs = Math.min(60000 * Math.pow(2, Math.min(retryCount - MAX_RETRY_ATTEMPTS, 6)), maxBackoff);
       nextRetryAt = Date.now() + backoffMs;
       logger.warn(
         `[NLPWA] Staging incomplete: ${failed.length} file(s) failed after ${retryCount} attempts: ` +

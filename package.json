@@ -13,15 +13,6 @@
   "bugs": {
     "url": "https://github.com/arif891/nlpwa/issues"
   },
-  "files": [
-    "out",
-    "bin",
-    "src",
-    "types",
-    "test/helpers",
-    "README.md",
-    "LICENSE"
-  ],
   "engines": {
     "node": ">=20"
   },
@@ -83,6 +74,15 @@
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "bin",
+    "out",
+    "src/cli",
+    "src/shared",
+    "src/config.js",
+    "types",
+    "test/helpers"
+  ],
   "bin": {
     "nlpwa": "bin/nlpwa.js"
   },

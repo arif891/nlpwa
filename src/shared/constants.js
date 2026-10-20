@@ -73,3 +73,12 @@ export const CACHING_CAPABLE_STRATEGIES = new Set([
  * missing file (e.g. a typo in `precache`) from being retried forever.
  */
 export const MAX_RETRY_ATTEMPTS = 5;
+
+/** Default network timeout for single-file staging fetch (30 seconds) */
+export const DEFAULT_STAGING_FETCH_TIMEOUT_MS = 30000;
+
+/** Default interval between staging progress broadcasts (250 ms) */
+export const DEFAULT_PROGRESS_THROTTLE_MS = 250;
+
+/** Maximum exponential backoff cap between repeated failed update checks (1 hour) */
+export const MAX_BACKOFF_MS = 3600000;

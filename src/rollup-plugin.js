@@ -70,10 +70,11 @@ export function nlpwaPlugin(options = {}) {
         // virtual:nlpwa-version provides:
         // - BASE_VERSION: the base configured version (e.g. '1.0.0')
         // - APP_VERSION: the base app version at build time (e.g. '1.0.0').
-        // - CONTENT_HASH: composite 12-char content hash of tracked files & config
-        // Note: when deriveVersion is enabled (default), runtime manifests append the content hash
-        // (e.g. '1.0.0-a1b2c3d4e5f6'). If autoIncrement is true or deriveVersion is false,
-        // APP_VERSION matches the manifest version exactly.
+        // - CONTENT_HASH: composite 12-char content hash of tracked files & config available at transform time
+        // Note: During the load() hook, Rollup has not yet emitted current bundle chunks to distDir.
+        // Therefore, CONTENT_HASH here reflects pre-existing static files in distDir. The definitive
+        // post-build version and manifest hashes are emitted in version.json/info.json during writeBundle.
+        // If deriveVersion is false or autoIncrement is true, APP_VERSION matches the manifest version exactly.
         let contentHash = cachedContentHash;
         if (!contentHash) {
           try {
@@ -164,13 +165,14 @@ export function nlpwaPlugin(options = {}) {
       mkdirSync(dirname(versionOut), { recursive: true });
       mkdirSync(dirname(infoOut), { recursive: true });
 
+      const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
       const versionPayload = {
         version: appVersion,
-        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+        ...(minVer ? { minVersion: minVer } : {}),
       };
       const infoPayload = {
         version: appVersion,
-        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+        ...(minVer ? { minVersion: minVer } : {}),
         files,
       };
 

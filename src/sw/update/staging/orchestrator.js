@@ -65,8 +65,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const failed = [];
   const failedDetails = {};
 
-  const putWithQuotaRecovery = async (path, res) => {
-    const retryCopy = res.clone();
+  const putWithQuotaRecovery = async (path, res, reacquire = null) => {
     try {
       await next.put(path, res);
     } catch (err) {
@@ -75,8 +74,11 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         logger.warn(`[NLPWA] QuotaExceededError while staging ${path}. Freeing runtime cache space...`);
         const cleaned = await cleanRuntimeCache({ strategy: 'all' }).catch(() => null);
         if (cleaned && (cleaned.freedBytes > 0 || cleaned.evictedCount > 0)) {
-          await next.put(path, retryCopy);
-          return;
+          const retryCopy = reacquire ? await reacquire() : (res.bodyUsed ? null : res);
+          if (retryCopy) {
+            await next.put(path, retryCopy);
+            return;
+          }
         }
       }
       throw err;
@@ -162,13 +164,15 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       if (!forceRefetch && activeCache && hash && activeHashes.get(path) === hash) {
         const hit = (await activeCache.match(fetchUrl)) || (fetchUrl !== path ? await activeCache.match(path) : null);
         if (hit) {
-          await putWithQuotaRecovery(fetchUrl, hit);
+          await putWithQuotaRecovery(fetchUrl, hit, async () => {
+            return (await activeCache.match(fetchUrl)) || (fetchUrl !== path ? await activeCache.match(path) : null);
+          });
           stats.copied++;
           notifyProgress(path);
           return;
         }
       }
-      const fetchedRes = await fetchVerified({
+      const doFetch = () => fetchVerified({
         path: fetchUrl,
         expected: hash,
         verify,
@@ -177,7 +181,8 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         allowOversizedUnverified,
         skipVerify,
       });
-      await putWithQuotaRecovery(fetchUrl, fetchedRes);
+      const fetchedRes = await doFetch();
+      await putWithQuotaRecovery(fetchUrl, fetchedRes, doFetch);
       stats.fetched++;
       notifyProgress(path);
     } catch (err) {

@@ -164,11 +164,15 @@ export interface NLPWAConfig {
   updateAPI?: UpdateAPIConfig;
   /** Timeout in milliseconds for update check requests (default: 15000) */
   updateTimeoutMs?: number;
+  /** Staging progress event throttle in milliseconds (default: 250) */
+  progressThrottleMs?: number;
+  /** Maximum exponential backoff delay in milliseconds for failed staging retries (default: 3600000 = 1h) */
+  maxBackoffMs?: number;
   /** Hash verification mode for update downloads */
   verifyHashes?: 'strict' | 'warn' | false;
   /** Maximum file size in bytes for in-memory SHA-256 hash verification during staging (default: 20MB) */
   maxVerifyBytes?: number;
-  /** Explicit opt-in to allow files exceeding maxVerifyBytes to skip in-memory verification in strict mode (default: false) */
+  /** Whether files exceeding maxVerifyBytes skip in-memory verification in strict mode (default: true). Set to false to fail on oversized unverified files. */
   allowOversizedUnverified?: boolean;
   /** Glob patterns of files to exclude from SHA-256 hash verification during staging */
   skipVerifyGlobs?: string[];

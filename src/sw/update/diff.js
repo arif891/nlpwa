@@ -6,14 +6,24 @@
  */
 export function isSafePath(path) {
   if (typeof path !== 'string' || !path) return false;
-  // Must start with a single forward slash and not be followed by / or \
-  if (!/^\/(?![\/\\])/.test(path)) return false;
   // Reject absolute URLs with protocols (e.g. http:, https:, data:, javascript:)
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return false;
   // Reject backslashes anywhere in path (prevent Windows/URL parser normalization quirks)
   if (path.includes('\\')) return false;
-  // Reject path traversal with '..' segments
-  if (/(?:^|\/)\.\.(?:\/|$)/.test(path)) return false;
+  // Must start with a single forward slash and not be followed by / or \
+  if (!/^\/(?![\/\\])/.test(path)) return false;
+
+  // Decode URI components safely to catch percent-encoded traversal (e.g. /%2e%2e/)
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return false; // Malformed percent-encoding is rejected
+  }
+  if (decoded.includes('\\')) return false;
+  // Reject path traversal with '..' segments (both literal and percent-encoded)
+  if (/(?:^|\/)\.\.(?:\/|$)/.test(decoded) || /(?:^|\/)\.\.(?:\/|$)/.test(path)) return false;
+
   return true;
 }
 

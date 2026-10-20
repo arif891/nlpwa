@@ -57,7 +57,23 @@ export async function requestFromSW(type, payload = {}, replyType = '', timeoutM
     throw new Error('[NLPWA] Service Workers are not supported in this environment.');
   }
 
-  const registration = await navigator.serviceWorker.ready;
+  let registration = null;
+  if (navigator.serviceWorker.controller) {
+    // Fast-path: controller is already controlling this window
+  } else if (navigator.serviceWorker.ready) {
+    let readyTimer;
+    const readyTimeout = new Promise((_, reject) => {
+      readyTimer = setTimeout(() => {
+        reject(new Error(`[NLPWA] Timed out waiting for Service Worker ready state (${timeoutMs}ms)`));
+      }, timeoutMs);
+    });
+    try {
+      registration = await Promise.race([navigator.serviceWorker.ready, readyTimeout]);
+    } finally {
+      clearTimeout(readyTimer);
+    }
+  }
+
   const sw = navigator.serviceWorker.controller || registration?.active;
   if (!sw) {
     throw new Error('[NLPWA] No active Service Worker controller found.');

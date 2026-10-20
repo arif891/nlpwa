@@ -20,11 +20,22 @@ import { initClientPins, pinClient, touchClientPin, getClientPinnedCache, getAct
 export function handleFetch(event) {
   const { request } = event;
 
-  // Intercept GET requests, or non-GET mutations when plugins are configured
+  // Intercept GET requests, or non-GET mutations when plugins or direct hooks are configured
   if (request.method !== 'GET') {
     const config = getConfig();
     const hasGlobalPlugins = Array.isArray(config?.plugins) && config.plugins.length > 0;
-    const hasRoutePlugins = Array.isArray(config?.routes) && config.routes.some((r) => Array.isArray(r?.plugins) && r.plugins.length > 0);
+    const hasRoutePlugins = Array.isArray(config?.routes) && config.routes.some((r) => {
+      if (Array.isArray(r?.plugins) && r.plugins.length > 0) return true;
+      return (
+        typeof r?.fetchDidFail === 'function' ||
+        typeof r?.requestWillFetch === 'function' ||
+        typeof r?.fetchDidSucceed === 'function' ||
+        typeof r?.cacheDidUpdate === 'function' ||
+        typeof r?.cacheWillUpdate === 'function' ||
+        typeof r?.cacheKeyWillBeUsed === 'function' ||
+        typeof r?.cachedResponseWillBeUsed === 'function'
+      );
+    });
     if (!hasGlobalPlugins && !hasRoutePlugins) {
       return;
     }

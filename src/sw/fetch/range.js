@@ -83,20 +83,21 @@ export async function createRangeResponse(request, response) {
     end = Math.min(end, knownTotal - 1);
     const contentLength = end - start + 1;
 
-    let reader;
+    let stream = null;
     try {
-      reader = response.clone().body.getReader();
-    } catch {
-      reader = null;
-    }
-
-    if (reader) {
-      const stream = new ReadableStream({
+      const clonedResponse = response.clone();
+      let activeReader = null;
+      stream = new ReadableStream({
         async start(controller) {
           let bytesRead = 0;
           try {
+            activeReader = clonedResponse.body?.getReader();
+            if (!activeReader) {
+              controller.close();
+              return;
+            }
             while (true) {
-              const { done, value } = await reader.read();
+              const { done, value } = await activeReader.read();
               if (done) break;
               const chunkLen = value.byteLength;
               const chunkStart = bytesRead;
@@ -107,7 +108,7 @@ export async function createRangeResponse(request, response) {
                 continue;
               }
               if (chunkStart > end) {
-                await reader.cancel().catch(() => {});
+                await activeReader.cancel().catch(() => {});
                 break;
               }
 
@@ -117,22 +118,30 @@ export async function createRangeResponse(request, response) {
               controller.enqueue(slice);
 
               if (bytesRead > end) {
-                await reader.cancel().catch(() => {});
+                await activeReader.cancel().catch(() => {});
                 break;
               }
             }
             controller.close();
           } catch (err) {
             controller.error(err);
+          } finally {
+            try {
+              activeReader?.releaseLock();
+            } catch {}
           }
         },
         async cancel() {
           try {
-            await reader.cancel();
+            await activeReader?.cancel();
           } catch {}
         },
       });
+    } catch {
+      stream = null;
+    }
 
+    if (stream) {
       const headers = new Headers(response.headers);
       headers.set('Content-Range', `bytes ${start}-${end}/${knownTotal}`);
       headers.set('Content-Length', String(contentLength));

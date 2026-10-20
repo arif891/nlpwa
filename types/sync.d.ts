@@ -34,11 +34,17 @@ export class SyncQueue {
   size(): Promise<number>;
   remove(id: number): Promise<void>;
   clear(): Promise<void>;
+  getDeadLetter(): Promise<Array<any>>;
+  retryDeadLetter(id: number): Promise<boolean>;
+  clearDeadLetter(): Promise<void>;
+  getAuthRequired(): Promise<Array<any>>;
+  retryAuthRequired(id?: number): Promise<number>;
   replayAll(options?: {
     fetchImpl?: typeof fetch;
     onReplaySuccess?: (item: any, response: Response) => void;
     onReplayFail?: (item: any, error: any) => void;
   }): Promise<ReplayResult>;
+  static clearAll(): Promise<void>;
 }
 
 export { SyncClient, syncClient } from './sync-client';

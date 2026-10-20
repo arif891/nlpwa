@@ -37,6 +37,8 @@ export interface VersionInfoData {
   swVersion: string | null;
   pinnedCache?: string | null;
   pinnedVersion?: string | null;
+  minVersion?: string | null;
+  updateRequired?: boolean;
 }
 
 export interface UpdateFailedData {
@@ -64,17 +66,21 @@ export interface CacheInfoData {
 
 export interface CleanupRuntimeOptions {
   strategy?: 'largest' | 'lru' | 'max-age' | 'quota' | 'pattern' | 'all';
+  maxItem?: string | number;
   maxItemBytes?: number;
   maxItemKB?: number;
   maxItemMB?: number;
+  minItem?: string | number;
   minItemBytes?: number;
   minItemKB?: number;
   minItemMB?: number;
+  maxTotal?: string | number;
   maxTotalBytes?: number;
   maxTotalKB?: number;
   maxTotalMB?: number;
   maxEntries?: number;
   maxAgeMs?: number;
+  maxQuota?: string | number;
   maxQuotaPercent?: number;
   maxQuotaBytes?: number;
   maxQuotaMB?: number;

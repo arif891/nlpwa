@@ -49,6 +49,8 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'defaultStrategy',
   'networkTimeoutMs',
   'updateTimeoutMs',
+  'progressThrottleMs',
+  'maxBackoffMs',
   'navigationFallback',
   'offlineFallback',
   'logLevel',

@@ -79,6 +79,7 @@
     "out",
     "src/cli",
     "src/shared",
+    "src/sw",
     "src/config.js",
     "types",
     "test/helpers"

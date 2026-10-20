@@ -21,7 +21,14 @@ export class SyncClient {
   getPending(queueName?: string, options?: { timeoutMs?: number }): Promise<PendingSyncInfo>;
   replay(queueName?: string, options?: { timeoutMs?: number }): Promise<ReplayResult>;
   clear(queueName?: string, options?: { timeoutMs?: number }): Promise<boolean>;
+  getDeadLetter(queueName?: string, options?: { timeoutMs?: number }): Promise<Array<any>>;
+  retryDeadLetter(id: number, queueName?: string, options?: { timeoutMs?: number }): Promise<boolean>;
+  clearDeadLetter(queueName?: string, options?: { timeoutMs?: number }): Promise<boolean>;
+  clearOnLogout(): Promise<void>;
+  getAuthRequired(queueName?: string): Promise<Array<any>>;
+  retryAuthRequired(queueName?: string, id?: number): Promise<number>;
   autoSyncOnOnline(queueName?: string): () => void;
+  destroy?(): void;
 }
 
 export const syncClient: SyncClient;

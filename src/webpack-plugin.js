@@ -112,13 +112,14 @@ export class NlpwaWebpackPlugin {
       mkdirSync(dirname(versionOut), { recursive: true });
       mkdirSync(dirname(infoOut), { recursive: true });
 
+      const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
       const versionPayload = {
         version: appVersion,
-        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+        ...(minVer ? { minVersion: minVer } : {}),
       };
       const infoPayload = {
         version: appVersion,
-        ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+        ...(minVer ? { minVersion: minVer } : {}),
         files,
       };
 

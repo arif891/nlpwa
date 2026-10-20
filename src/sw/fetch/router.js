@@ -39,9 +39,14 @@ export function isManifestFile(requestUrl, config = getConfig()) {
   let pathname = requestUrl.pathname;
   if (config.base) {
     const cleanBase = config.base.replace(/\/+$/, '');
-    if (cleanBase && (pathname === cleanBase || pathname.startsWith(cleanBase + '/'))) {
-      pathname = pathname.slice(cleanBase.length);
-      if (!pathname.startsWith('/')) pathname = '/' + pathname;
+    if (cleanBase) {
+      if (pathname === cleanBase || pathname.startsWith(cleanBase + '/')) {
+        pathname = pathname.slice(cleanBase.length);
+        if (!pathname.startsWith('/')) pathname = '/' + pathname;
+      } else {
+        // Request is outside configured subpath base; it cannot belong to this app's manifest/precache
+        return false;
+      }
     }
   }
 
@@ -89,11 +94,16 @@ export function matchRoute(requestUrl, routes = [], config = {}) {
     : true;
 
   let appPathname = requestUrl.pathname;
+  let isUnderBase = true;
   if (config.base) {
     const cleanBase = config.base.replace(/\/+$/, '');
-    if (cleanBase && (appPathname === cleanBase || appPathname.startsWith(cleanBase + '/'))) {
-      appPathname = appPathname.slice(cleanBase.length);
-      if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
+    if (cleanBase) {
+      if (appPathname === cleanBase || appPathname.startsWith(cleanBase + '/')) {
+        appPathname = appPathname.slice(cleanBase.length);
+        if (!appPathname.startsWith('/')) appPathname = '/' + appPathname;
+      } else {
+        isUnderBase = false;
+      }
     }
   }
 
@@ -125,7 +135,7 @@ export function matchRoute(requestUrl, routes = [], config = {}) {
     if (
       regex.test(requestUrl.href) ||
       regex.test(requestUrl.pathname) ||
-      regex.test(appPathname)
+      (isUnderBase && regex.test(appPathname))
     ) {
       return route;
     }

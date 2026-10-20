@@ -120,13 +120,14 @@ export async function cmdUpdate(args) {
   mkdirSync(dirname(versionOut), { recursive: true });
   mkdirSync(dirname(infoOut), { recursive: true });
 
+  const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
   const versionPayload = {
     version: newVersion,
-    ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+    ...(minVer ? { minVersion: minVer } : {}),
   };
   const infoPayload = {
     version: newVersion,
-    ...(rawConfig.minVersion ? { minVersion: rawConfig.minVersion } : {}),
+    ...(minVer ? { minVersion: minVer } : {}),
     files,
   };
 

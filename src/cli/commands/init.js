@@ -1,9 +1,33 @@
-import { writeFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { writeFileSync, existsSync, mkdirSync, copyFileSync, readFileSync } from 'node:fs';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { c, printBanner } from '../ui/terminal.js';
+import { createPngIcon, createSvgIcon, createManifest } from '../core/icons.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function resolveAppName(targetDir, explicitName) {
+  if (explicitName) return explicitName;
+  const pkgPath = resolve(targetDir, 'package.json');
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      if (pkg.name) {
+        return pkg.name
+          .replace(/^@[^/]+\//, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\b\w/g, (ch) => ch.toUpperCase());
+      }
+    } catch {}
+  }
+  const dirName = basename(targetDir);
+  if (dirName && dirName !== '.' && dirName !== '/') {
+    return dirName
+      .replace(/[-_]+/g, ' ')
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+  }
+  return 'My Progressive Web App';
+}
 
 export async function cmdInit(args) {
   printBanner();
@@ -33,9 +57,74 @@ export async function cmdInit(args) {
     }
   }
 
+  // ── Manifest and PWA Icons Scaffolding ──────────────────────────────────────
+  const shouldCreateManifest = args['no-manifest'] !== true;
+  let manifestCreated = false;
+
+  if (shouldCreateManifest) {
+    const manifestPath = resolve(targetDir, 'manifest.webmanifest');
+    const iconsDir = resolve(targetDir, 'icons');
+
+    const appName = resolveAppName(targetDir, args.name);
+    const shortName = args.shortName || appName.split(' ')[0] || 'App';
+    const themeColor = args.themeColor || '#0ea5e9';
+    const bgColor = args.bgColor || '#0f172a';
+
+    if (!existsSync(manifestPath)) {
+      const manifestObj = createManifest({
+        name: appName,
+        shortName,
+        themeColor,
+        bgColor,
+      });
+      writeFileSync(manifestPath, JSON.stringify(manifestObj, null, 2), 'utf8');
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} manifest.webmanifest (${appName})`);
+      manifestCreated = true;
+    }
+
+    mkdirSync(iconsDir, { recursive: true });
+
+    const icon192Path = resolve(iconsDir, 'icon-192.png');
+    if (!existsSync(icon192Path)) {
+      const png192 = createPngIcon(192, { themeColor, bgColor });
+      writeFileSync(icon192Path, png192);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} icons/icon-192.png`);
+    }
+
+    const icon512Path = resolve(iconsDir, 'icon-512.png');
+    if (!existsSync(icon512Path)) {
+      const png512 = createPngIcon(512, { themeColor, bgColor });
+      writeFileSync(icon512Path, png512);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} icons/icon-512.png`);
+    }
+
+    const iconSvgPath = resolve(iconsDir, 'icon.svg');
+    if (!existsSync(iconSvgPath)) {
+      const svg = createSvgIcon({ name: appName, shortName, themeColor, bgColor });
+      writeFileSync(iconSvgPath, svg, 'utf8');
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} icons/icon.svg`);
+    }
+  }
+
+  // ── Starter nlpwa.config.js ────────────────────────────────────────────────
   const nlpwaConfigJsPath = resolve(targetDir, 'nlpwa.config.js');
 
   if (!existsSync(nlpwaConfigJsPath)) {
+    const precacheList = [
+      "'/'",
+      "'/index.html'",
+      "'/client.js'",
+    ];
+
+    if (shouldCreateManifest) {
+      precacheList.push(
+        "'/manifest.webmanifest'",
+        "'/icons/icon-192.png'",
+        "'/icons/icon-512.png'",
+        "'/icons/icon.svg'",
+      );
+    }
+
     const starterConfigJs = `/**
  * NLPWA Configuration
  * https://github.com/arif891/nlpwa
@@ -43,9 +132,7 @@ export async function cmdInit(args) {
 export default {
   version: '1.0.0',
   precache: [
-    '/',
-    '/index.html',
-    '/client.js',
+    ${precacheList.join(',\n    ')},
   ],
   routes: [
     { match: '/assets/**', strategy: 'cache-first' },
@@ -69,10 +156,14 @@ ${c.red}${c.bold}  Init failed:${c.reset} ${missing.join(', ')} not found in ${o
 ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
 
   ${c.bold}Next steps:${c.reset}
-  1. Add the client script to your HTML:
-     ${c.cyan}<script src="/client.js"></script>${c.reset}
+  1. Add PWA tags & client script to your HTML <head>:
+     ${c.cyan}<link rel="manifest" href="/manifest.webmanifest">
+     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+     <link rel="apple-touch-icon" href="/icons/icon-192.png">
+     <meta name="theme-color" content="${args.themeColor || '#0ea5e9'}">
+     <script src="/client.js"></script>${c.reset}
 
-  2. Configure routes & offline precache in ${c.bold}config.json${c.reset}
+  2. Configure routes & offline precache in ${c.bold}nlpwa.config.js${c.reset}
 
   3. When deploying updates, run:
      ${c.cyan}npx nlpwa update${c.reset}

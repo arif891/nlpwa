@@ -248,19 +248,48 @@ test('cli update: marks oversized files and skipVerifyGlobs with skipVerify: tru
   assert.equal(htmlEntry.skipVerify, undefined, 'normal files should not have skipVerify: true');
 });
 
-test('cli init: scaffolds nlpwa.config.js and copies sw.js and client.js', () => {
+test('cli init: scaffolds nlpwa.config.js, manifest.webmanifest, icons, and copies sw.js and client.js', () => {
   const root = mkdtempSync(join(tmpdir(), 'nlpwa-init-'));
   const outDir = fileURLToPath(new URL('../out', import.meta.url));
   mkdirSync(outDir, { recursive: true });
   if (!existsSync(join(outDir, 'sw.js'))) writeFileSync(join(outDir, 'sw.js'), '// sw');
   if (!existsSync(join(outDir, 'client.js'))) writeFileSync(join(outDir, 'client.js'), '// client');
 
-  const res = spawnSync(process.execPath, [CLI, 'init', '--dir', root], { encoding: 'utf8' });
+  const res = spawnSync(process.execPath, [CLI, 'init', '--dir', root, '--name', 'Test PWA'], { encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);
   assert.ok(existsSync(join(root, 'nlpwa.config.js')), 'scaffolded nlpwa.config.js');
   assert.ok(existsSync(join(root, 'sw.js')), 'copied sw.js');
   assert.ok(existsSync(join(root, 'client.js')), 'copied client.js');
   assert.ok(!existsSync(join(root, 'config.json')), 'did not copy root config.json');
+
+  // Verify web app manifest and icons
+  assert.ok(existsSync(join(root, 'manifest.webmanifest')), 'scaffolded manifest.webmanifest');
+  const manifest = JSON.parse(readFileSync(join(root, 'manifest.webmanifest'), 'utf8'));
+  assert.equal(manifest.name, 'Test PWA');
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.icons.length, 3);
+
+  assert.ok(existsSync(join(root, 'icons/icon-192.png')), 'generated icon-192.png');
+  assert.ok(existsSync(join(root, 'icons/icon-512.png')), 'generated icon-512.png');
+  assert.ok(existsSync(join(root, 'icons/icon.svg')), 'generated icon.svg');
+
+  // Verify PNG signature (first 8 bytes: 89 50 4E 47 0D 0A 1A 0A)
+  const pngBuf = readFileSync(join(root, 'icons/icon-192.png'));
+  assert.deepEqual(Array.from(pngBuf.subarray(0, 8)), [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+  // Verify precache includes manifest and icons
+  const configContent = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.ok(configContent.includes("'/manifest.webmanifest'"));
+  assert.ok(configContent.includes("'/icons/icon-192.png'"));
+});
+
+test('cli init: --no-manifest flag skips manifest and icon generation', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-init-no-manifest-'));
+  const res = spawnSync(process.execPath, [CLI, 'init', '--dir', root, '--no-manifest'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.ok(existsSync(join(root, 'nlpwa.config.js')));
+  assert.ok(!existsSync(join(root, 'manifest.webmanifest')));
+  assert.ok(!existsSync(join(root, 'icons')));
 });
 
 test('cli update: --patch flag auto-increments base semver patch', () => {

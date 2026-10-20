@@ -41,13 +41,21 @@ ${c.bold}COMMANDS${c.reset}
   ${c.green}build${c.reset}             Alias for "update" — builds manifest and update endpoints.
   ${c.green}status${c.reset}            Inspects manifest version, update endpoints, and tracked files.
 
+${c.bold}OPTIONS (init)${c.reset}
+  --dir <path>         Target project directory (default: .)
+  --name <name>        App name for web app manifest (default: from package.json or folder)
+  --short-name <short> Short name for app launcher (default: first word of name)
+  --theme-color <hex>  Theme color for browser header & splash screen (default: #0ea5e9)
+  --bg-color <hex>     Background color for app launcher splash screen (default: #0f172a)
+  --no-manifest        Skip generating manifest.webmanifest and PNG/SVG icons
+
 ${c.bold}OPTIONS (update / build)${c.reset}
-  --config <path>  Path to developer config file (default: ./nlpwa.config.js)
-  --dir <path>     Directory holding production assets (default: ./dist or ./public)
-  --version <v>    Explicit version override (bypasses automatic content-hash derivation)
-  --patch          Auto-increments base semver patch before computing hash (e.g. 1.0.0 -> 1.0.1)
-  --clean          Emits directory-style endpoints (/api/update/version/index.json)
-  --pretty         Formats output JSON with 2-space indentation (default: false / minified)
-  --help, -h       Show this help message
+  --config <path>      Path to developer config file (default: ./nlpwa.config.js)
+  --dir <path>         Directory holding production assets (default: ./dist or ./public)
+  --version <v>        Explicit version override (bypasses automatic content-hash derivation)
+  --patch              Auto-increments base semver patch before computing hash (e.g. 1.0.0 -> 1.0.1)
+  --clean              Emits directory-style endpoints (/api/update/version/index.json)
+  --pretty             Formats output JSON with 2-space indentation (default: false / minified)
+  --help, -h           Show this help message
 `);
 }

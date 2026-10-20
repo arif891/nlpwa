@@ -327,10 +327,13 @@ export interface SharedTargetFile {
   type: string;
   size: number;
   lastModified?: number;
-  data?: number[];
+  url?: string;
+  blob?: Blob;
+  error?: string;
 }
 
 export interface SharedTargetData {
+  id?: string;
   title?: string;
   text?: string;
   url?: string;

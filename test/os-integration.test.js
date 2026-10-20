@@ -173,15 +173,15 @@ test('share target: isShareTargetRequest detects matching action URL', () => {
 });
 
 test('share target: handleShareTarget caches data and redirects with 303', async () => {
-  // Mock caches
   const cacheStorage = new Map();
+  const getKey = (item) => (typeof item === 'string' ? item : item?.url || String(item));
   globalThis.caches = {
-    open: async (name) => ({
+    open: async () => ({
       put: async (req, resp) => {
-        cacheStorage.set(req.url, resp);
+        cacheStorage.set(getKey(req), resp);
       },
-      match: async (url) => cacheStorage.get(url) || null,
-      delete: async (url) => cacheStorage.delete(url),
+      match: async (req) => cacheStorage.get(getKey(req)) || null,
+      delete: async (req) => cacheStorage.delete(getKey(req)),
     }),
   };
 
@@ -212,4 +212,99 @@ test('share target: handleShareTarget caches data and redirects with 303', async
   // Subsequent call yields null because it was consumed
   const sharedAgain = await getLatestSharedData();
   assert.equal(sharedAgain, null);
+});
+
+test('share target: FIFO queue preserves multiple shares without overwriting', async () => {
+  const cacheStorage = new Map();
+  const getKey = (item) => (typeof item === 'string' ? item : item?.url || String(item));
+  globalThis.caches = {
+    open: async () => ({
+      put: async (req, resp) => {
+        cacheStorage.set(getKey(req), resp);
+      },
+      match: async (req) => cacheStorage.get(getKey(req)) || null,
+      delete: async (req) => cacheStorage.delete(getKey(req)),
+    }),
+  };
+
+  const config = { shareTarget: { action: '/_share-target' } };
+
+  // Share 1
+  await handleShareTarget({
+    request: { url: 'https://example.com/_share-target?title=First', method: 'GET' },
+  }, config);
+
+  // Share 2
+  await handleShareTarget({
+    request: { url: 'https://example.com/_share-target?title=Second', method: 'GET' },
+  }, config);
+
+  // First call returns Share 1
+  const first = await getLatestSharedData();
+  assert.equal(first.title, 'First');
+
+  // Second call returns Share 2
+  const second = await getLatestSharedData();
+  assert.equal(second.title, 'Second');
+
+  // Third call is empty
+  const third = await getLatestSharedData();
+  assert.equal(third, null);
+});
+
+test('share target: stores binary files as responses and enforces maxFileBytes', async () => {
+  const cacheStorage = new Map();
+  const getKey = (item) => (typeof item === 'string' ? item : item?.url || String(item));
+  globalThis.caches = {
+    open: async () => ({
+      put: async (req, resp) => {
+        cacheStorage.set(getKey(req), resp);
+      },
+      match: async (req) => cacheStorage.get(getKey(req)) || null,
+      delete: async (req) => cacheStorage.delete(getKey(req)),
+    }),
+  };
+
+  const normalFile = new Blob(['sample-file-bytes'], { type: 'text/plain' });
+  normalFile.name = 'note.txt';
+  normalFile.lastModified = Date.now();
+
+  const oversizedFile = new Blob(['huge-file-bytes'], { type: 'video/mp4' });
+  oversizedFile.name = 'large.mp4';
+  Object.defineProperty(oversizedFile, 'size', { value: 60 * 1024 * 1024 });
+
+  const mockFormData = {
+    get: (key) => (key === 'title' ? 'File Share' : null),
+    getAll: (key) => (key === 'files' ? [normalFile, oversizedFile] : []),
+  };
+
+  const config = {
+    shareTarget: {
+      action: '/_share-target',
+      maxFileBytes: 50 * 1024 * 1024,
+      params: { title: 'title', files: [{ name: 'files' }] },
+    },
+  };
+
+  await handleShareTarget({
+    request: {
+      url: 'https://example.com/_share-target',
+      method: 'POST',
+      formData: async () => mockFormData,
+    },
+  }, config);
+
+  const shared = await getLatestSharedData();
+  assert.ok(shared);
+  assert.equal(shared.files.length, 2);
+
+  // First file stored successfully with Blob
+  assert.equal(shared.files[0].name, 'note.txt');
+  assert.ok(shared.files[0].blob);
+  const text = await shared.files[0].blob.text();
+  assert.equal(text, 'sample-file-bytes');
+
+  // Second file rejected with FILE_TOO_LARGE error
+  assert.equal(shared.files[1].name, 'large.mp4');
+  assert.equal(shared.files[1].error, 'FILE_TOO_LARGE');
 });

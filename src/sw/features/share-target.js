@@ -1,7 +1,8 @@
 import { logger } from '../logger.js';
 
 export const SHARE_CACHE_NAME = 'nlpwa-share-target';
-export const SHARE_RECORD_KEY = 'https://nlpwa.internal/_nlpwa_share/latest';
+export const SHARE_QUEUE_KEY = 'https://nlpwa.internal/_nlpwa_share/queue';
+export const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB per file limit
 
 /**
  * Check if a request matches the configured Web Share Target action.
@@ -24,9 +25,41 @@ export function isShareTargetRequest(request, config = {}) {
 }
 
 /**
+ * Read the current pending share queue from cache.
+ *
+ * @param {Cache} cache
+ * @returns {Promise<string[]>}
+ */
+async function getShareQueue(cache) {
+  try {
+    const resp = await cache.match(SHARE_QUEUE_KEY);
+    if (!resp) return [];
+    return await resp.json();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save the pending share queue to cache.
+ *
+ * @param {Cache} cache
+ * @param {string[]} queue
+ */
+async function saveShareQueue(cache, queue) {
+  await cache.put(
+    new Request(SHARE_QUEUE_KEY),
+    new Response(JSON.stringify(queue), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  );
+}
+
+/**
  * Handle incoming Web Share Target submission.
- * Extracts title, text, url, and files, stores the payload in offline cache,
- * broadcasts it to open clients if available, and issues a 303 redirect.
+ * Extracts title, text, url, and stores individual binary files directly as
+ * separate native Response objects in Cache Storage to prevent memory exhaustion.
+ * Adds the share to a FIFO queue and issues an HTTP 303 See Other redirect.
  *
  * @param {FetchEvent} event
  * @param {Object} [config]
@@ -36,8 +69,11 @@ export async function handleShareTarget(event, config = {}) {
   const { request } = event;
   const shareConfig = config.shareTarget || config.share_target || {};
   const redirectUrl = shareConfig.redirectUrl || '/?shared=1';
+  const maxFileBytes = Number(shareConfig.maxFileBytes) || DEFAULT_MAX_FILE_BYTES;
 
+  const shareId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const sharedData = {
+    id: shareId,
     title: '',
     text: '',
     url: '',
@@ -46,6 +82,11 @@ export async function handleShareTarget(event, config = {}) {
   };
 
   try {
+    let cache = null;
+    if (typeof caches !== 'undefined') {
+      cache = await caches.open(SHARE_CACHE_NAME);
+    }
+
     if (request.method === 'POST') {
       const formData = await request.formData();
       const titleParam = shareConfig.params?.title || 'title';
@@ -58,18 +99,52 @@ export async function handleShareTarget(event, config = {}) {
       sharedData.url = String(formData.get(urlParam) || '');
 
       const fileEntries = formData.getAll(filesParam);
+      let fileIdx = 0;
       for (const item of fileEntries) {
-        if (item && typeof item === 'object' && item.name) {
-          try {
-            const buffer = await item.arrayBuffer();
-            sharedData.files.push({
-              name: item.name,
-              type: item.type,
-              size: item.size,
-              lastModified: item.lastModified,
-              data: Array.from(new Uint8Array(buffer)),
+        if (!item || typeof item !== 'object' || !item.name) continue;
+
+        const size = Number(item.size) || 0;
+        if (size > maxFileBytes) {
+          logger.warn(`[NLPWA] Shared file "${item.name}" exceeds limit (${(size / 1024 / 1024).toFixed(1)} MB > ${(maxFileBytes / 1024 / 1024).toFixed(1)} MB). Skipped.`);
+          sharedData.files.push({
+            name: item.name,
+            type: item.type || 'application/octet-stream',
+            size,
+            error: 'FILE_TOO_LARGE',
+          });
+          continue;
+        }
+
+        const fileKey = `https://nlpwa.internal/_nlpwa_share/files/${shareId}/${fileIdx++}`;
+
+        try {
+          if (cache) {
+            // Store file as its own native Response/Blob in cache rather than encoding into JSON
+            const fileResponse = new Response(item, {
+              headers: {
+                'Content-Type': item.type || 'application/octet-stream',
+                'X-File-Name': encodeURIComponent(item.name),
+                'X-File-Size': String(size),
+              },
             });
-          } catch {}
+            await cache.put(new Request(fileKey), fileResponse);
+          }
+
+          sharedData.files.push({
+            name: item.name,
+            type: item.type || 'application/octet-stream',
+            size,
+            lastModified: item.lastModified,
+            url: fileKey,
+          });
+        } catch (fileErr) {
+          logger.warn(`[NLPWA] Error storing shared file "${item.name}":`, fileErr?.message || fileErr);
+          sharedData.files.push({
+            name: item.name,
+            type: item.type || 'application/octet-stream',
+            size,
+            error: fileErr?.message || 'READ_FAILED',
+          });
         }
       }
     } else {
@@ -83,18 +158,23 @@ export async function handleShareTarget(event, config = {}) {
       sharedData.url = url.searchParams.get(urlParam) || '';
     }
 
-    // Persist in cache so the client can retrieve it upon landing on redirectUrl
-    if (typeof caches !== 'undefined') {
-      const cache = await caches.open(SHARE_CACHE_NAME);
+    if (cache) {
+      // Store metadata record under its unique share ID
+      const recordKey = `https://nlpwa.internal/_nlpwa_share/records/${shareId}`;
       await cache.put(
-        new Request(SHARE_RECORD_KEY),
+        new Request(recordKey),
         new Response(JSON.stringify(sharedData), {
           headers: { 'Content-Type': 'application/json' },
         })
       );
+
+      // Append shareId to FIFO queue
+      const queue = await getShareQueue(cache);
+      queue.push(shareId);
+      await saveShareQueue(cache, queue);
     }
 
-    // Broadcast to open client windows if any
+    // Broadcast notification to open windows if any
     if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
       const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const client of clients) {
@@ -114,20 +194,51 @@ export async function handleShareTarget(event, config = {}) {
 }
 
 /**
- * Retrieve and clear the latest stored shared data.
+ * Retrieve and consume the next shared data item from the FIFO queue.
+ * Materializes cached file blobs and removes the entry from storage.
  *
  * @returns {Promise<Object|null>}
  */
 export async function getLatestSharedData() {
   if (typeof caches === 'undefined') return null;
+
   try {
     const cache = await caches.open(SHARE_CACHE_NAME);
-    const resp = await cache.match(SHARE_RECORD_KEY);
-    if (!resp) return null;
-    const data = await resp.json();
-    await cache.delete(SHARE_RECORD_KEY);
+    const queue = await getShareQueue(cache);
+    if (!queue || queue.length === 0) return null;
+
+    // Pop oldest share item (FIFO)
+    const shareId = queue.shift();
+    await saveShareQueue(cache, queue);
+
+    const recordKey = `https://nlpwa.internal/_nlpwa_share/records/${shareId}`;
+    const recordResp = await cache.match(recordKey);
+    if (!recordResp) return null;
+
+    const data = await recordResp.json();
+    await cache.delete(recordKey);
+
+    // Hydrate files from cache as Blobs and delete the cached file blobs
+    if (Array.isArray(data.files)) {
+      for (const file of data.files) {
+        if (file.url) {
+          try {
+            const fileResp = await cache.match(file.url);
+            if (fileResp) {
+              file.blob = await fileResp.blob();
+              await cache.delete(file.url);
+            }
+          } catch (fileErr) {
+            logger.warn(`[NLPWA] Failed to hydrate shared file "${file.name}":`, fileErr?.message || fileErr);
+            file.error = fileErr?.message || 'HYDRATION_FAILED';
+          }
+        }
+      }
+    }
+
     return data;
-  } catch {
+  } catch (err) {
+    logger.warn('[NLPWA] Error retrieving shared data from queue:', err?.message || err);
     return null;
   }
 }

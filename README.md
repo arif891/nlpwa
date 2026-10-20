@@ -7,21 +7,52 @@ A lightweight, zero-runtime-dependency Service Worker framework that makes Progr
 
 ---
 
-## Features at a Glance
+## The Core Problem: Why Most PWAs Feel Fragile
 
-- **Decoupled SW vs. App versioning** — The SW engine installs once and stays running; app releases arrive over-the-air without worker lifecycle churn.
-- **Atomic updates & Client Version Pinning** — Updates stage into an isolated delta cache; active tabs remain pinned to their current version until the session closes or the user confirms an update.
-- **Minimum Supported Version enforcement** — Specify `minVersion` to automatically unpin deprecated versions and force-reload tabs when breaking backend API changes are deployed.
-- **Two-tier update protocol** — Lightweight version poll (~20 bytes) first; full file manifests downloaded only when an update actually exists.
-- **Hash-verified OTA deltas** — Only modified files are downloaded; every asset is verified against SHA-256 hashes to prevent corruption or captive portal caching.
-- **5 configurable fetch strategies** — `cache-first`, `network-first`, `stale-while-revalidate`, `network-only`, and `cache-only` with glob route pattern matching.
-- **Background Sync & offline mutation queue** — Queue offline `POST`/`PUT`/`DELETE` mutations in IndexedDB with automatic replay, dead-letter storage, and session redirect protection.
-- **Native PWA installation & persistent storage** — Automatic `beforeinstallprompt` capture with promise-based `.install()`, plus persistent storage protection against browser cache eviction.
-- **Unified reactive state store** — Synchronize connectivity, update staging status, installability, and OS badges across UI frameworks via `nlpwa.getState()` and `nlpwa.subscribe()`.
-- **OS Badging API & Web Share Target** — Set and clear native app icon badges (with silent fallback and automatic push clearance), and receive shared files and links directly from the OS Share sheet.
-- **Zero runtime dependencies** — Pre-bundled standalone engine (`sw.js`), runtime SDK (`client.js`), and starter configuration.
+In traditional Service Worker setups (like Workbox), every app update requires re-compiling the Service Worker script itself. When a user opens an app while an update is rolling out, one of two bad things happens:
+1. **Version Drift / Broken Tabs:** The new Service Worker calls `skipWaiting()`, abruptly swapping cached assets out from underneath active tabs. The user clicks a route or dynamically imports a chunk, and gets a `404 ChunkLoadError` or loads mixed-version code.
+2. **Infinite Waiting Workers:** The user is trapped on an obsolete version until *all* open tabs are closed simultaneously.
+
+**NLPWA eliminates this completely through Atomic OTA Updates and Client Version Pinning.**
 
 ---
+
+## Core Capabilities
+
+- **Atomic Over-The-Air (OTA) Updates** — Updates stage into an isolated delta cache in the background. Only after 100% of files are downloaded and verified does the version atomically flip. You never get half-updated states.
+- **Client Version Pinning (Zero Version Drift)** — Each open tab is pinned to the exact version it booted with. Subresource requests continue serving from that version until the tab navigates or the user confirms an update banner.
+- **Decoupled SW vs. App Lifecycle** — The Service Worker engine installs once and stays running. App releases arrive as data-driven OTA deltas without worker re-registration churn.
+- **Two-Tier Update Protocol** — A tiny Tier 1 check (~20 bytes) confirms if an update exists before downloading any file manifests, keeping network and battery overhead near zero.
+- **Cryptographic Hash Verification** — Every staged file is validated against SHA-256 digests in transit, protecting against captive portal HTML intercepts, proxy glitches, and corrupted downloads.
+- **Minimum Supported Version (`minVersion`)** — Breaking backend API change? Set `minVersion` on your server to automatically unpin deprecated versions and force a clean reload.
+
+---
+
+## NLPWA vs. Workbox
+
+| Capability | Workbox | NLPWA |
+|:---|:---:|:---:|
+| **Update Architecture** | Re-installs entire Service Worker per release | Decoupled SW engine + background OTA delta protocol |
+| **Open Tab Isolation** | ❌ None (`skipWaiting` breaks active tabs) | ✅ **Client Version Pinning** isolates each tab to its boot version |
+| **Atomic Staging** | ❌ Live in-place cache mutation | ✅ **Isolated staging cache** with zero mixed-version states |
+| **Asset Download Strategy** | Re-downloads revised precache assets | Downloads only diffs; copies unchanged files locally (0 bytes) |
+| **Integrity Verification** | Custom revision string comparison | In-transit **SHA-256** checksum verification on all staged files |
+| **Breaking Version Guard** | ❌ Requires custom messaging logic | ✅ Built-in **`minVersion`** auto-evicts outdated clients |
+| **Deploy Workflow** | Must re-compile / re-inject `sw.js` every build | `sw.js` stays static; CLI emits lightweight JSON update manifests |
+| **Dependencies** | Dozens of packages (`workbox-*`) | **Zero runtime dependencies** (drop-in pre-bundled files or npm exports) |
+| **Native OS Integrations** | ❌ None (must hand-roll) | ✅ Built-in Install manager, Badging, Share Target, and Persistent Storage |
+
+---
+
+## Built-in Native OS Integrations
+
+In addition to atomic updates, NLPWA provides zero-dependency native OS wrappers:
+- **PWA Installation Manager** — Captures `beforeinstallprompt` automatically, persists deferred prompt across navigation, and exposes `nlpwa.install()`.
+- **Persistent Storage** — `nlpwa.requestPersistentStorage()` guards offline caches from browser eviction under storage pressure.
+- **Unified Reactive State Store** — `nlpwa.subscribe((state) => ...)` exposes unified status (`online`, `updateStatus`, `badgeCount`, `isInstallable`) for React, Vue, Svelte, or vanilla JS.
+- **OS Badging API** — `nlpwa.setBadge()` / `nlpwa.clearBadge()` sets app icon badges across Windows, macOS, Android, and iOS, with automatic clearing on push clicks.
+- **Web Share Target** — Intercepts system share sheet submissions (files, text, URLs) into a safe FIFO queue with size protection and `nlpwa.onShareTarget()`.
+- **Background Sync** — Queue offline `POST`/`PUT`/`DELETE` mutations in IndexedDB with automatic replay, dead-letter storage, and session redirect protection.
 
 ## Quick Start
 

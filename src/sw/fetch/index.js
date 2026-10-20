@@ -3,6 +3,7 @@ import { logger } from '../logger.js';
 import { resolveStrategy } from './router.js';
 import { commitIfReady } from '../update/commit.js';
 import { initClientPins, pinClient, touchClientPin, getClientPinnedCache, getActiveName, getActive } from '../cache/store.js';
+import { isShareTargetRequest, handleShareTarget } from '../features/share-target.js';
 
 /**
  * Handle all `fetch` events from the Service Worker.
@@ -20,9 +21,22 @@ import { initClientPins, pinClient, touchClientPin, getClientPinnedCache, getAct
 export function handleFetch(event) {
   const { request } = event;
 
+  // Intercept Web Share Target requests (GET or POST) before generic method filtering
+  const currentConfig = getConfig();
+  if (isShareTargetRequest(request, currentConfig)) {
+    event._nlpwaIntercepted = true;
+    event.respondWith(
+      (async () => {
+        await ensureConfigReady();
+        return handleShareTarget(event, getConfig());
+      })()
+    );
+    return;
+  }
+
   // Intercept GET requests, or non-GET mutations when plugins or direct hooks are configured
   if (request.method !== 'GET') {
-    const config = getConfig();
+    const config = currentConfig;
     const hasGlobalPlugins = Array.isArray(config?.plugins) && config.plugins.length > 0;
     const hasRoutePlugins = Array.isArray(config?.routes) && config.routes.some((r) => {
       if (Array.isArray(r?.plugins) && r.plugins.length > 0) return true;

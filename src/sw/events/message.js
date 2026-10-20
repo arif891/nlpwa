@@ -13,6 +13,7 @@ import {
   getMinVersion,
 } from '../cache/store.js';
 import { compare } from '../../shared/version.js';
+import { getLatestSharedData } from '../features/share-target.js';
 
 /**
  * Service Worker postMessage event handler.
@@ -154,6 +155,57 @@ export function handleMessage(config) {
             });
           } catch (err) {
             reply(MESSAGE_TYPES.STATUS_INFO, null, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.GET_SHARED_DATA:
+        event.waitUntil((async () => {
+          try {
+            const data = await getLatestSharedData();
+            reply(MESSAGE_TYPES.SHARED_DATA, data);
+          } catch (err) {
+            reply(MESSAGE_TYPES.SHARED_DATA, null, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.SET_BADGE:
+        event.waitUntil((async () => {
+          try {
+            const count = event.data?.count;
+            let success = false;
+            if (typeof navigator !== 'undefined') {
+              if (count === 0 && typeof navigator.clearAppBadge === 'function') {
+                await navigator.clearAppBadge();
+                success = true;
+              } else if (typeof navigator.setAppBadge === 'function') {
+                if (count === undefined || count === null) {
+                  await navigator.setAppBadge();
+                } else {
+                  await navigator.setAppBadge(Math.max(0, Math.floor(Number(count))));
+                }
+                success = true;
+              }
+            }
+            reply(MESSAGE_TYPES.BADGE_RESULT, { success, count });
+          } catch (err) {
+            reply(MESSAGE_TYPES.BADGE_RESULT, { success: false }, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.CLEAR_BADGE:
+        event.waitUntil((async () => {
+          try {
+            let success = false;
+            if (typeof navigator !== 'undefined' && typeof navigator.clearAppBadge === 'function') {
+              await navigator.clearAppBadge();
+              success = true;
+            }
+            reply(MESSAGE_TYPES.BADGE_RESULT, { success, count: 0 });
+          } catch (err) {
+            reply(MESSAGE_TYPES.BADGE_RESULT, { success: false }, err);
           }
         })());
         break;

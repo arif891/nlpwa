@@ -184,15 +184,16 @@ export function createManifest(options = {}) {
   const bgColor = options.bgColor || '#0f172a';
   const startUrl = options.startUrl || '/';
 
-  return {
+  const manifest = {
     name,
     short_name: shortName,
     description: options.description || 'Native-like Progressive Web App powered by NLPWA',
     start_url: startUrl,
-    display: 'standalone',
+    scope: options.scope || '/',
+    display: options.display || 'standalone',
     background_color: bgColor,
     theme_color: themeColor,
-    icons: [
+    icons: options.icons || [
       {
         src: '/icons/icon-192.png',
         sizes: '192x192',
@@ -212,5 +213,25 @@ export function createManifest(options = {}) {
         purpose: 'any maskable',
       },
     ],
+    launch_handler: options.launchHandler || {
+      client_mode: 'navigate-existing',
+    },
+    shortcuts: options.shortcuts || [
+      {
+        name: `Open ${shortName}`,
+        short_name: shortName,
+        url: startUrl,
+        icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+      },
+    ],
   };
+
+  if (options.shareTarget) {
+    manifest.share_target = options.shareTarget;
+  }
+  if (options.fileHandlers) {
+    manifest.file_handlers = options.fileHandlers;
+  }
+
+  return manifest;
 }

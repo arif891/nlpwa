@@ -1,5 +1,7 @@
 import { onInstallable, isInstalled, isInstallable, promptInstall } from './install.js';
 import { isStoragePersistent, requestPersistentStorage } from './storage.js';
+import { isBadgingSupported, setAppBadge, clearAppBadge } from './badge.js';
+import { getSharedData, onShareTarget } from './share-target.js';
 import {
   onUpdateReady,
   onNoUpdate,
@@ -29,6 +31,7 @@ import {
  * @property {boolean} isInstallable
  * @property {boolean} isInstalled
  * @property {boolean | null} isStoragePersistent
+ * @property {number | null} badgeCount
  * @property {{ loaded: number, total: number, percent: number, file?: string } | null} stagingProgress
  */
 
@@ -44,6 +47,7 @@ let _state = {
   isInstallable: isInstallable(),
   isInstalled: isInstalled(),
   isStoragePersistent: null,
+  badgeCount: null,
   stagingProgress: null,
 };
 
@@ -220,6 +224,23 @@ export const nlpwa = {
     return granted;
   },
   isStoragePersistent,
+  setBadge: async (count) => {
+    const ok = await setAppBadge(count);
+    if (ok) {
+      setState({ badgeCount: count === undefined || count === null ? 1 : Math.max(0, Math.floor(Number(count))) });
+    }
+    return ok;
+  },
+  clearBadge: async () => {
+    const ok = await clearAppBadge();
+    if (ok) {
+      setState({ badgeCount: 0 });
+    }
+    return ok;
+  },
+  isBadgingSupported,
+  getSharedData,
+  onShareTarget,
 };
 
 export const client = nlpwa;

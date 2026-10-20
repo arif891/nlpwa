@@ -31,6 +31,11 @@ export const MESSAGE_TYPES = {
   UNPIN_CLIENT:        'UNPIN_CLIENT',        // client → SW: remove client pin
   CLIENT_UNPINNED:     'CLIENT_UNPINNED',     // SW → client: reply confirming client version unpin
   UPDATE_REQUIRED:     'UPDATE_REQUIRED',     // SW → client: active/pinned version is below minimum supported version
+  SET_BADGE:           'SET_BADGE',           // client → SW: request badge update
+  CLEAR_BADGE:         'CLEAR_BADGE',         // client → SW: request badge clear
+  BADGE_RESULT:        'BADGE_RESULT',        // SW → client: reply confirming badge action
+  GET_SHARED_DATA:     'GET_SHARED_DATA',     // client → SW: request pending Web Share Target payload
+  SHARED_DATA:         'SHARED_DATA',         // SW → client: reply or broadcast with Web Share Target payload
 };
 
 /** Runtime cache cleanup strategies */

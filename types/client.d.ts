@@ -306,6 +306,48 @@ export function isStoragePersistent(): Promise<boolean>;
  */
 export function requestPersistentStorage(): Promise<boolean>;
 
+/**
+ * Check if the Badging API is supported by the current browser environment.
+ */
+export function isBadgingSupported(): boolean;
+
+/**
+ * Set the application badge count.
+ * @param count Badge count (positive integer) or undefined for an uncounted dot badge.
+ */
+export function setAppBadge(count?: number | null): Promise<boolean>;
+
+/**
+ * Clear the application badge.
+ */
+export function clearAppBadge(): Promise<boolean>;
+
+export interface SharedTargetFile {
+  name: string;
+  type: string;
+  size: number;
+  lastModified?: number;
+  data?: number[];
+}
+
+export interface SharedTargetData {
+  title?: string;
+  text?: string;
+  url?: string;
+  files?: SharedTargetFile[];
+  timestamp?: number;
+}
+
+/**
+ * Retrieve any pending shared data received by the Service Worker via Web Share Target.
+ */
+export function getSharedData(): Promise<SharedTargetData | null>;
+
+/**
+ * Subscribe to Web Share Target events when files or text are shared to the app.
+ */
+export function onShareTarget(callback: (sharedData: SharedTargetData) => void): () => void;
+
 export interface NLPWAState {
   online: boolean;
   updateStatus: 'idle' | 'checking' | 'staging' | 'ready' | 'applying' | 'commit-deferred' | 'failed';
@@ -317,6 +359,7 @@ export interface NLPWAState {
   isInstallable: boolean;
   isInstalled: boolean;
   isStoragePersistent: boolean | null;
+  badgeCount: number | null;
   stagingProgress: { loaded: number; total: number; percent: number; file?: string } | null;
 }
 
@@ -355,6 +398,11 @@ export interface NLPWAClientAPI {
   promptInstall: typeof promptInstall;
   isStoragePersistent: typeof isStoragePersistent;
   requestPersistentStorage: typeof requestPersistentStorage;
+  setBadge: (count?: number | null) => Promise<boolean>;
+  clearBadge: () => Promise<boolean>;
+  isBadgingSupported: typeof isBadgingSupported;
+  getSharedData: typeof getSharedData;
+  onShareTarget: typeof onShareTarget;
   getState: typeof getState;
   subscribe: typeof subscribe;
 }

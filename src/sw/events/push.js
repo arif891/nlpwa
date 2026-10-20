@@ -38,7 +38,18 @@ export function handlePush(userConfig = {}) {
           return;
         }
 
-        if (payload?.title && self.registration && typeof self.registration.showNotification === 'function') {
+        // Set or clear app badge if specified in push payload
+        if (payload?.badge !== undefined && typeof navigator !== 'undefined') {
+          if (payload.badge === 0 || payload.badge === null) {
+            if (typeof navigator.clearAppBadge === 'function') {
+              await navigator.clearAppBadge().catch(() => {});
+            }
+          } else if (typeof navigator.setAppBadge === 'function') {
+            await navigator.setAppBadge(Number(payload.badge)).catch(() => {});
+          }
+        }
+
+        if (typeof self !== 'undefined' && payload?.title && self.registration && typeof self.registration.showNotification === 'function') {
           const { title, ...options } = payload;
           await self.registration.showNotification(title, options);
         }
@@ -70,10 +81,16 @@ export function handleNotificationClick(userConfig = {}) {
     }
 
     event.notification.close();
+
+    // Clear application badge when notification is clicked unless opted out
+    if (userConfig.clearBadgeOnClick !== false && typeof navigator !== 'undefined' && typeof navigator.clearAppBadge === 'function') {
+      navigator.clearAppBadge().catch(() => {});
+    }
+
     const targetUrl = event.notification.data?.url || '/';
 
     event.waitUntil((async () => {
-      if (self.clients && typeof self.clients.matchAll === 'function') {
+      if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
         const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
         for (const client of windowClients) {
           if (client.url === targetUrl && 'focus' in client) {

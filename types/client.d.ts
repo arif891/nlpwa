@@ -265,6 +265,71 @@ export function cleanupRuntimeCache(
  */
 export function isUserEditing(): boolean;
 
+export interface InstallInfo {
+  isInstallable: boolean;
+  isInstalled: boolean;
+  prompt: () => Promise<{ outcome: 'accepted' | 'dismissed', platform: string }>;
+}
+
+/**
+ * Check if the application is currently running in standalone / installed mode.
+ */
+export function isInstalled(): boolean;
+
+/**
+ * Check if the application can currently be installed via a prompt.
+ */
+export function isInstallable(): boolean;
+
+/**
+ * Register a listener for when the app becomes installable or installation state changes.
+ */
+export function onInstallable(callback: (info: InstallInfo) => void): () => void;
+
+/**
+ * Register a listener for when the app is successfully installed.
+ */
+export function onAppInstalled(callback: (event: Event) => void): () => void;
+
+/**
+ * Trigger the native PWA install prompt if available.
+ */
+export function promptInstall(): Promise<{ outcome: 'accepted' | 'dismissed', platform: string }>;
+
+/**
+ * Check whether storage persistence is already granted by the browser.
+ */
+export function isStoragePersistent(): Promise<boolean>;
+
+/**
+ * Request persistent storage from the browser.
+ */
+export function requestPersistentStorage(): Promise<boolean>;
+
+export interface NLPWAState {
+  online: boolean;
+  updateStatus: 'idle' | 'checking' | 'staging' | 'ready' | 'applying' | 'commit-deferred' | 'failed';
+  version: string | null;
+  activeVersion: string | null;
+  stagedVersion: string | null;
+  minVersion: string | null;
+  updateRequired: boolean;
+  isInstallable: boolean;
+  isInstalled: boolean;
+  isStoragePersistent: boolean | null;
+  stagingProgress: { loaded: number; total: number; percent: number; file?: string } | null;
+}
+
+/**
+ * Get a synchronous snapshot of the current NLPWA state.
+ */
+export function getState(): NLPWAState;
+
+/**
+ * Subscribe to NLPWA state changes.
+ */
+export function subscribe(listener: (state: NLPWAState) => void): () => void;
+
 export interface NLPWAClientAPI {
   register: typeof register;
   unregister: typeof unregister;
@@ -283,7 +348,17 @@ export interface NLPWAClientAPI {
   getCacheInfo: typeof getCacheInfo;
   cleanupRuntimeCache: typeof cleanupRuntimeCache;
   isUserEditing: typeof isUserEditing;
+  isInstalled: typeof isInstalled;
+  isInstallable: typeof isInstallable;
+  onInstallable: typeof onInstallable;
+  onAppInstalled: typeof onAppInstalled;
+  promptInstall: typeof promptInstall;
+  isStoragePersistent: typeof isStoragePersistent;
+  requestPersistentStorage: typeof requestPersistentStorage;
+  getState: typeof getState;
+  subscribe: typeof subscribe;
 }
 
-declare const client: NLPWAClientAPI;
+export declare const nlpwa: NLPWAClientAPI;
+export declare const client: NLPWAClientAPI;
 export default client;

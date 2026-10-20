@@ -3,4 +3,7 @@ export { onUpdateReady, onNoUpdate, onUpdateFailed, onStagingProgress, applyUpda
 export { requestUpdateCheck, sendToSW, requestFromSW, getVersion, getStatus } from './messaging.js';
 export { getCacheInfo, cleanupRuntimeCache } from './cache-manager.js';
 export { attachDebugPanel } from './debug.js';
+export { isInstalled, isInstallable, onInstallable, onAppInstalled, promptInstall } from './install.js';
+export { isStoragePersistent, requestPersistentStorage } from './storage.js';
+export { getState, subscribe, nlpwa, client } from './status-store.js';
 

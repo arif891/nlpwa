@@ -11,21 +11,44 @@
  */
 export function getManifestSignPayload(manifest) {
   if (!manifest || typeof manifest !== 'object') return '';
-  const sortedFiles = Array.isArray(manifest.files)
-    ? [...manifest.files]
-        .filter((f) => f && typeof f.path === 'string')
-        .sort((a, b) => a.path.localeCompare(b.path))
-        .map((f) => ({
-          path: f.path,
-          hash: f.hash || '',
-          size: typeof f.size === 'number' ? f.size : 0,
-        }))
-    : [];
 
   const canonicalObj = {
     version: String(manifest.version || ''),
-    files: sortedFiles,
   };
+
+  if (manifest.sequence !== undefined && manifest.sequence !== null) {
+    canonicalObj.sequence = Number(manifest.sequence) || 0;
+  }
+  if (manifest.timestamp !== undefined && manifest.timestamp !== null) {
+    canonicalObj.timestamp = Number(manifest.timestamp) || 0;
+  }
+  if (manifest.minVersion !== undefined && manifest.minVersion !== null) {
+    canonicalObj.minVersion = String(manifest.minVersion);
+  }
+  if (manifest.minSupportedVersion !== undefined && manifest.minSupportedVersion !== null) {
+    canonicalObj.minSupportedVersion = String(manifest.minSupportedVersion);
+  }
+  if (Array.isArray(manifest.blockedVersions)) {
+    canonicalObj.blockedVersions = [...manifest.blockedVersions].map(String).sort();
+  }
+  if (manifest.channel !== undefined && manifest.channel !== null) {
+    canonicalObj.channel = String(manifest.channel);
+  }
+  if (manifest.rolloutPercent !== undefined && manifest.rolloutPercent !== null) {
+    canonicalObj.rolloutPercent = Number(manifest.rolloutPercent) || 0;
+  }
+
+  if (Array.isArray(manifest.files)) {
+    canonicalObj.files = [...manifest.files]
+      .filter((f) => f && typeof f.path === 'string')
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map((f) => ({
+        path: f.path,
+        hash: f.hash || '',
+        size: typeof f.size === 'number' ? f.size : 0,
+        skipVerify: Boolean(f.skipVerify),
+      }));
+  }
 
   return JSON.stringify(canonicalObj);
 }

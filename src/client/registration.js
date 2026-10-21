@@ -138,9 +138,34 @@ export async function register(swUrl = '/sw.js', options = {}) {
     if (typeof options.onUpdateRequired === 'function') {
       options.onUpdateRequired(data);
     } else if (options.forceReloadOnRequired !== false) {
-      logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${data?.minVersion}). Reloading application.`);
-      if (typeof window !== 'undefined' && window.location?.reload) {
-        window.location.reload();
+      let canReload = true;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          const key = 'nlpwa_req_reload';
+          const record = JSON.parse(sessionStorage.getItem(key) || '{"count":0,"time":0}');
+          const now = Date.now();
+          if (now - (record.time || 0) < 10000) {
+            record.count = (record.count || 0) + 1;
+          } else {
+            record.count = 1;
+            record.time = now;
+          }
+          sessionStorage.setItem(key, JSON.stringify(record));
+          if (record.count > 2) {
+            canReload = false;
+            logger.error(`[NLPWA] Multiple rapid reloads detected for minVersion (${data?.minVersion}). Reload loop blocked to protect user.`);
+            if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+              document.dispatchEvent(new CustomEvent('nlpwa:update-required-blocked', { detail: data }));
+            }
+          }
+        }
+      } catch {}
+
+      if (canReload) {
+        logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${data?.minVersion}). Reloading application.`);
+        if (typeof window !== 'undefined' && window.location?.reload) {
+          window.location.reload();
+        }
       }
     }
   });

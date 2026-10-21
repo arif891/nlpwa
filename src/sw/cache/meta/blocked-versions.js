@@ -123,32 +123,37 @@ export async function unblockVersion(version) {
  * @returns {Promise<string[]>}
  */
 export async function syncBlockedVersions(remoteBlocked) {
-  if (!Array.isArray(remoteBlocked) || remoteBlocked.length === 0) {
+  if (!Array.isArray(remoteBlocked)) {
     return getBlockedVersions();
   }
 
   const current = await getBlockedVersions();
-  const set = new Set(current);
   const data = await readMeta(BLOCKED_VERSIONS_KEY).catch(() => null);
   const entries = data?.entries || {};
   let changed = false;
 
-  for (const v of remoteBlocked) {
-    if (typeof v === 'string') {
-      if (!set.has(v)) {
-        set.add(v);
-        changed = true;
-      }
-      if (!entries[v]) {
-        entries[v] = { blockedAt: Date.now(), ttlMs: 0, reason: 'Remote sync' };
-        changed = true;
-      }
+  const remoteSet = new Set(remoteBlocked.filter((v) => typeof v === 'string'));
+
+  // 1. Add newly blocked remote versions
+  for (const v of remoteSet) {
+    if (!entries[v]) {
+      entries[v] = { blockedAt: Date.now(), ttlMs: 0, reason: 'Remote sync' };
+      changed = true;
+    }
+  }
+
+  // 2. Unblock versions previously synced from remote that are no longer in remoteBlocked
+  for (const [v, meta] of Object.entries(entries)) {
+    if (meta?.reason === 'Remote sync' && !remoteSet.has(v)) {
+      delete entries[v];
+      changed = true;
+      logger.log(`[NLPWA] Version v${v} was removed from remote blocked list. Unblocked.`);
     }
   }
 
   if (changed) {
-    const list = Array.from(set);
-    _blockedMemo = set;
+    const list = Object.keys(entries);
+    _blockedMemo = new Set(list);
     await writeMeta(BLOCKED_VERSIONS_KEY, {
       versions: list,
       entries,

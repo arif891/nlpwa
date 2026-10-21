@@ -18,8 +18,10 @@ import {
 import { signManifestSync } from '../core/signing.js';
 
 function tryLoadLocalEnv() {
-  const envPath = resolve(process.cwd(), '.env');
-  if (existsSync(envPath)) {
+  const envCandidates = ['.env.nlpwa', '.env.local', '.env'];
+  for (const file of envCandidates) {
+    const envPath = resolve(process.cwd(), file);
+    if (!existsSync(envPath)) continue;
     try {
       const content = readFileSync(envPath, 'utf8');
       for (const line of content.split('\n')) {
@@ -179,23 +181,39 @@ export async function cmdUpdate(args) {
   mkdirSync(dirname(versionOut), { recursive: true });
   mkdirSync(dirname(infoOut), { recursive: true });
 
+  const sequence = rawConfig.sequence !== undefined
+    ? Number(rawConfig.sequence)
+    : (extractedSigningKey ? Date.now() : undefined);
   const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
+  const blockedVersions = Array.isArray(rawConfig.blockedVersions) ? rawConfig.blockedVersions : undefined;
+  const channel = rawConfig.channel;
+  const rolloutPercent = rawConfig.rolloutPercent !== undefined ? Number(rawConfig.rolloutPercent) : undefined;
+
   const versionPayload = {
     version: newVersion,
+    ...(sequence !== undefined ? { sequence } : {}),
     ...(minVer ? { minVersion: minVer } : {}),
+    ...(blockedVersions ? { blockedVersions } : {}),
+    ...(channel ? { channel } : {}),
+    ...(rolloutPercent !== undefined ? { rolloutPercent } : {}),
   };
   const infoPayload = {
     version: newVersion,
+    ...(sequence !== undefined ? { sequence } : {}),
     ...(minVer ? { minVersion: minVer } : {}),
+    ...(blockedVersions ? { blockedVersions } : {}),
+    ...(channel ? { channel } : {}),
+    ...(rolloutPercent !== undefined ? { rolloutPercent } : {}),
     files,
   };
 
   if (extractedSigningKey) {
     try {
-      const signature = signManifestSync(infoPayload, extractedSigningKey);
-      if (signature) {
-        infoPayload.signature = signature;
-        versionPayload.signature = signature;
+      const infoSig = signManifestSync(infoPayload, extractedSigningKey);
+      const versionSig = signManifestSync(versionPayload, extractedSigningKey);
+      if (infoSig) {
+        infoPayload.signature = infoSig;
+        versionPayload.signature = versionSig;
         console.log(`  ${c.green}✓${c.reset} Manifest signed with Ed25519 key`);
       }
     } catch (err) {

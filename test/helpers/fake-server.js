@@ -13,10 +13,13 @@ export function makeServer(version, files, minVersion = null) {
     state.calls.push(path);
     if (path === '/api/update/version' || path === '/api/update/version.json') {
       const body = { version: state.version };
+      if (state.sequence !== undefined) body.sequence = state.sequence;
       if (state.minVersion) body.minVersion = state.minVersion;
       if (state.blockedVersions) body.blockedVersions = state.blockedVersions;
       if (state.rolloutPercent !== undefined) body.rolloutPercent = state.rolloutPercent;
       if (state.channel) body.channel = state.channel;
+      if (state.versionSignature) body.signature = state.versionSignature;
+      else if (state.signature && !state.files) body.signature = state.signature;
       return Response.json(body);
     }
     if (path === '/api/update/info' || path === '/api/update/info.json') {
@@ -29,6 +32,7 @@ export function makeServer(version, files, minVersion = null) {
           size: Buffer.byteLength(String(body)),
         })),
       };
+      if (state.sequence !== undefined) body.sequence = state.sequence;
       if (state.minVersion) body.minVersion = state.minVersion;
       if (state.blockedVersions) body.blockedVersions = state.blockedVersions;
       if (state.rolloutPercent !== undefined) body.rolloutPercent = state.rolloutPercent;

@@ -98,21 +98,21 @@ NLPWA includes end-to-end cryptographic integrity via detached **Ed25519 signatu
 
 ```
 [Developer Machine / CI]
-  .env (NLPWA_PRIVATE_KEY) ──> nlpwa update ──> info.json (with base64 signature)
-                                                        │
-                                                        ▼
-[User Browser]                                   HTTPS CDN / Server
-  Service Worker (publicKey) <── fetch(info.json) ──────┘
+  .env.nlpwa (NLPWA_PRIVATE_KEY) ──> nlpwa update ──> version.json + info.json (with Ed25519 signatures)
+                                                                 │
+                                                                 ▼
+[User Browser]                                            HTTPS CDN / Server
+  Service Worker (publicKey) <── fetch(version/info) ────────────┘
          │
          ├── Web Crypto: crypto.subtle.verify(publicKey, signature, payload)
-         │   ├── Invalid / Tampered? ──> Stage Aborted + Security Warning
-         │   └── Valid?              ──> Proceed with Staging
+         │   ├── Invalid / Tampered / Replay? ──> Aborted + Security Warning
+         │   └── Valid?                       ──> Monotonic Sequence Verified + Proceed
 ```
 
-- **Built-in Key Generator:** Generate cryptographically secure Ed25519 keypairs using `npx nlpwa keys:generate`, which securely appends `NLPWA_PRIVATE_KEY` to your local `.env` and exports the public key to `nlpwa.config.js`.
+- **Built-in Key Generator:** Generate cryptographically secure Ed25519 keypairs using `npx nlpwa keys:generate`, which securely writes `NLPWA_PRIVATE_KEY` to your local `.env.nlpwa` (mode `0600`) and outputs the public key to `nlpwa.config.js`.
 - **Zero-Dependency CLI Signer:** `nlpwa update` automatically signs canonical manifest representations at build time using Node's native `crypto.sign`.
-- **Hardware-Accelerated Web Crypto:** The Service Worker verifies detached signatures using standard browser `crypto.subtle.verify("Ed25519", ...)` before downloading any files.
-- **Detached & Non-Intrusive:** The signature is stored directly in `info.json` under the `signature` field, requiring no changes to HTML subresource tags.
+- **Hardware-Accelerated Web Crypto:** The Service Worker verifies detached signatures using standard browser `crypto.subtle.verify("Ed25519", ...)` before trusting update metadata or downloading assets.
+- **Detached & Non-Intrusive:** Detached signatures are stored directly in `version.json` and `info.json` under the `signature` field, requiring no changes to HTML subresource tags.
 
 ---
 

@@ -31,7 +31,7 @@ export { isAlreadyStaged, fetchVerified };
  */
 export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetch = false } = {}) {
   const config = getConfig();
-  const verify = config.verifyHashes ?? 'strict';
+  const verify = config.verifyHashes ?? (config.publicKey ? 'strict' : 'warn');
   const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
   const allowOversizedUnverified = config.allowOversizedUnverified ?? true;
   const largeFileThresholdBytes = config.largeFileThresholdBytes ?? (25 * 1024 * 1024);

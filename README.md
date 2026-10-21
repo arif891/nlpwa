@@ -329,14 +329,16 @@ During update staging, each downloaded file is verified against its SHA-256 dige
 - **What it does not protect against:** An adversary with write access to your origin server or CDN credentials can overwrite both the assets and `info.json`.
 
 ### 2. Cryptographic Tamper-Evidence (Built-in Ed25519 Signatures)
-Because `sw.js` is byte-checked directly by the browser (bypassing HTTP caches on navigation), an **Ed25519 public key** configured in `nlpwa.config.js` or `sw.js` serves as an authenticated root of trust. Build pipelines sign `info.json` at build time using the developer's private key (`NLPWA_PRIVATE_KEY`), and the Service Worker verifies the detached signature using the Web Crypto API (`crypto.subtle.verify`) before staging an update.
+Because `sw.js` is byte-checked directly by the browser (bypassing HTTP caches on navigation), an **Ed25519 public key** configured in `nlpwa.config.js` or `sw.js` serves as an authenticated root of trust. Setting `publicKey` automatically elevates `verifyHashes` to `'strict'` and locks security-critical fields (`publicKey`, `updateAPI`, `telemetry`) from runtime config tampering.
+
+Build pipelines sign both Tier 1 (`version.json`) and Tier 2 (`info.json`) manifests at build time using the developer's private key (`NLPWA_PRIVATE_KEY`), signing all structural fields—including `version`, monotonic `sequence`, `minVersion`, `blockedVersions`, `channel`, `rolloutPercent`, and deterministic file paths, sizes, hashes, and `skipVerify` flags. The Service Worker verifies detached signatures using the Web Crypto API (`crypto.subtle.verify`) and validates monotonic sequence counters before staging or trusting any update instructions.
 
 ```bash
-# Generate an Ed25519 keypair and append private key to your local .env
+# Generate an Ed25519 keypair and save private key to your local .env.nlpwa (0600)
 npx nlpwa keys:generate
 ```
 
-This yields end-to-end cryptographic tamper-evidence against compromised CDNs, rogue server writes, or man-in-the-middle attacks without requiring Subresource Integrity (SRI) on every HTML tag.
+This yields end-to-end cryptographic tamper-evidence against compromised CDNs, rogue server writes, replay attacks, or man-in-the-middle attacks without requiring Subresource Integrity (SRI) on every HTML tag.
 
 ---
 

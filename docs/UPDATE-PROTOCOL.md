@@ -41,22 +41,35 @@ Fetched **only** if Tier 1 reports a different version (or the SW engine version
 ```json
 {
   "version": "1.0.1",
+  "sequence": 1774180000000,
+  "minVersion": "1.0.0",
+  "blockedVersions": ["0.9.8"],
+  "channel": "stable",
+  "rolloutPercent": 100,
   "files": [
-    { "path": "/api/update/config.json", "hash": "15142550a1b2c3d4e5f6789012345678" },
-    { "path": "/index.html",             "hash": "d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2" },
-    { "path": "/app.js",                 "hash": "a1b2c3d4e5f6789012345678abcdef01" },
-    { "path": "/styles/main.css",        "hash": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" }
-  ]
+    { "path": "/api/update/config.json", "hash": "15142550a1b2c3d4e5f6789012345678", "size": 1204 },
+    { "path": "/index.html",             "hash": "d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2", "size": 3450 },
+    { "path": "/app.js",                 "hash": "a1b2c3d4e5f6789012345678abcdef01", "size": 89400 },
+    { "path": "/styles/main.css",        "hash": "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", "size": 14200 }
+  ],
+  "signature": "MCowBQYDK2VwAyEA..."
 }
 ```
 
-| Field          | Type     | Required | Description                                                                                                       |
-| -------------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `version`      | `string` | ✅        | Semantic version with content digest (derived deterministically from manifest hash, e.g. `1.0.0-a1b2c3d4e5f6`)    |
-| `minVersion`   | `string` | ❌        | Minimum supported app version (e.g. `2.0.0`). Active or pinned tabs below this version receive `UPDATE_REQUIRED` and are forced to reload/unpin. |
-| `files`        | `array`  | ✅        | List of tracked offline files and their hashes                                                                    |
-| `files[].path` | `string` | ✅        | URL pathname starting with `/`                                                                                    |
-| `files[].hash` | `string` | ✅        | Stable content hash (32-character prefix or full 64-character SHA-256 hex string; minimum 32 characters required) |
+| Field               | Type      | Required | Description                                                                                                       |
+| ------------------- | --------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `version`           | `string`  | ✅        | Semantic version with content digest (derived deterministically from manifest hash, e.g. `1.0.0-a1b2c3d4e5f6`)    |
+| `sequence`          | `number`  | ❌        | Monotonic sequence timestamp/counter. When signing is configured, protects against rollback/replay attacks.       |
+| `minVersion`        | `string`  | ❌        | Minimum supported app version (e.g. `2.0.0`). Active or pinned tabs below this version receive `UPDATE_REQUIRED`. |
+| `blockedVersions`   | `array`   | ❌        | List of version strings blocked via remote killswitch. Active tabs unpin; client triggers safe fallback.         |
+| `channel`           | `string`  | ❌        | Target release channel (`stable`, `beta`, `canary`). Matched against client channel subscription.                 |
+| `rolloutPercent`    | `number`  | ❌        | Phased rollout threshold (0–100) evaluated deterministically against device stable random cohort UUID.            |
+| `files`             | `array`   | ✅        | List of tracked offline files and their hashes                                                                    |
+| `files[].path`      | `string`  | ✅        | URL pathname starting with `/`                                                                                    |
+| `files[].hash`      | `string`  | ✅        | Stable content hash (32-character prefix or full 64-character SHA-256 hex string; minimum 32 characters required) |
+| `files[].size`      | `number`  | ❌        | Pre-calculated file size in bytes for bandwidth budgeting.                                                       |
+| `files[].skipVerify`| `boolean` | ❌        | If true, bypasses hash verification during staging (cryptographically bound in Ed25519 signature payload).         |
+| `signature`         | `string`  | ❌        | Base64 Ed25519 detached signature verified by Web Crypto API against configured `publicKey`.                      |
 
 > [!IMPORTANT]
 > **Enforcing `minVersion` for Breaking Backend Changes:**

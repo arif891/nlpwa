@@ -125,8 +125,27 @@ async function _doUpdateCheck({ force = false } = {}) {
     logger.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
   }
 
-  // Synchronize blocked versions list from Tier 1 if present
-  if (Array.isArray(versionRes?.blockedVersions)) {
+  // If in cryptographic mode, verify signature on Tier 1 version response before trusting metadata
+  let isTier1Trusted = !config.publicKey;
+  if (config.publicKey && versionRes) {
+    if (versionRes.signature) {
+      try {
+        isTier1Trusted = await verifyManifestSignature(versionRes, config.publicKey);
+        if (!isTier1Trusted) {
+          logger.warn('[NLPWA] Tier 1 version.json signature verification failed; falling back to Tier 2 manifest.');
+        }
+      } catch (err) {
+        logger.warn('[NLPWA] Tier 1 signature verification error:', err?.message || err);
+        isTier1Trusted = false;
+      }
+    } else {
+      logger.warn('[NLPWA] Tier 1 version.json is unsigned while publicKey is configured; falling back to Tier 2 manifest.');
+      isTier1Trusted = false;
+    }
+  }
+
+  // Synchronize blocked versions list from Tier 1 ONLY if trusted
+  if (isTier1Trusted && Array.isArray(versionRes?.blockedVersions)) {
     await syncBlockedVersions(versionRes.blockedVersions);
   }
 
@@ -155,11 +174,14 @@ async function _doUpdateCheck({ force = false } = {}) {
     }
   }
 
-  // Check minimum supported version from Tier 1 if present
-  const tier1Enforced = await enforceMinVersion(versionRes, {
-    active,
-    targetVersion: serverVersion,
-  });
+  // Check minimum supported version from Tier 1 if present and trusted
+  let tier1Enforced = false;
+  if (isTier1Trusted) {
+    tier1Enforced = await enforceMinVersion(versionRes, {
+      active,
+      targetVersion: serverVersion,
+    });
+  }
 
   // If server target version is blocked, do not stage it
   if (serverVersion && (await isVersionBlocked(serverVersion))) {
@@ -226,18 +248,6 @@ async function _doUpdateCheck({ force = false } = {}) {
     return { updated: false };
   }
 
-  // Synchronize blocked versions list from Tier 2 if present
-  if (Array.isArray(serverManifest?.blockedVersions)) {
-    await syncBlockedVersions(serverManifest.blockedVersions);
-  }
-
-  if (await isVersionBlocked(serverManifest.version)) {
-    logger.warn(`[NLPWA] Manifest version v${serverManifest.version} is blocked. Skipping staging.`);
-    await discardStaged();
-    setUpdateStatus('idle');
-    return { updated: false, blocked: true, version: serverManifest.version };
-  }
-
   // Cryptographic Ed25519 signature verification
   if (config.publicKey) {
     let isValid = false;
@@ -265,6 +275,30 @@ async function _doUpdateCheck({ force = false } = {}) {
       };
     }
     logger.log(`[NLPWA] Ed25519 manifest signature verified for v${serverManifest.version}.`);
+
+    // Monotonic sequence verification (Replay & downgrade attack mitigation)
+    if (serverManifest.sequence !== undefined) {
+      const lastSeqData = await readMeta('/_nlpwa/sequence.json').catch(() => null);
+      const lastSeq = Number(lastSeqData?.sequence) || 0;
+      if (serverManifest.sequence < lastSeq) {
+        logger.error(`[NLPWA] Replay attack detected: manifest sequence (${serverManifest.sequence}) is older than last seen (${lastSeq}).`);
+        await discardStaged();
+        setUpdateStatus('idle');
+        return { updated: false, errorCode: 'REPLAY_DETECTED', version: serverManifest.version };
+      }
+    }
+  }
+
+  // Synchronize blocked versions list from Tier 2 once verified
+  if (Array.isArray(serverManifest?.blockedVersions)) {
+    await syncBlockedVersions(serverManifest.blockedVersions);
+  }
+
+  if (await isVersionBlocked(serverManifest.version)) {
+    logger.warn(`[NLPWA] Manifest version v${serverManifest.version} is blocked. Skipping staging.`);
+    await discardStaged();
+    setUpdateStatus('idle');
+    return { updated: false, blocked: true, version: serverManifest.version };
   }
 
   if (!force && activeChannel && serverManifest.channel && activeChannel !== serverManifest.channel) {
@@ -372,6 +406,10 @@ async function _doUpdateCheck({ force = false } = {}) {
       setUpdateStatus('idle');
       await commitStaged();
       return { updated: false, version: serverManifest.version, initial: true };
+    }
+
+    if (serverManifest.sequence !== undefined) {
+      await writeMeta('/_nlpwa/sequence.json', { sequence: serverManifest.sequence, updatedAt: Date.now() }).catch(() => {});
     }
 
     setUpdateStatus('ready');

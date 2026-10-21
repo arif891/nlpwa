@@ -147,6 +147,18 @@ export default {
     console.log(`  ${c.green}+${c.reset} ${c.bold}Scaffolded starter config:${c.reset} nlpwa.config.js`);
   }
 
+  // Ensure .env.nlpwa is protected in .gitignore
+  const gitignorePath = resolve(targetDir, '.gitignore');
+  if (existsSync(gitignorePath)) {
+    try {
+      const gitignore = readFileSync(gitignorePath, 'utf8');
+      if (!gitignore.includes('.env.nlpwa')) {
+        appendFileSync(gitignorePath, '\n# NLPWA Signing Keys\n.env.nlpwa\n', 'utf8');
+        console.log(`  ${c.green}+${c.reset} Added .env.nlpwa to .gitignore`);
+      }
+    } catch {}
+  }
+
   if (missing.length > 0) {
     console.error(`
 ${c.red}${c.bold}  Init failed:${c.reset} ${missing.join(', ')} not found in ${outDir}

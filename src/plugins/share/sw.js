@@ -85,6 +85,15 @@ export async function handleShareTarget(event, config = {}) {
     throw new TypeError('[NLPWA:Share] handleShareTarget requires an event or Request.');
   }
   const shareConfig = config.shareTarget || config.share_target || {};
+
+  // CSRF / Cross-Site Injection Protection:
+  // Reject cross-site form submissions unless explicitly allowed
+  const secFetchSite = request.headers?.get?.('Sec-Fetch-Site');
+  if (secFetchSite === 'cross-site' && !shareConfig.allowCrossSite) {
+    logger.warn('[NLPWA:Share] Rejected cross-site share target submission (Sec-Fetch-Site: cross-site).');
+    return new Response('Forbidden', { status: 403, statusText: 'Cross-Site Share Forbidden' });
+  }
+
   const redirectUrl = shareConfig.redirectUrl || '/?shared=1';
   const maxFileBytes = Number(shareConfig.maxFileBytes) || DEFAULT_MAX_FILE_BYTES;
 

@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync, statSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { incrementPatch } from '../src/shared/version.js';
 import { resolveUpdateEndpoints } from '../src/shared/url.js';
@@ -16,6 +16,32 @@ import {
   resolvePackageVersion,
 } from '../src/cli/core/config.js';
 import { signManifestSync } from '../src/cli/core/signing.js';
+
+function tryLoadLocalEnv() {
+  const envCandidates = ['.env.nlpwa', '.env.local', '.env'];
+  for (const file of envCandidates) {
+    const envPath = resolve(process.cwd(), file);
+    if (!existsSync(envPath)) continue;
+    try {
+      const content = readFileSync(envPath, 'utf8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const match = trimmed.match(/^([A-Za-z_0-9]+)=(.*)$/);
+        if (match) {
+          const key = match[1];
+          let val = match[2].trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (!process.env[key]) {
+            process.env[key] = val;
+          }
+        }
+      }
+    } catch {}
+  }
+}
 
 /**
  * Shared manifest and update API emission pipeline for bundler plugins (Vite, Rollup, Webpack).
@@ -121,16 +147,7 @@ export function emitBuildManifests({
   mkdirSync(dirname(versionOut), { recursive: true });
   mkdirSync(dirname(infoOut), { recursive: true });
 
-  const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
-  const versionPayload = {
-    version: appVersion,
-    ...(minVer ? { minVersion: minVer } : {}),
-  };
-  const infoPayload = {
-    version: appVersion,
-    ...(minVer ? { minVersion: minVer } : {}),
-    files,
-  };
+  tryLoadLocalEnv();
 
   const signingKey =
     process.env.NLPWA_SIGNING_KEY ||
@@ -139,12 +156,39 @@ export function emitBuildManifests({
     options.privateKey ||
     rawConfig.signingKey;
 
+  const sequence = rawConfig.sequence !== undefined
+    ? Number(rawConfig.sequence)
+    : (signingKey ? Date.now() : undefined);
+  const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
+  const blockedVersions = Array.isArray(rawConfig.blockedVersions) ? rawConfig.blockedVersions : undefined;
+  const channel = rawConfig.channel;
+  const rolloutPercent = rawConfig.rolloutPercent !== undefined ? Number(rawConfig.rolloutPercent) : undefined;
+
+  const versionPayload = {
+    version: appVersion,
+    ...(sequence !== undefined ? { sequence } : {}),
+    ...(minVer ? { minVersion: minVer } : {}),
+    ...(blockedVersions ? { blockedVersions } : {}),
+    ...(channel ? { channel } : {}),
+    ...(rolloutPercent !== undefined ? { rolloutPercent } : {}),
+  };
+  const infoPayload = {
+    version: appVersion,
+    ...(sequence !== undefined ? { sequence } : {}),
+    ...(minVer ? { minVersion: minVer } : {}),
+    ...(blockedVersions ? { blockedVersions } : {}),
+    ...(channel ? { channel } : {}),
+    ...(rolloutPercent !== undefined ? { rolloutPercent } : {}),
+    files,
+  };
+
   if (signingKey) {
     try {
-      const signature = signManifestSync(infoPayload, signingKey);
-      if (signature) {
-        infoPayload.signature = signature;
-        versionPayload.signature = signature;
+      const infoSig = signManifestSync(infoPayload, signingKey);
+      const versionSig = signManifestSync(versionPayload, signingKey);
+      if (infoSig) {
+        infoPayload.signature = infoSig;
+        versionPayload.signature = versionSig;
       }
     } catch (err) {
       console.warn('[NLPWA] Warning: Could not sign manifest with Ed25519:', err?.message || err);

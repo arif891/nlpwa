@@ -80,10 +80,13 @@ npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 
 ### `nlpwa keys:generate`
 
-**Optional Progressive Security:** For high-assurance, financial, or enterprise apps where manifest tampering protection against compromised CDNs is desired, `nlpwa keys:generate` generates an Ed25519 keypair for signing update manifests (`info.json`). The private key is securely appended to your local `.env` file (which is gitignored), and the public key is printed for inclusion in `nlpwa.config.js`.
+**Optional Progressive Security:** For high-assurance, financial, or enterprise apps where manifest tampering protection against compromised CDNs is desired, `nlpwa keys:generate` generates an Ed25519 keypair for signing update manifests (`info.json` and `version.json`). The private key is securely stored in a dedicated `.env.nlpwa` file with restricted `0600` permissions (preventing collisions with your app's main `.env` and preventing front-end bundler leakage), and the public key is printed for inclusion in `nlpwa.config.js`.
 
 ```bash
 npx nlpwa keys:generate
+
+# Or print keys to stdout without writing to disk
+npx nlpwa keys:generate --no-write-env
 
 # Or specify a custom env file
 npx nlpwa keys:generate --env .env.local
@@ -92,7 +95,7 @@ npx nlpwa keys:generate --env .env.local
 **Output:**
 ```
 ✓ Generated Ed25519 keypair!
-  Private key appended to .env (NLPWA_PRIVATE_KEY)
+  Private key written to .env.nlpwa (chmod 0600) (NLPWA_PRIVATE_KEY)
   
 Add this public key to your nlpwa.config.js:
   publicKey: 'MCowBQYDK2VwAyEA...'
@@ -127,7 +130,7 @@ See [docs/PLUGINS.md](PLUGINS.md) for full plugin documentation.
 
 ### `nlpwa update` (or `nlpwa build`)
 
-Processes your application assets, calculates deterministic SHA-256 content hashes, compiles `config.js` into runtime `config.json`, and emits the two-tier update manifests (`version.json` and `info.json`). If `NLPWA_PRIVATE_KEY` is present in your environment or `.env`, it automatically signs `info.json` with an Ed25519 detached signature.
+Processes your application assets, calculates deterministic SHA-256 content hashes, compiles `config.js` into runtime `config.json`, and emits the two-tier update manifests (`version.json` and `info.json`). If `NLPWA_PRIVATE_KEY` is present in your environment, `.env.nlpwa`, `.env.local`, or `.env`, it automatically signs both `version.json` and `info.json` with Ed25519 detached signatures covering version, sequence, file hashes, sizes, and metadata.
 
 ```bash
 # Default build for ./dist

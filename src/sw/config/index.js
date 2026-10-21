@@ -29,9 +29,11 @@ function normalizeRoutes(routes) {
  * @returns {typeof DEFAULTS}
  */
 export function initConfig(userConfig = {}) {
+  const verifyHashes = userConfig.verifyHashes ?? (userConfig.publicKey ? 'strict' : DEFAULTS.verifyHashes);
   const merged = {
     ...DEFAULTS,
     ...userConfig,
+    verifyHashes,
     routes: normalizeRoutes(userConfig.routes ?? DEFAULTS.routes),
     // Deep merge nested objects
     caches: {
@@ -89,6 +91,9 @@ export function updateActiveConfig(runtimeConfig = {}) {
     // and cannot be downgraded (e.g. verifyHashes: false) or hijacked by a fetched config.json.
     base: _config.base,
     verifyHashes: _config.verifyHashes,
+    publicKey: _config.publicKey,
+    updateAPI: _config.updateAPI,
+    telemetry: _config.telemetry,
     maxVerifyBytes: _config.maxVerifyBytes,
     allowOversizedUnverified: _config.allowOversizedUnverified,
     skipVerifyGlobs: _config.skipVerifyGlobs,
@@ -98,7 +103,6 @@ export function updateActiveConfig(runtimeConfig = {}) {
     // Runtime routes and precache take priority if provided
     routes: Array.isArray(runtimeConfig.routes) ? normalizeRoutes(runtimeConfig.routes) : _config.routes,
     precache: Array.isArray(runtimeConfig.precache) ? runtimeConfig.precache : _config.precache,
-    updateAPI: runtimeConfig.updateAPI ?? _config.updateAPI,
   };
 
   _config = Object.freeze(merged);

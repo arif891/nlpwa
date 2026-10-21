@@ -23,7 +23,7 @@ export async function cmdGenerateKeys(args) {
 
   console.log(`${c.green}${c.bold}  ✓ Generated Ed25519 Signing Keypair!${c.reset}\n`);
 
-  console.log(`${c.bold}  Private Key${c.reset} ${c.yellow}(Secret — keep in local .env, NEVER commit to git):${c.reset}`);
+  console.log(`${c.bold}  Private Key${c.reset} ${c.yellow}(Secret — keep in local .env.nlpwa, NEVER commit to git):${c.reset}`);
   console.log(`  ${c.cyan}NLPWA_PRIVATE_KEY="${privateKeyBase64}"${c.reset}`);
   console.log(`  ${c.dim}(NLPWA_SIGNING_KEY is also accepted as an alias)${c.reset}\n`);
 
@@ -34,29 +34,36 @@ export async function cmdGenerateKeys(args) {
   console.log(`  ${c.dim}Public Key (Hex): ${rawPublicHex}${c.reset}`);
   console.log(`  ${c.dim}Public Key (SPKI PEM):${c.reset}\n${c.dim}${spkiPem.trim()}${c.reset}\n`);
 
-  if (args['write-env'] || args.writeEnv !== false) {
-    const envPath = resolve(process.cwd(), args.env || '.env');
+  const shouldWriteEnv =
+    args.writeEnv !== false &&
+    args['write-env'] !== false &&
+    !args.noWriteEnv &&
+    !args['no-write-env'];
+
+  if (shouldWriteEnv) {
+    const targetEnvFile = args.env || '.env.nlpwa';
+    const envPath = resolve(process.cwd(), targetEnvFile);
     const line = `\n# NLPWA Ed25519 Manifest Signing Key\nNLPWA_PRIVATE_KEY="${privateKeyBase64}"\n`;
     try {
       if (existsSync(envPath)) {
         const content = readFileSync(envPath, 'utf8');
         if (!content.includes('NLPWA_PRIVATE_KEY') && !content.includes('NLPWA_SIGNING_KEY')) {
-          appendFileSync(envPath, line, 'utf8');
-          console.log(`  ${c.green}+ Appended NLPWA_PRIVATE_KEY to ${args.env || '.env'}${c.reset}\n`);
+          appendFileSync(envPath, line, { encoding: 'utf8', mode: 0o600 });
+          console.log(`  ${c.green}+ Appended NLPWA_PRIVATE_KEY to ${targetEnvFile}${c.reset}\n`);
         } else {
-          console.log(`  ${c.yellow}! ${args.env || '.env'} already contains signing key (skipped).${c.reset}\n`);
+          console.log(`  ${c.yellow}! ${targetEnvFile} already contains signing key (skipped).${c.reset}\n`);
         }
       } else {
-        appendFileSync(envPath, line.trimStart(), 'utf8');
-        console.log(`  ${c.green}+ Created ${args.env || '.env'} with NLPWA_PRIVATE_KEY${c.reset}\n`);
+        appendFileSync(envPath, line.trimStart(), { encoding: 'utf8', mode: 0o600 });
+        console.log(`  ${c.green}+ Created ${targetEnvFile} with NLPWA_PRIVATE_KEY (mode: 0600)${c.reset}\n`);
       }
     } catch (err) {
-      console.warn(`  ${c.yellow}Could not write to ${args.env || '.env'}: ${err.message}${c.reset}\n`);
+      console.warn(`  ${c.yellow}Could not write to ${targetEnvFile}: ${err.message}${c.reset}\n`);
     }
   }
 
   console.log(`${c.bold}  Next steps:${c.reset}`);
-  console.log(`  1. Save ${c.cyan}NLPWA_PRIVATE_KEY${c.reset} to your local .env or CI/CD secret manager.`);
+  console.log(`  1. Save ${c.cyan}NLPWA_PRIVATE_KEY${c.reset} to your local .env.nlpwa or CI/CD secret manager.`);
   console.log(`  2. Add ${c.cyan}publicKey: '${rawPublicBase64}'${c.reset} to your nlpwa.config.js.`);
   console.log(`  3. Run ${c.cyan}nlpwa update${c.reset} or build — your manifests will be signed automatically.\n`);
 

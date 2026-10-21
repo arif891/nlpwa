@@ -55,6 +55,15 @@ export async function fetchVerified({
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
+  // Soft-404 / Captive portal check:
+  // If an HTML error/login page is returned for scripts, styles, json, or wasm, reject it regardless of hash verification mode!
+  const contentType = (response.headers?.get?.('content-type') || '').toLowerCase();
+  const lowerPath = path.toLowerCase();
+  const isCodeOrAsset = /\.(js|mjs|cjs|css|json|wasm)$/.test(lowerPath.split('?')[0]);
+  if (isCodeOrAsset && contentType.includes('text/html')) {
+    throw new Error(`Soft-404 / Captive portal detected: HTTP 200 text/html returned for asset ${path}`);
+  }
+
   const size = fileSize ?? Number(response.headers?.get?.('content-length') || response.headers?.get?.('x-nlpwa-content-length') || 0);
 
   if (expected && verify !== false) {

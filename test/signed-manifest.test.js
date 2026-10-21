@@ -15,7 +15,7 @@ import { cmdGenerateKeys } from '../src/cli/commands/keys.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
 
 test('keys:generate CLI command outputs valid Ed25519 keys', async () => {
-  const keys = await cmdGenerateKeys({});
+  const keys = await cmdGenerateKeys({ writeEnv: false });
   assert.ok(keys.privateKeyBase64);
   assert.ok(keys.publicKeyBase64);
   assert.equal(keys.publicKeyBase64.length, 44); // 32 raw bytes base64 encoded

@@ -638,13 +638,18 @@ if (pending) {
 
 ---
 
-## Health-Gated Commits & Boot Watchdog
+## Multi-Boot Probation & Boot Watchdog
 
-When a new version activates, the Service Worker keeps the previous version in `nlpwa-fallback` and monitors the boot lifecycle.
+When a new version commits, it enters a multi-boot probation state. The Service Worker retains the previous known-good version in `nlpwa-fallback` and monitors the boot lifecycle across browser sessions.
+
+- **First-Party Error Filtering:** The watchdog automatically filters out crashes from browser extensions (`chrome-extension://`, `moz-extension://`, `safari-web-extension://`) and third-party trackers (GTM, ads, Sentry), counting only first-party application crashes.
+- **2-Strike Rollback Threshold:** A single glitch will not roll back a release. 2 consecutive first-party boot failures are required before the Service Worker rolls back to `nlpwa-fallback`.
+- **24-Hour Block Expiration:** Blocked releases on a client automatically expire after 24 hours (configurable via `probation.clientBlockTtlMs`).
+- **Graduation to Stable:** Once the new release boots healthily twice (`nlpwa.markHealthy()`), it is promoted to stable and the fallback cache is swept cleanly.
 
 ### `nlpwa.markHealthy()`
 
-Explicitly confirms that the application has initialized and rendered successfully. Cancels the boot watchdog timer and permanently commits the active version.
+Explicitly confirms that the application has initialized and rendered successfully. Increments healthy boot count and graduates from probation once `requiredHealthyBoots` (default: 2) is reached.
 
 ```javascript
 import { nlpwa } from 'nlpwa/client';
@@ -660,7 +665,7 @@ try {
 
 ### `nlpwa.reportBootFailure(error)`
 
-Manually reports a critical initialization failure, instructing the Service Worker to immediately roll back the cache pointer to `nlpwa-fallback`, block the offending release, and reload into the stable state.
+Manually reports a critical first-party initialization failure. Increments consecutive boot failure count; upon reaching the threshold (default: 2), instructs the Service Worker to roll back to `nlpwa-fallback`, block the offending release locally for 24 hours, and reload into the stable state.
 
 ```javascript
 nlpwa.reportBootFailure(new Error('Critical chunk missing'));

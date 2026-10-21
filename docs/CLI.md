@@ -49,6 +49,8 @@ npx nlpwa --help
 
 Scaffolds the drop-in NLPWA engine, starter configuration, W3C Web App Manifest, and starter PNG/SVG icons into the target directory.
 
+**Works Out of the Box:** The scaffolded starter configuration is tuned for frictionless, resilient defaults—`verifyHashes: 'warn'`, `signingKey: false`, automatic large-file handling (>25MB), navigation-based update applying, deferred persistent storage, and multi-boot probation. No cryptographic key generation or complex infrastructure is required to start developing.
+
 ```bash
 # Initialize in current directory
 npx nlpwa init
@@ -78,7 +80,7 @@ npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 
 ### `nlpwa keys:generate`
 
-Generates a cryptographically secure Ed25519 keypair for signing update manifests (`info.json`). The private key is securely appended to your local `.env` file (which is gitignored), and the public key is printed for inclusion in `nlpwa.config.js`.
+**Optional Progressive Security:** For high-assurance, financial, or enterprise apps where manifest tampering protection against compromised CDNs is desired, `nlpwa keys:generate` generates an Ed25519 keypair for signing update manifests (`info.json`). The private key is securely appended to your local `.env` file (which is gitignored), and the public key is printed for inclusion in `nlpwa.config.js`.
 
 ```bash
 npx nlpwa keys:generate

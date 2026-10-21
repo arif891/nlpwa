@@ -1,17 +1,38 @@
 # NLPWA — Architecture
 ## Overview
 
-NLPWA is a Service Worker framework with a decoupled architecture:
+NLPWA is an enterprise-grade Service Worker framework with a decoupled architecture designed around two principles: **works out of the box** with zero-friction, resilient defaults, and provides **optional progressive security** that can be dialed up to cryptographic rigor when needed.
 
 | Context | File | Role |
 |---|---|---|
-| Service Worker thread | `out/sw.js` | Intercepts fetches, manages caches, applies delta updates |
+| Service Worker thread | `out/sw.js` | Intercepts fetches, manages caches, streams large assets to IndexedDB, applies delta updates |
 | Runtime Configuration | `config.js` → `config.json` | Dynamic route rules & precache list; stored in `offline` cache |
-| Main thread (browser) | `out/client.js` (IIFE) / `out/client.esm.js` (ES module) | Registers the SW, listens for updates, shows update UI |
+| Main thread (browser) | `out/client.js` (IIFE) / `out/client.esm.js` (ES module) | Registers the SW, listens for updates, runs boot watchdog, coordinates tabs |
 | Build Tool / CLI | `bin/nlpwa.js` / Rollup | Derives content-hash version, tracks offline files & config, emits update API |
 
 The Service Worker thread and client communicate via `postMessage`.
-Runtime configuration is completely decoupled from `sw.js` and loaded dynamically from the `offline` cache.
+Runtime configuration is completely decoupled from `sw.js` and loaded dynamically from the active `offline` cache.
+
+---
+
+## 🚀 Works Out of the Box, Security When You Need It
+
+NLPWA guarantees smooth, immediate productivity out of the box without compromising long-term enterprise security:
+
+### 1. Works Out of the Box (Zero Friction & Resilient by Default)
+- **Frictionless Scaffolding:** `npx nlpwa init` immediately gives you an offline-ready PWA. No Ed25519 key generation or crypto certificates required.
+- **Resilient Hash Verification (`verifyHashes: 'warn'`):** Dynamic CDN compression, edge minification, or script injections won't break update staging with false-alarm hash failures. Warnings are logged and updates are safely applied.
+- **Background Staging & Navigation Apply (`applyMode: 'navigation'`):** Delta updates stage silently in the background and commit on the next full HTML navigation. Active user sessions are never interrupted mid-flight, and dirty form inputs are protected.
+- **Automatic Large Asset Offloading (>25MB):** Heavy assets (>25MB) automatically delegate to the browser's Background Fetch API and chunk-stream into IndexedDB (`nlpwa-large-assets`), protecting `CacheStorage` from mobile OOM crashes.
+- **Multi-Boot Probation with Error Filtering:** Updates enter probation upon commit. Rollback requires 2 consecutive first-party failures, completely ignoring browser extension errors (`chrome-extension://`) and cross-origin tracking noise (GTM, ads, Sentry).
+- **Polite Persistence & Telemetry:** Storage persistence is prompted on `appinstalled` or user gesture, not on initial load. Telemetry is 100% opt-in.
+
+### 2. Optional Progressive Security (Dial Up When Needed)
+- **Ed25519 Cryptographic Manifest Signing:** Provide `signingKey` in CI and `publicKey` in config. The Service Worker validates detached signatures via Web Crypto before staging files, completely locking out compromised CDNs.
+- **Strict SHA-256 Digest Verification (`verifyHashes: 'strict'`):** Abort staging immediately if a single byte differs from the manifest.
+- **Minimum Supported Version Floor (`minVersion`):** Automatically evict and upgrade clients running outdated code below your security baseline.
+- **Remote Emergency Kill-Switch (`blockedVersions`):** Instantly revoke vulnerable releases origin-wide.
+- **Phased Cohorts & Release Channels (`rolloutPercent`, `channel`):** Safely canary updates to 10% or 25% of users before wider rollout.
 
 ---
 
@@ -20,6 +41,7 @@ Runtime configuration is completely decoupled from `sw.js` and loaded dynamicall
 ```
 src/
 ├── shared/                         ← Shared by SW, client, and build tool
+│   ├── idb.js                      Zero-dependency connection-pooled IndexedDB utility with memory fallback
 │   ├── async.js                    mapConcurrent() bounded async concurrency runner
 │   ├── time.js                     parseDurationMs(), resolveMaxAgeMs(), isResponseExpired()
 │   ├── constants.js                Cache names (OFFLINE, RUNTIME, META), message types, strategies
@@ -33,6 +55,7 @@ src/
 │   ├── index.js                    Entry orchestrator: initSW(config) — wires event handlers
 │   ├── logger.js                   SW-scoped loggers (error, warn, log, debug)
 │   ├── standalone.js               Auto-init classic/module worker entry (built to out/sw.js)
+│   ├── telemetry.js                Opt-in error & rollback reporting over background fetch/beacon
 │   ├── events/                     ← Modular SW lifecycle event listeners
 │   │   ├── install.js              Install event: precacheFiles() and skipWaiting()
 │   │   ├── activate.js             Activate event: clients.claim(), navigationPreload, pin seeding
@@ -40,16 +63,18 @@ src/
 │   │   ├── push.js                 Push notifications and silent background update triggers
 │   │   └── sync.js                 Periodic background sync update checks
 │   ├── config/
-│   │   ├── defaults.js             Default config values (SW version, endpoints, paths, logLevel)
+│   │   ├── defaults.js             Default config values (SW version, endpoints, paths, probation, logLevel)
 │   │   ├── schema.js               Config validation (returns error strings)
 │   │   └── index.js                loadConfigFromCache(), updateActiveConfig(), ensureConfigReady()
 │   ├── cache/                      ← Segmented storage subsystem
-│   │   ├── meta/                   Low-level JSON metadata & atomic pointers
-│   │   │   ├── store.js            readMeta(), writeMeta(), deleteMeta() (nlpwa-meta CacheStorage)
+│   │   ├── meta/                   Low-level JSON metadata & atomic pointers (stored in IndexedDB)
+│   │   │   ├── store.js            readMeta(), writeMeta(), deleteMeta() (backed by src/shared/idb.js)
 │   │   │   ├── active.js           Active version pointer (getActive, setActive, clearActive)
 │   │   │   ├── staged.js           Staged version pointer (getStaged, setStaged, clearStaged)
+│   │   │   ├── blocked-versions.js Client-side blocked releases with 24h expiration TTL
 │   │   │   ├── client-pins.js      Per-client tab isolation (pinClient, unpinClient, pruneClientPins)
 │   │   │   └── lock.js             Cooperative operation lock (Web Locks API + memory mutex)
+│   │   ├── large-assets.js         IndexedDB store (nlpwa-large-assets) for files >25MB
 │   │   ├── offline/                Precache & app shell store
 │   │   │   ├── store.js            getFromOffline(), putInOffline(), deleteFromOffline()
 │   │   │   └── aliases.js          matchWithAliases() — clean URLs, directory index, subpath bases
@@ -82,20 +107,22 @@ src/
 │       ├── staging/                Update staging pipeline
 │       │   ├── verifier.js         isAlreadyStaged() — SHA-256 integrity & oversized file rules
 │       │   ├── fetcher.js          fetchVerified() — streaming fetch with timeout & hash verification
-│       │   └── orchestrator.js     stageUpdate() — builds delta cache, copies unchanged, verifies delta
+│       │   └── orchestrator.js     stageUpdate() — builds delta cache, copies unchanged, delegates large files
 │       ├── diff.js                 computeDiff(newFiles, oldFiles) → { added, modified, removed }
 │       ├── manifest.js             fetchServerVersion (Tier 1), fetchServerInfo (Tier 2), save snapshot
-│       ├── commit.js               commitStaged() — one-write atomic switch to staged version
+│       ├── commit.js               commitStaged() — one-write atomic switch & probation initialization
 │       ├── status.js               Observable update status tracker (idle, checking, staging, ready)
 │       └── index.js                checkForUpdate() orchestration
 │
 ├── client/                         ← Runs in main browser thread (built to out/client.js / client.esm.js)
 │   ├── index.js                    Clean public API entry point
 │   ├── registration.js             register(swUrl, options), unregister(scope), onUpdateApplied()
+│   ├── watchdog.js                 Boot watchdog with first-party error filter (ignores extensions & ads)
 │   ├── form-guard.js               isUserEditing() — detects active form inputs to protect unsaved work
 │   ├── polling.js                  setupFocusPolling(), setupIntervalPolling(), setupPeriodicSync()
 │   ├── messaging.js                sendToSW(), onSWMessage(), getVersion(), getStatus(), requestFromSW()
 │   ├── cache-manager.js            getCacheInfo(), cleanupRuntimeCache() — quota & cache management
+│   ├── telemetry.js                Client-side error & rollback reporting hook
 │   ├── update-ui.js                onUpdateReady(), onStagingProgress(), applyUpdate()
 │   └── logger.js                   Client logger with configurable log levels
 │
@@ -133,25 +160,37 @@ src/
 
 ---
 
-## Cache Storage Layout
+## Storage Subsystem Layout
+
+NLPWA uses a dual-engine storage model, combining the high-speed HTTP response caching of the Cache API (`CacheStorage`) with the ACID guarantees and binary streaming of `IndexedDB`:
 
 ```
-CacheStorage
-├── nlpwa-meta                      Two tiny pointers (the atomic commit point)
+IndexedDB
+├── nlpwa-meta                      Atomic state pointers & metadata (Database: 'nlpwa-meta', Store: 'meta')
 │   ├── /_nlpwa/active.json         { cache, version, swVersion } - which offline cache is live
-│   └── /_nlpwa/staged.json         { cache, version, complete, evict, ... } - update waiting to go live
+│   ├── /_nlpwa/staged.json         { cache, version, complete, evict, ... } - update waiting to commit
+│   ├── /_nlpwa/probation.json      { version, fallbackVersion, status, healthyBoots, consecutiveFailures }
+│   ├── /_nlpwa/blocked.json        [ { version, blockedAt, expiresAt } ] - client-side rollbacks (24h TTL)
+│   └── /_nlpwa/client-pins.json    [ { clientId, version, pinnedAt } ] - tab isolation
+│
+└── nlpwa-large-assets              Blob chunks for files >25MB (Database: 'nlpwa-large-assets', Store: 'blobs')
+    └── <urlPath>                   Streamed directly via Background Fetch
+
+CacheStorage
 ├── offline@1.0.1-k3x9              ACTIVE version: app shell + runtime config + snapshot
 │   ├── /api/update/config.json     Runtime config (routes, precache, endpoints)
 │   └── /_nlpwa/snapshot.json       Hash map of this version; written last = "complete"
-├── offline@1.0.2-m1q7              STAGED version (only exists while an update waits)
-└── runtime                         Lazily cached responses (filled by fetch strategies)
+├── offline@1.0.2-m1q7              STAGED version (only exists while an update stages in background)
+├── nlpwa-fallback                  Previous known-good version (retained during probation)
+└── runtime                         Lazily cached responses (filled dynamically by fetch strategies)
 ```
 
-### Why a cache per version plus a pointer?
+### Why versioned caches and an IndexedDB pointer?
 
-- **Atomic**: the Cache API cannot rename or move caches. Building the next version in its own cache and flipping one pointer means a crash, a dropped connection or a failed download can never leave a half-updated app.
-- **Consistent pages**: the switch happens on a navigation request (or `APPLY_UPDATE`), never in the middle of a page load, so one page is not served partly from two versions.
-- **Cheap deltas**: unchanged files are copied from the active cache locally; only changed files use the network, and each is hash-verified.
+- **Atomic Commits**: The Cache API cannot rename or move caches. By building the next version in an isolated cache and flipping a single pointer in IndexedDB, a network crash, dropped connection, or failed download can never leave a half-updated application.
+- **Consistent Pages & Zero Drift**: Pointer switches happen on full HTML document navigation (`request.mode === 'navigate'`) or explicit user confirmation (`APPLY_UPDATE`), never mid-page, guaranteeing that a session is never served from mixed versions.
+- **Multi-Boot Probation**: Newly activated versions enter probation. If 2 consecutive first-party crashes occur during startup, the Service Worker automatically rolls back to `nlpwa-fallback` without leaving the user stranded.
+- **Cheap Deltas**: Unchanged files are copied locally between caches without network cost; only changed files are fetched over the wire.
 
 ### Why store the config & snapshot inside the versioned cache?
 

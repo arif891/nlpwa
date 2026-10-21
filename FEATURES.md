@@ -8,17 +8,42 @@ This document provides a comprehensive guide to NLPWA's architecture, reliabilit
 
 ## Table of Contents
 
+- [Philosophy: Works Out of the Box, Security When You Need It](#philosophy-works-out-of-the-box-security-when-you-need-it)
 1. [Atomic Over-The-Air (OTA) Updates](#1-atomic-over-the-air-ota-updates)
 2. [Client Version Pinning & Zero Drift](#2-client-version-pinning--zero-drift)
 3. [Cryptographic Manifest Signing (Ed25519)](#3-cryptographic-manifest-signing-ed25519)
 4. [Deploy Safety, Release Channels & Phased Rollouts](#4-deploy-safety-release-channels--phased-rollouts)
-5. [Health-Gated Commits & Boot Watchdog Rollback](#5-health-gated-commits--boot-watchdog-rollback)
+5. [Multi-Boot Probation & First-Party Error Filtering](#5-multi-boot-probation--first-party-error-filtering)
 6. [Resumable & Budgeted Staging](#6-resumable--budgeted-staging)
 7. [Multi-Tab Consensus Bus & Dirty Form Protection](#7-multi-tab-consensus-bus--dirty-form-protection)
 8. [Runtime Observability & Diagnostics API](#8-runtime-observability--diagnostics-api)
 9. [Modular Micro-Kernel & Plugin Ecosystem](#9-modular-micro-kernel--plugin-ecosystem)
 10. [Native OS Integrations](#10-native-os-integrations)
 11. [Developer CLI & CI/CD Workflow](#11-developer-cli--cicd-workflow)
+
+---
+
+## Philosophy: Works Out of the Box, Security When You Need It
+
+NLPWA is architected around two core design principles:
+
+### 1. Works Out of the Box (Frictionless & Resilient by Default)
+You should never need to generate cryptographic keys, configure complex security parameters, or debug broken staging caches just to get a reliable PWA running. Out of the box, NLPWA provides:
+- **Resilient Verification (`verifyHashes: 'warn'`):** CDN transformations, proxy minification, or dynamic compression in transit log warnings rather than failing your staging pipeline.
+- **Signing Disabled by Default (`signingKey: false`):** Eliminates complex setup for small apps and local testing.
+- **Large File Auto-Delegation (>25MB):** Heavy assets automatically delegate to Background Fetch and stream chunks into IndexedDB, eliminating mobile CacheStorage memory spikes.
+- **Multi-Boot Probation:** Requires 2 consecutive healthy boots to clear probation, filtering out third-party script crashes (GTM, ads, Sentry) and browser extensions (`chrome-extension://`).
+- **Navigation-Only Staging (`applyMode: 'navigation'`):** Background downloads apply atomically on the next page navigation, protecting active sessions and unsaved form edits.
+- **Permission-Friendly Storage:** Persistent storage is requested on `appinstalled` or explicit user gesture, never via noisy browser prompts on initial load.
+- **Zero Telemetry by Default:** Telemetry is strictly off unless explicitly opted into via `{ url: '/api/report' }`.
+
+### 2. Optional Progressive Security (Dial Up When Needed)
+For high-assurance, financial, healthcare, or enterprise deployments, security can be progressively dialed up to maximum rigor:
+- **Detached Ed25519 Signatures:** Sign manifests at build time; Service Worker verifies signatures via Web Crypto before staging files, locking out compromised CDNs.
+- **Strict Hash Verification (`verifyHashes: 'strict'`):** Abort staging immediately if any byte diverges from the build manifest.
+- **Forced Version Floors (`minVersion`):** Unpin and auto-upgrade any client running an outdated version below your minimum security requirements.
+- **Emergency Remote Kill-Switch (`blockedVersions`):** Instantly decommission flawed or vulnerable builds across all devices.
+- **Phased Canary Cohorts & Release Channels (`rolloutPercent`, `channel`):** Target beta channels or canary releases to 10% of users before full rollout.
 
 ---
 

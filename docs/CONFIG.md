@@ -129,20 +129,79 @@ cache collisions.
 
 ---
 
-### `verifyHashes` · `'strict' | 'warn' | false` · default: `'strict'`
+### `verifyHashes` · `'strict' | 'warn' | false` · default: `'warn'`
 
 How each downloaded update file is checked against the hash in the update manifest.
 
-- `'strict'` - a mismatch (or an HTML error page served with status 200) fails that file. The update is not applied until every file verifies, and it is retried on the next check. If consecutive retries repeatedly fail on the same file due to hash mismatches, a persistent failure warning is logged and broadcast to clients via `UPDATE_FAILED`. The running version is untouched.
-  *(Exception: Files exceeding `maxVerifyBytes` skip in-memory SHA-256 verification even in strict mode to prevent out-of-memory crashes on low-end devices, logging a warning instead)*.
-- `'warn'` - mismatches are logged but the file is stored. Use this only if a proxy or CDN rewrites your files after the build, which makes the build-time hash impossible to match.
+- `'warn'` (default) - mismatches are logged with a warning, but the file is still stored and applied. This provides resilient out-of-the-box operation when CDNs, edge functions, or proxies compress or minify assets in transit without breaking update staging.
+- `'strict'` - a mismatch (or an HTML error page served with status 200) strictly fails that file. The update is not applied until every file verifies, and it is retried on the next check. Recommended for high-security environments where unexpected file alterations must be rejected.
 - `false` - no verification.
-
-> [!NOTE]
-> Manifest hashes are SHA-256 digests served from the same origin (`info.json`). They verify content integrity against network transport corruption, captive portals returning 200 HTML for missing files, proxy caching glitches, and partial deployments—not a compromise of the web server origin itself.
 
 ```js
 verifyHashes: 'warn'
+```
+
+---
+
+### `probation` · `object | boolean` · default: `{ requiredHealthyBoots: 2, failureThreshold: 2, clientBlockTtlMs: 86400000 }`
+
+Multi-boot probation configuration for newly committed versions. When an update commits, it enters a probation period. The previous version's cache is retained as a fallback until the new version boots successfully across multiple sessions.
+
+- `requiredHealthyBoots` (`number`, default: `2`): Number of successful application boots (`nlpwa.markHealthy()`) required to graduate from probation to stable and safely sweep the previous fallback cache.
+- `failureThreshold` (`number`, default: `2`): Number of consecutive first-party boot failures required before executing an automatic rollback. Browser extensions and third-party trackers are ignored.
+- `clientBlockTtlMs` (`number`, default: `86400000` / 24h): Expiration TTL for local client-side version blocks after a rollback.
+
+```js
+probation: {
+  requiredHealthyBoots: 2,
+  failureThreshold: 2,
+  clientBlockTtlMs: 24 * 60 * 60 * 1000,
+}
+```
+
+---
+
+### `largeFileThresholdBytes` · `number` · default: `26214400` (25 MB)
+
+File size threshold above which assets are automatically delegated to the browser's Background Fetch API (when supported) and chunk-streamed directly into IndexedDB (`nlpwa-large-assets`). This prevents memory spikes and quota exhaustion in CacheStorage for large media, WASM models, and datasets.
+
+```js
+largeFileThresholdBytes: 25 * 1024 * 1024 // 25 MB
+```
+
+---
+
+### `applyMode` · `'navigation' | 'immediate'` · default: `'navigation'`
+
+Defines how staged Over-The-Air updates are committed into active use:
+
+- `'navigation'` (default): Updates stage completely in the background, and apply atomically on the next full HTML document navigation. Mid-session usage is never interrupted, and auto-reload is deferred if the user has dirty form inputs.
+- `'immediate'`: Applies update immediately upon staging completion, subject to multi-tab consensus.
+
+```js
+applyMode: 'navigation'
+```
+
+---
+
+### `telemetry` · `boolean | { url?: string }` · default: `false`
+
+Opt-in error and rollback telemetry reporting. When enabled, reports events (rollbacks, persistent hash mismatches, storage alerts) via `sendBeacon` or background `fetch` to the configured endpoint.
+
+```js
+telemetry: {
+  url: '/api/report'
+}
+```
+
+---
+
+### `signingKey` · `string | false` · default: `false`
+
+Ed25519 private key for signing update manifests (`info.json`). Disabled by default for zero-friction out-of-the-box development. Can be enabled on-demand for cryptographic tamper-evidence against compromised CDNs.
+
+```js
+signingKey: false // or process.env.NLPWA_SIGNING_KEY
 ```
 
 ---

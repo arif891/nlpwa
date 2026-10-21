@@ -31,6 +31,28 @@ In traditional Service Worker setups (like Workbox), every app update requires r
 
 ---
 
+## 🚀 Works Out of the Box, Security When You Need It
+
+NLPWA is designed to **just work out of the box** without friction, while providing a **progressive security dial** for mission-critical enterprise environments.
+
+### 1. Resilient & Frictionless by Default (Works Out of the Box)
+- **Zero-Friction Init:** Run `npx nlpwa init` and you immediately have a working PWA with offline caching and atomic OTA updates. No keys to generate or certs to manage.
+- **Resilient Hash Verification (`verifyHashes: 'warn'`):** CDN transformations, proxy minification, or dynamic edge compression won't fail your update staging. Warnings are logged, but the release is safely applied.
+- **Background Staging & Navigation Apply (`applyMode: 'navigation'`):** Updates stage completely in the background and activate seamlessly on the next page navigation. Never interrupts a user mid-session and never refreshes over dirty form inputs.
+- **Large File Auto-Delegation (>25MB):** Large assets (3D models, video, WASM weights) automatically delegate to the browser's Background Fetch API and stream directly into IndexedDB, avoiding memory spikes in `CacheStorage`.
+- **Multi-Boot Probation with Error Filtering:** Newly committed releases must boot healthily twice to clear probation. The boot watchdog automatically filters out browser extension crashes (`chrome-extension://`) and cross-origin noise (GTM, ads, Sentry), requiring 2 consecutive first-party failures before rolling back.
+- **Respectful Storage & Telemetry:** Storage persistence is deferred to `appinstalled` or explicit user gestures rather than unprompted permission dialogs on page load. Telemetry is strictly off by default.
+
+### 2. Optional Progressive Security (Dial Up When Needed)
+For high-assurance, financial, or enterprise deployments, security can be dialed up on-demand:
+- **Ed25519 Cryptographic Manifest Signing:** Provide `signingKey` in CI and `publicKey` in config. The Service Worker validates detached signatures via Web Crypto before staging files, completely locking out compromised CDNs.
+- **Strict SHA-256 Digest Verification (`verifyHashes: 'strict'`):** Abort staging immediately if a single byte differs from the manifest.
+- **Minimum Supported Version Floor (`minVersion`):** Automatically evict and upgrade clients running outdated code below your security baseline.
+- **Remote Emergency Kill-Switch (`blockedVersions`):** Instantly revoke vulnerable releases origin-wide.
+- **Phased Cohorts & Release Channels (`rolloutPercent`, `channel`):** Safely canary updates to 10% or 25% of users before wider rollout.
+
+---
+
 ## NLPWA vs. Workbox
 
 | Capability | Workbox | NLPWA |
@@ -101,7 +123,8 @@ export default {
     info:    '/api/update/info.json',
   },
 
-  verifyHashes: 'strict',
+  // Update verification ('warn' by default; use 'strict' for strict cryptographic rejection)
+  verifyHashes: 'warn',
 
   // App shell files to track and offline-cache
   precache: [

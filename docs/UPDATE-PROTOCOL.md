@@ -187,23 +187,25 @@ Open separate cache: offline@1.4.2-<unique-id>
 1. Resumption: If file was already downloaded and hash verified in an
    earlier partial staging attempt → reuse without re-downloading.
 2. Unchanged files: Copy locally from the active offline cache (0 bytes transferred).
-3. Added & modified files: Fetch fresh from network with { cache: 'no-store' }.
-4. Hash Verification:
+3. Large files (>25MB): Automatically delegated to Background Fetch and streamed
+   into IndexedDB ('nlpwa-large-assets') to prevent CacheStorage memory exhaustion.
+4. Added & modified files: Fetch fresh from network with { cache: 'no-store' }.
+5. Hash Verification:
    - Compute SHA-256 of downloaded body.
-   - Match against manifest hash (config.verifyHashes: 'warn' | 'warn' | false).
-   - Strict mode rejects mismatches (and HTTP 200 HTML error pages).
+   - Match against manifest hash (config.verifyHashes: 'warn' | 'strict' | false; default: 'warn').
+   - 'warn' (default): Logs mismatch warning but applies update; resilient to CDN compression.
+   - 'strict': Rejects mismatches and HTTP 200 HTML error pages.
    - *Security Scope*: Same-origin hashes protect against network transport corruption, captive portal intercepts, and partial deployments—not against a compromised web origin.
-   - *Memory Considerations*: `fetchVerified` clones and buffers the response into an `ArrayBuffer` in memory to compute its digest before storing the original in `CacheStorage`. This temporarily doubles memory consumption per fetched file. For this reason, `precache` should be kept strictly limited to small app shell assets; large media (videos, heavy 3D assets/datasets) should be routed through runtime caching strategies instead.
-5. Error recovery & Atomicity:
+6. Error recovery & Atomicity:
    - If any file fails to fetch or verify, the update is never finalized or committed.
    - Verified files are kept in the staging cache so subsequent checks resume.
    - After 5 consecutive failed attempts, update checks enter exponential backoff
      while the running app remains 100% clean and untouched.
-   - **Persistent failure detection**: If retries repeatedly fail on the exact same file(s), NLPWA flags `persistent: true`. If caused by hash mismatches (e.g. CDN script injection or HTML minification), a prominent error is logged recommending `verifyHashes: 'warn'`.
-   - **Failure Broadcast**: A `postMessage({ type: 'UPDATE_FAILED', version, failed, error, persistent, hasHashMismatch, retryCount, nextRetryAt })` is broadcast to connected tabs so clients can inspect or react.
-6. Seal staging:
+   - **Persistent failure detection**: If retries repeatedly fail on the exact same file(s), NLPWA flags `persistent: true`.
+   - **Failure Broadcast**: A `postMessage({ type: 'UPDATE_FAILED', version, failed, error, persistent, hasHashMismatch, retryCount, nextRetryAt })` is broadcast to connected tabs.
+7. Seal staging:
    - Once 100% of manifest files are verified, write snapshot to offline@1.4.2-<unique-id>/_nlpwa/snapshot.json
-   - Write pointer in nlpwa-meta: /_nlpwa/staged.json { complete: true, ... }
+   - Write pointer in IndexedDB (nlpwa-meta): /_nlpwa/staged.json { complete: true, ... }
 ```
 
 ### Step 5 — Notify clients
@@ -219,23 +221,33 @@ clients.matchAll({ type: 'window' })
 ```
 The client triggers `nlpwa:update-ready` or `nlpwa:update-failed` CustomEvents on `document` and invokes the corresponding `onUpdateReady` or `onUpdateFailed` callbacks.
 
-### Step 6 — Atomic Commit (`commitStaged`)
+### Step 6 — Atomic Commit & Probation (`commitStaged`)
 
 Commit happens smoothly without breaking running pages:
-- **On next navigation request** (`request.mode === 'navigate'`), or
+- **On next navigation request** (`request.mode === 'navigate'`, default `applyMode: 'navigation'`), or
 - **When user clicks refresh** via `NLPWAClient.applyUpdate()`.
 
 ```
 commitStaged():
-  1. Atomic switch: write /_nlpwa/active.json pointer in nlpwa-meta.
-  2. Clear /_nlpwa/staged.json in nlpwa-meta.
-  3. Reload /api/update/config.json into in-memory SW router.
-  4. Evict modified & removed entries from runtime cache.
-  5. Route-aware eviction on runtime cache.
-  6. Prune old offline@... caches.
+  1. Atomic switch: write /_nlpwa/active.json pointer in IndexedDB (nlpwa-meta).
+  2. Initialize probation in IndexedDB: /_nlpwa/probation.json { status: 'probation', healthyBoots: 0, consecutiveFailures: 0 }.
+  3. Retain previous active version as nlpwa-fallback cache during probation.
+  4. Clear /_nlpwa/staged.json in IndexedDB.
+  5. Reload /api/update/config.json into in-memory SW router.
+  6. Evict modified & removed entries from runtime cache.
+  7. Route-aware eviction on runtime cache.
 ```
 
-### Step 7 — Invariant: Built-In Active Cache Rule
+### Step 7 — Multi-Boot Probation & First-Party Error Filtering
+
+Once committed, the new version is protected against catastrophic deployment crashes:
+- The previous known-good version remains saved in `nlpwa-fallback`.
+- Client boot watchdog monitors initial page boots and calls `nlpwa.markHealthy()`.
+- **First-Party Filter:** Errors originating from browser extensions (`chrome-extension://`, `moz-extension://`) or cross-origin scripts (GTM, ads, trackers) are ignored.
+- **2-Strike Threshold:** If 2 consecutive first-party boot crashes occur, the Service Worker automatically rolls back to `nlpwa-fallback`, blocks the broken version locally for 24 hours, and notifies clients via `ROLLBACK_APPLIED`.
+- **Graduation:** After 2 healthy boots, the new version graduates from probation to stable, and the old fallback cache is swept cleanly.
+
+### Step 8 — Invariant: Built-In Active Cache Rule
 
 To guarantee strict update atomicity while an update is staged in the background, the Service Worker router enforces a **built-in, non-overridable rule** evaluated before user `routes`:
 - All precached and manifest files are **always served cache-first from the active offline cache**.
@@ -356,25 +368,28 @@ which trigger fires.
 
 ---
 
-## Integrity Models: Operational vs. Cryptographic (Ed25519)
+## Integrity Models: Works Out of the Box vs. Optional Security
 
-NLPWA distinguishes clearly between **Operational Integrity** (built-in by default) and **Cryptographic Tamper-Evidence** (opt-in architectural layer):
+NLPWA distinguishes clearly between **Works Out of the Box** (frictionless, resilient defaults) and **Optional Progressive Security** (opt-in architectural layer):
 
-### 1. Operational Integrity (Built-in Default)
-- **Mechanism:** During update staging, downloaded assets are verified against the SHA-256 hashes published in `info.json`.
-- **What it solves:**
-  - **Network truncation:** Incomplete downloads over spotty Wi-Fi / cellular connections are rejected and retried.
+### 1. Works Out of the Box (Operational Integrity by Default)
+- **Mechanism:** During update staging, downloaded assets are verified against SHA-256 hashes published in `info.json` using `verifyHashes: 'warn'`.
+- **Zero Friction:** `signingKey: false` by default. Developers do not need to generate Ed25519 keypairs or configure cryptographic parameters to deploy a high-performance offline PWA.
+- **Resilient to Edge Rewrites:** CDNs that dynamically compress, minify HTML, or inject scripts in transit will log warnings rather than failing the update staging pipeline.
+- **What it catches:**
+  - **Network truncation:** Incomplete downloads over spotty Wi-Fi / cellular connections are caught and retried.
   - **Soft-404 / SPA fallbacks:** CDNs or static hosts returning `200 OK` with HTML `index.html` for missing chunks are blocked before overwriting JavaScript bundles.
-  - **Captive portals:** Wi-Fi login walls intercepting bundle requests are caught before corrupting the cache.
-  - **Partial multi-CDN deployments:** Updates are only staged if every file matches its expected digest.
-- **Limitation:** Hashes and the `skipVerify` flag arrive from same-origin `info.json`. If an adversary compromises the host origin or CDN credentials, they can overwrite both files and `info.json`.
+  - **Captive portals:** Wi-Fi login walls intercepting bundle requests are detected before corrupting the cache.
+  - **Partial multi-CDN deployments:** Updates are only staged if all files match their expected structure.
+- **Scope:** Protects against network glitches, CDN cache inconsistency, and transport corruption without breaking production deployments.
 
-### 2. Cryptographic Tamper-Evidence (Ed25519 Detached Signatures Roadmap)
-- **The Core Insight:** The Service Worker engine script itself (`sw.js`) is byte-checked directly by the browser (bypassing HTTP caches every 24 hours or on navigation). Because `sw.js` is an authenticated trust anchor, you can embed an **Ed25519 Public Key** into `sw.js` at build time.
+### 2. Optional Progressive Security (Cryptographic Tamper-Evidence via Ed25519)
+- **The Core Insight:** The Service Worker engine script itself (`sw.js`) is byte-checked directly by the browser (bypassing HTTP caches every 24 hours or on navigation). Because `sw.js` is an authenticated trust anchor, you can embed an **Ed25519 Public Key** into `sw.js` via `nlpwa.config.js`.
 - **Workflow:**
-  1. Build / CI pipeline runs `nlpwa update --sign --key /path/to/ed25519-private.pem`.
-  2. The CLI computes a detached cryptographic signature of `info.json` and embeds it as `"signature": "<base64>"` (or writes `info.json.sig`).
-  3. When the Service Worker fetches `info.json`, it verifies the signature using the browser's built-in Web Crypto API:
+  1. Generate keypair using `npx nlpwa keys:generate`.
+  2. Build / CI pipeline signs `info.json` using `signingKey` (e.g. from environment variable `NLPWA_SIGNING_KEY`).
+  3. The CLI computes a detached cryptographic signature of `info.json` and embeds it as `"signature": "<base64>"` (or writes `info.json.sig`).
+  4. When the Service Worker fetches `info.json`, it verifies the signature using the browser's built-in Web Crypto API:
      ```js
      const verified = await crypto.subtle.verify(
        { name: 'Ed25519' },
@@ -383,7 +398,8 @@ NLPWA distinguishes clearly between **Operational Integrity** (built-in by defau
        manifestBytes
      );
      ```
-  4. If verification fails, the staging update is completely aborted before downloading a single asset.
+  5. If verification fails, the staging update is completely aborted before downloading a single asset.
+- **Strict Hash Verification:** Pair with `verifyHashes: 'strict'` to enforce zero byte divergence from the build manifest.
 - **Advantage over Workbox / Subresource Integrity (SRI):**
   - Standard SRI requires annotating every single `<script integrity="...">` tag in the HTML entry point.
   - Ed25519 manifest signing gives end-to-end cryptographic tamper-evidence against compromised CDNs, compromised reverse proxies, or man-in-the-middle attacks, with zero HTML plumbing and zero performance overhead.

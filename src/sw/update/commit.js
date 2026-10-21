@@ -11,6 +11,7 @@ import { getSnapshotPath } from './manifest.js';
 import { setUpdateStatus, setCommitDeferred } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 import { resolvePathWithBase } from '../../shared/url.js';
+import { sendSWTelemetry } from '../telemetry.js';
 
 /**
  * Make the staged update the live one. The switch itself is ONE write
@@ -73,6 +74,23 @@ export async function commitStaged(event) {
     ...(retainPrevious && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
   });
   await clearStaged();
+
+  const probationConfig = typeof config.probation === 'object' && config.probation !== null
+    ? config.probation
+    : (config.probation !== false ? { requiredHealthyBoots: 2, failureThreshold: 2, clientBlockTtlMs: 24 * 60 * 60 * 1000 } : null);
+
+  if (probationConfig && previousActive?.cache) {
+    await writeMeta('/_nlpwa/probation.json', {
+      version: staged.version,
+      status: 'probation',
+      healthyBoots: 0,
+      consecutiveFailures: 0,
+      requiredHealthyBoots: probationConfig.requiredHealthyBoots ?? 2,
+      failureThreshold: probationConfig.failureThreshold ?? 2,
+      clientBlockTtlMs: probationConfig.clientBlockTtlMs ?? (24 * 60 * 60 * 1000),
+      committedAt: Date.now(),
+    });
+  }
 
   // Load the newly committed version's configuration immediately so navigation
   // requests resolve against the new version's routes and settings.
@@ -146,7 +164,7 @@ export async function commitStaged(event) {
  * @param {string} [reason] - Reason for rollback
  * @returns {Promise<{ success: boolean, version?: string, rolledBackFrom?: string, error?: string }>}
  */
-export async function rollbackToFallback(reason = '') {
+export async function rollbackToFallback(reason = '', { ttlMs = 24 * 60 * 60 * 1000 } = {}) {
   return await withLock(async () => {
     const active = await getActive();
     if (!active?.fallbackCache || !active?.fallbackVersion) {
@@ -168,8 +186,8 @@ export async function rollbackToFallback(reason = '') {
       }
     }
 
-    // 1. Blacklist the failing version
-    await blockVersion(failingVersion, reason || 'Emergency/watchdog rollback');
+    // 1. Blacklist the failing version with 24h TTL
+    await blockVersion(failingVersion, reason || 'Emergency/watchdog rollback', { ttlMs });
 
     try {
       const historyEntry = {
@@ -181,6 +199,13 @@ export async function rollbackToFallback(reason = '') {
       const existing = (await readMeta('/_nlpwa/rollback-history.json')) || [];
       existing.push(historyEntry);
       await writeMeta('/_nlpwa/rollback-history.json', existing.slice(-20));
+
+      const probation = await readMeta('/_nlpwa/probation.json');
+      if (probation) {
+        probation.status = 'rolled_back';
+        await writeMeta('/_nlpwa/probation.json', probation);
+      }
+      sendSWTelemetry('rollback', { fromVersion: failingVersion, toVersion: fallbackVersion, reason }).catch(() => {});
     } catch (e) {
       logger.debug('[NLPWA] Failed to record rollback history:', e);
     }

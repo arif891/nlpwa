@@ -34,6 +34,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const verify = config.verifyHashes ?? 'strict';
   const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
   const allowOversizedUnverified = config.allowOversizedUnverified ?? true;
+  const largeFileThresholdBytes = config.largeFileThresholdBytes ?? (25 * 1024 * 1024);
   const files = manifest.files.filter((f) => isSafePath(f?.path));
   const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
 
@@ -224,6 +225,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         expected: hash,
         verify,
         maxVerifyBytes,
+        largeFileThresholdBytes,
         fileSize: size,
         allowOversizedUnverified,
         skipVerify,

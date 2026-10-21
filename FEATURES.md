@@ -129,45 +129,74 @@ Clients on the `stable` channel ignore `beta` manifests, while `beta` testers re
 
 ---
 
-## 5. Health-Gated Commits & Boot Watchdog Rollback
+## 5. Multi-Boot Probation & First-Party Error Filtering
 
-One of the greatest fears in web deployment is pushing a build with a syntax error or runtime initialization crash that locks users into a broken offline cache.
+One of the greatest fears in web deployment is pushing a build with a syntax error or runtime initialization crash that locks users into a broken offline cache. However, a brittle single-strike watchdog can cause false-alarm rollbacks triggered by browser extension bugs or ad-blocker network drops.
 
-NLPWA implements **Automatic Self-Healing Rollbacks**:
+NLPWA implements **Multi-Boot Probation with First-Party Error Filtering**:
 
 ```
-[New Version Activates]
+[New Version Committed]
          │
-         ├── Retain previous known-good version as 'nlpwa-fallback'
-         ├── Start Boot Watchdog Timer (Default: 10s)
+         ├── Enters 'probation' state (Stored in IndexedDB)
+         ├── Retain previous known-good version as fallback cache
          │
-         ├── Option A: App boots successfully
-         │   └── nlpwa.markHealthy() ──> Clears watchdog, releases fallback cache
+         ├── First-Party Error Filter:
+         │   ├── Ignores chrome-extension://, moz-extension://, safari-web-extension://
+         │   ├── Ignores cross-origin scripts (GTM, ads, 3rd-party trackers)
+         │   └── Counts ONLY first-party application crashes
          │
-         └── Option B: Fatal crash, chunk error, or timeout
-             ├── window.onerror / unhandledrejection / Watchdog Timeout
-             └── Automatic Rollback:
-                 ├── Reverts active cache pointer to 'nlpwa-fallback'
-                 ├── Marks crashed version in 'blockedVersions'
-                 └── Reloads window safely into known-good state
+         ├── Probation Verification:
+         │   ├── Boot Healthy ──> healthyBoots++
+         │   │   └── Reaches threshold (default: 2 healthy boots) ──> Promotes to STABLE & sweeps fallback
+         │   │
+         │   └── Boot Failure ──> consecutiveFailures++
+         │       └── Single failure: Logged, probation continues (doesn't immediately block release)
+         │       └── 2 Consecutive Failures: Automatic Rollback to fallback cache
+         │           ├── Reverts active pointer atomically
+         │           ├── Adds version to client-side blockedVersions (with 24h expiration TTL)
+         │           └── Broadcasts ROLLBACK_APPLIED to clients
 ```
 
-### Developer Usage:
+### Configuration & Developer Usage:
 ```javascript
-import { nlpwa } from 'nlpwa/client';
+// nlpwa.config.js
+export default {
+  version: '1.0.0',
+  verifyHashes: 'warn', // Default 'warn' protects against CDN minification breaking staging
+  probation: {
+    requiredHealthyBoots: 2, // Must boot healthily twice to clear probation
+    failureThreshold: 2,     // 2 consecutive first-party failures required before rollback
+    clientBlockTtlMs: 86400000, // 24-hour expiration TTL for client-side blocks
+  },
+  largeFileThresholdBytes: 25 * 1024 * 1024, // >25MB delegates to Background Fetch & IDB
+  applyMode: 'navigation', // Stage in background, apply atomically on next full HTML navigation
+  telemetry: false, // Opt-in reporting hook (/api/report)
+};
+```
+
+### Client API:
+```javascript
+import { nlpwa, isFirstPartyError, requestPersistentStorage } from 'nlpwa/client';
 
 // App entry point
 async function initApp() {
   try {
     await renderApplication();
     
-    // Explicitly commit the new version once UI is verified operational
+    // Disarm watchdog and record healthy boot towards probation completion
     nlpwa.markHealthy();
   } catch (err) {
-    // Manually trigger immediate rollback if boot-critical dependencies fail
-    nlpwa.reportBootFailure(err);
+    if (isFirstPartyError(err)) {
+      nlpwa.reportBootFailure(err);
+    }
   }
 }
+
+// Request persistent storage on user gesture or post-install
+button.addEventListener('click', () => {
+  requestPersistentStorage();
+});
 ```
 
 ---

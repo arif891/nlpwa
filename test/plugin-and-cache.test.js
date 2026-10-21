@@ -705,11 +705,10 @@ test('store: configurable META_CACHE via setMetaCacheName and caches.meta', asyn
   const active = await getActive();
   assert.equal(active?.cache, 'offline@custom-1');
 
-  // Verify it was stored in 'my-custom-meta' cache
-  const customCache = await caches.open('my-custom-meta');
-  const storedRes = await customCache.match('/_nlpwa/active.json');
-  assert.ok(storedRes, 'written to custom meta cache');
-  const parsed = await storedRes.json();
+  // Verify it was stored in 'my-custom-meta' IndexedDB
+  const { idbGet } = await import('../src/shared/idb.js');
+  const parsed = await idbGet('my-custom-meta', 'meta', '/_nlpwa/active.json');
+  assert.ok(parsed, 'written to custom meta store');
   assert.equal(parsed.version, '1.0.0');
 
   // Reset back to default

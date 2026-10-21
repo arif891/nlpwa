@@ -18,7 +18,6 @@ test.describe('01 - Initial Install and Precaching', () => {
 
     // 2. Check CacheStorage entries
     const cacheNames = await getCacheNames(page);
-    expect(cacheNames).toContain('nlpwa-meta');
     expect(cacheNames.some((name) => name.startsWith('offline@1.0.0'))).toBe(true);
 
     // 3. Verify active pointer in nlpwa-meta

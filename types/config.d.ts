@@ -283,6 +283,18 @@ export interface NLPWAConfig {
     maxUpdateBytes?: number;
     wifiOnlyThresholdBytes?: number;
   };
+  /** Threshold in bytes (>25MB) for large assets to delegate to Background Fetch / IndexedDB streaming */
+  largeFileThresholdBytes?: number;
+  /** Update application mode ('navigation' or 'immediate') */
+  applyMode?: 'navigation' | 'immediate';
+  /** Opt-in telemetry reporting */
+  telemetry?: boolean | { url?: string };
+  /** Multi-boot probation configuration for newly committed versions */
+  probation?: boolean | {
+    requiredHealthyBoots?: number;
+    failureThreshold?: number;
+    clientBlockTtlMs?: number;
+  };
 }
 
 export interface ShareTargetFileParam {

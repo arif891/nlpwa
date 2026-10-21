@@ -7,17 +7,47 @@ export const BLOCKED_VERSIONS_KEY = '/_nlpwa/blocked-versions.json';
 let _blockedMemo = null;
 
 /**
- * Get the list of all blocked/blacklisted version strings.
+ * Get the list of all active (non-expired) blocked version strings.
  *
  * @returns {Promise<string[]>}
  */
 export async function getBlockedVersions() {
-  if (_blockedMemo) return [..._blockedMemo];
-
   const data = await readMeta(BLOCKED_VERSIONS_KEY).catch(() => null);
-  const list = Array.isArray(data?.versions) ? data.versions : [];
-  _blockedMemo = new Set(list);
-  return [..._blockedMemo];
+  const now = Date.now();
+  let changed = false;
+
+  const validVersions = [];
+  const entries = data?.entries || {};
+
+  // Support legacy format { versions: [...] }
+  if (Array.isArray(data?.versions)) {
+    for (const v of data.versions) {
+      if (!entries[v]) {
+        entries[v] = { blockedAt: data.updatedAt || now, ttlMs: 24 * 60 * 60 * 1000 };
+      }
+    }
+  }
+
+  for (const [v, meta] of Object.entries(entries)) {
+    const ttl = meta?.ttlMs ?? (24 * 60 * 60 * 1000);
+    if (ttl > 0 && (now - (meta?.blockedAt || 0)) > ttl) {
+      delete entries[v];
+      changed = true;
+    } else {
+      validVersions.push(v);
+    }
+  }
+
+  if (changed) {
+    await writeMeta(BLOCKED_VERSIONS_KEY, {
+      versions: validVersions,
+      entries,
+      updatedAt: now,
+    }).catch(() => {});
+  }
+
+  _blockedMemo = new Set(validVersions);
+  return [...validVersions];
 }
 
 /**
@@ -28,35 +58,40 @@ export async function getBlockedVersions() {
  */
 export async function isVersionBlocked(version) {
   if (!version) return false;
-  if (_blockedMemo) {
-    return _blockedMemo.has(version);
-  }
   const versions = await getBlockedVersions();
   return versions.includes(version);
 }
 
 /**
  * Block a version so it cannot be staged or activated, and triggers rollback if active.
+ * Client-side blocks have a 24h TTL by default.
  *
  * @param {string} version
  * @param {string} [reason]
+ * @param {Object} [options]
+ * @param {number} [options.ttlMs=86400000]
  * @returns {Promise<string[]>} Updated blocked versions list
  */
-export async function blockVersion(version, reason = '') {
+export async function blockVersion(version, reason = '', { ttlMs = 24 * 60 * 60 * 1000 } = {}) {
   if (!version || typeof version !== 'string') return getBlockedVersions();
 
-  const current = await getBlockedVersions();
-  if (!current.includes(version)) {
-    current.push(version);
-    _blockedMemo = new Set(current);
-    await writeMeta(BLOCKED_VERSIONS_KEY, {
-      versions: current,
-      updatedAt: Date.now(),
-      ...(reason ? { lastReason: reason } : {}),
-    });
-    logger.warn(`[NLPWA] Version v${version} has been blocked.${reason ? ` Reason: ${reason}` : ''}`);
-  }
-  return [...current];
+  const data = await readMeta(BLOCKED_VERSIONS_KEY).catch(() => null);
+  const entries = data?.entries || {};
+  entries[version] = {
+    blockedAt: Date.now(),
+    ttlMs,
+    reason,
+  };
+  const versions = Object.keys(entries);
+  _blockedMemo = new Set(versions);
+  await writeMeta(BLOCKED_VERSIONS_KEY, {
+    versions,
+    entries,
+    updatedAt: Date.now(),
+    lastReason: reason,
+  });
+  logger.warn(`[NLPWA] Version v${version} has been blocked (TTL: ${ttlMs}ms).${reason ? ` Reason: ${reason}` : ''}`);
+  return [...versions];
 }
 
 /**
@@ -68,14 +103,17 @@ export async function blockVersion(version, reason = '') {
 export async function unblockVersion(version) {
   if (!version) return getBlockedVersions();
 
-  const current = await getBlockedVersions();
-  const next = current.filter((v) => v !== version);
-  _blockedMemo = new Set(next);
+  const data = await readMeta(BLOCKED_VERSIONS_KEY).catch(() => null);
+  const entries = data?.entries || {};
+  delete entries[version];
+  const versions = Object.keys(entries);
+  _blockedMemo = new Set(versions);
   await writeMeta(BLOCKED_VERSIONS_KEY, {
-    versions: next,
+    versions,
+    entries,
     updatedAt: Date.now(),
   });
-  return [...next];
+  return [...versions];
 }
 
 /**
@@ -91,12 +129,20 @@ export async function syncBlockedVersions(remoteBlocked) {
 
   const current = await getBlockedVersions();
   const set = new Set(current);
+  const data = await readMeta(BLOCKED_VERSIONS_KEY).catch(() => null);
+  const entries = data?.entries || {};
   let changed = false;
 
   for (const v of remoteBlocked) {
-    if (typeof v === 'string' && !set.has(v)) {
-      set.add(v);
-      changed = true;
+    if (typeof v === 'string') {
+      if (!set.has(v)) {
+        set.add(v);
+        changed = true;
+      }
+      if (!entries[v]) {
+        entries[v] = { blockedAt: Date.now(), ttlMs: 0, reason: 'Remote sync' };
+        changed = true;
+      }
     }
   }
 
@@ -105,6 +151,7 @@ export async function syncBlockedVersions(remoteBlocked) {
     _blockedMemo = set;
     await writeMeta(BLOCKED_VERSIONS_KEY, {
       versions: list,
+      entries,
       updatedAt: Date.now(),
     });
     logger.log(`[NLPWA] Synchronized ${list.length} blocked version(s) from server.`);

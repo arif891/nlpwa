@@ -3,40 +3,23 @@
  * and queue storage in both Service Worker and Window contexts.
  */
 
+import { openDB } from '../../shared/idb.js';
+
 const DB_NAME = 'nlpwa-sync-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'sync_requests';
-
-function getIDB() {
-  if (typeof indexedDB !== 'undefined') return indexedDB;
-  if (typeof globalThis !== 'undefined' && globalThis.indexedDB) return globalThis.indexedDB;
-  return null;
-}
 
 /**
  * Open or upgrade the NLPWA Sync IndexedDB database.
  * @returns {Promise<IDBDatabase>}
  */
 export function openSyncDB() {
-  const idb = getIDB();
-  if (!idb) {
-    return Promise.reject(new Error('[NLPWA Sync] IndexedDB is not available in this environment.'));
-  }
-
-  return new Promise((resolve, reject) => {
-    const request = idb.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
-        store.createIndex('queueName', 'queueName', { unique: false });
-        store.createIndex('timestamp', 'timestamp', { unique: false });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error('Failed to open IndexedDB'));
+  return openDB(DB_NAME, DB_VERSION, (db) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      store.createIndex('queueName', 'queueName', { unique: false });
+      store.createIndex('timestamp', 'timestamp', { unique: false });
+    }
   });
 }
 

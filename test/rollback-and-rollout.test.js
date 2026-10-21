@@ -4,7 +4,8 @@ import { setupEnv, req } from './helpers/fake-env.js';
 import { makeServer, fakeSelf } from './helpers/fake-server.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
 import { checkForUpdate } from '../src/sw/update/index.js';
-import { commitStaged, rollbackToFallback } from '../src/sw/update/commit.js';
+import { commitStaged, commitIfReady, rollbackToFallback } from '../src/sw/update/commit.js';
+import { getConfig } from '../src/sw/config/index.js';
 import {
   getActive,
   getStaged,
@@ -189,4 +190,107 @@ test('channel: update check filters by release channel', async () => {
   const result = await checkForUpdate();
   assert.equal(result.updated, false);
   assert.equal(result.channelMismatch, true);
+});
+
+test('probation: 2 consecutive failures trigger rollback; single failure does not', async () => {
+  const server = makeServer('1.0.0', v1Files);
+  fakeSelf();
+  setupEnv(server.fetch);
+
+  await precacheFiles();
+  server.set('2.0.0', v2Files);
+  await checkForUpdate();
+  await commitIfReady();
+
+  const { readMeta } = await import('../src/sw/cache/store.js');
+  let probation = await readMeta('/_nlpwa/probation.json');
+  assert.equal(probation.status, 'probation');
+  assert.equal(probation.version, '2.0.0');
+  assert.equal(probation.healthyBoots, 0);
+  assert.equal(probation.consecutiveFailures, 0);
+
+  const { handleMessage } = await import('../src/sw/events/message.js');
+  const onMsg = handleMessage(getConfig());
+
+  // Failure #1
+  let reply1;
+  let waitP1;
+  const ev1 = {
+    data: { type: MESSAGE_TYPES.REPORT_BOOT_FAILURE, error: 'First glitch' },
+    waitUntil(p) { waitP1 = p; },
+    source: { postMessage(p) { reply1 = p; } },
+  };
+  onMsg(ev1);
+  await waitP1;
+
+  assert.equal(reply1.data.rolledBack, false, 'single failure does not trigger rollback');
+  assert.equal((await getActive()).version, '2.0.0');
+  probation = await readMeta('/_nlpwa/probation.json');
+  assert.equal(probation.consecutiveFailures, 1);
+
+  // Failure #2 -> reaches failureThreshold (2) -> triggers rollback
+  let reply2;
+  let waitP2;
+  const ev2 = {
+    data: { type: MESSAGE_TYPES.REPORT_BOOT_FAILURE, error: 'Second glitch' },
+    waitUntil(p) { waitP2 = p; },
+    source: { postMessage(p) { reply2 = p; } },
+  };
+  onMsg(ev2);
+  await waitP2;
+
+  assert.equal(reply2.data.rolledBack, true, 'second consecutive failure triggers rollback');
+  assert.equal((await getActive()).version, '1.0.0', 'reverted to fallback version');
+});
+
+test('probation: 2 consecutive healthy boots promote version to stable', async () => {
+  const server = makeServer('1.0.0', v1Files);
+  fakeSelf();
+  setupEnv(server.fetch);
+
+  await precacheFiles();
+  server.set('2.0.0', v2Files);
+  await checkForUpdate();
+  await commitIfReady();
+
+  const { readMeta } = await import('../src/sw/cache/store.js');
+  const { handleMessage } = await import('../src/sw/events/message.js');
+  const onMsg = handleMessage(getConfig());
+
+  // Healthy boot 1
+  let reply1;
+  let waitP1;
+  onMsg({
+    data: { type: MESSAGE_TYPES.REPORT_BOOT_HEALTH },
+    waitUntil(p) { waitP1 = p; },
+    source: { postMessage(p) { reply1 = p; } },
+  });
+  await waitP1;
+  let probation = await readMeta('/_nlpwa/probation.json');
+  assert.equal(probation.healthyBoots, 1);
+  assert.equal(probation.status, 'probation');
+
+  // Healthy boot 2 -> stable
+  let reply2;
+  let waitP2;
+  onMsg({
+    data: { type: MESSAGE_TYPES.REPORT_BOOT_HEALTH },
+    waitUntil(p) { waitP2 = p; },
+    source: { postMessage(p) { reply2 = p; } },
+  });
+  await waitP2;
+  probation = await readMeta('/_nlpwa/probation.json');
+  assert.equal(probation.healthyBoots, 2);
+  assert.equal(probation.status, 'stable');
+});
+
+test('blocked versions: client block expires after TTL', async () => {
+  setupEnv(() => new Response(''));
+  resetStoreMemo();
+
+  await blockVersion('9.9.9', 'Temporary ban', { ttlMs: 30 });
+  assert.equal(await isVersionBlocked('9.9.9'), true);
+
+  await new Promise((r) => setTimeout(r, 45));
+  assert.equal(await isVersionBlocked('9.9.9'), false, 'block expired after TTL');
 });

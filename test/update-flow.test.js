@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setupEnv, req } from './helpers/fake-env.js';
+import { resetIDBCache } from '../src/shared/idb.js';
 import { makeServer, fakeSelf } from './helpers/fake-server.js';
 import { checkForUpdate } from '../src/sw/update/index.js';
 import { precacheFiles } from '../src/sw/cache/install.js';
@@ -172,8 +173,11 @@ test('update: an engine (SW) version change refetches everything and wipes the r
   await (await caches.open('runtime')).put(req('/lazy'), new Response('x'));
 
   // new SW code ships: engine version bumped, app version unchanged
+  const oldIdb = globalThis.indexedDB;
   setupEnv(server.fetch, { version: '2' });
   globalThis.caches = caches; // same storage, new SW instance
+  globalThis.indexedDB = oldIdb;
+  resetIDBCache();
   server.calls.length = 0;
   const result = await checkForUpdate();
   assert.equal(result.updated, true);
@@ -261,7 +265,7 @@ test('update: clearRuntimeOnUpdate clears runtime cache upon commit', async () =
 test('update: strict verification failure broadcasts UPDATE_FAILED with hash mismatch details', async () => {
   const server = makeServer('1.0.0', v1);
   const messages = fakeSelf();
-  setupEnv(server.fetch);
+  setupEnv(server.fetch, { verifyHashes: 'strict' });
   await precacheFiles();
   messages.length = 0;
 
@@ -283,7 +287,7 @@ test('update: strict verification failure broadcasts UPDATE_FAILED with hash mis
 test('update: consecutive retries failing on same file detects persistent failure', async () => {
   const server = makeServer('1.0.0', v1);
   const messages = fakeSelf();
-  setupEnv(server.fetch);
+  setupEnv(server.fetch, { verifyHashes: 'strict' });
   await precacheFiles();
 
   const { hash8 } = await import('./helpers/fake-server.js');

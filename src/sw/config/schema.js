@@ -84,6 +84,10 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'maxUpdateBytes',
   'wifiOnlyThresholdBytes',
   'staging',
+  'largeFileThresholdBytes',
+  'applyMode',
+  'telemetry',
+  'probation',
   'cacheKeyWillBeUsed',
   'requestWillFetch',
   'cachedResponseWillBeUsed',
@@ -203,6 +207,22 @@ export function validateConfig(config) {
 
   if (config.staging !== undefined && (typeof config.staging !== 'object' || config.staging === null || Array.isArray(config.staging))) {
     errors.push('config.staging must be an object');
+  }
+
+  if (config.largeFileThresholdBytes !== undefined && (typeof config.largeFileThresholdBytes !== 'number' || config.largeFileThresholdBytes < 0)) {
+    errors.push('config.largeFileThresholdBytes must be a non-negative number');
+  }
+
+  if (config.applyMode !== undefined && !['navigation', 'immediate'].includes(config.applyMode)) {
+    errors.push("config.applyMode must be 'navigation' or 'immediate'");
+  }
+
+  if (config.telemetry !== undefined && typeof config.telemetry !== 'boolean' && (typeof config.telemetry !== 'object' || config.telemetry === null)) {
+    errors.push('config.telemetry must be a boolean or an object');
+  }
+
+  if (config.probation !== undefined && typeof config.probation !== 'boolean' && (typeof config.probation !== 'object' || config.probation === null)) {
+    errors.push('config.probation must be a boolean or an object');
   }
 
   if (!Array.isArray(config.precache)) {

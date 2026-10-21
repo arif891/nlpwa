@@ -121,3 +121,27 @@ test('client watchdog: watchdog times out and triggers failure when markHealthy 
   assert.ok(sent.some((m) => m.type === MESSAGE_TYPES.REPORT_BOOT_FAILURE), 'sent boot failure after timeout');
   cancel();
 });
+
+test('client watchdog: isFirstPartyError filters out browser extensions and cross-origin noise', async () => {
+  const { isFirstPartyError } = await import('../src/client/watchdog.js');
+
+  // Same-origin first-party error
+  globalThis.window = { location: { origin: 'https://example.com', href: 'https://example.com/' } };
+  assert.equal(isFirstPartyError({ filename: 'https://example.com/app.js', message: 'SyntaxError' }), true);
+  assert.equal(isFirstPartyError(new Error('Internal logic failure')), true);
+
+  // Chrome extension
+  assert.equal(isFirstPartyError({ filename: 'chrome-extension://xyz/content.js', message: 'Extension error' }), false);
+  assert.equal(isFirstPartyError(new Error('Extension crashed\n    at chrome-extension://abc/inject.js:10:5')), false);
+
+  // Firefox & Safari extensions
+  assert.equal(isFirstPartyError({ filename: 'moz-extension://xyz/content.js' }), false);
+  assert.equal(isFirstPartyError({ filename: 'safari-web-extension://xyz/content.js' }), false);
+
+  // Cross-origin 3rd-party script (e.g. GTM, ads, trackers)
+  assert.equal(isFirstPartyError({ filename: 'https://googletagmanager.com/gtm.js', message: 'Network err' }), false);
+  assert.equal(isFirstPartyError({ filename: 'https://cdn.thirdparty.com/lib.js' }), false);
+
+  // Opaque cross-origin Script error.
+  assert.equal(isFirstPartyError({ message: 'Script error.' }), false);
+});

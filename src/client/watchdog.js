@@ -128,6 +128,56 @@ export function resetWatchdogState() {
 }
 
 /**
+ * Check whether an error originated from first-party app code rather than
+ * a browser extension (Chrome/Firefox/Safari extension) or external cross-origin script (GTM, ads, Sentry).
+ *
+ * @param {any} eventOrError
+ * @returns {boolean}
+ */
+export function isFirstPartyError(eventOrError) {
+  if (!eventOrError) return false;
+
+  const filename = eventOrError.filename || eventOrError.fileName || '';
+  if (filename) {
+    if (
+      filename.startsWith('chrome-extension://') ||
+      filename.startsWith('moz-extension://') ||
+      filename.startsWith('safari-web-extension://') ||
+      filename.startsWith('extension://')
+    ) {
+      return false;
+    }
+    try {
+      if (typeof window !== 'undefined' && window.location?.origin) {
+        const fileOrigin = new URL(filename, window.location.href).origin;
+        if (fileOrigin !== window.location.origin) {
+          return false;
+        }
+      }
+    } catch {}
+  }
+
+  const stack = eventOrError.error?.stack || eventOrError.stack || '';
+  if (stack) {
+    if (
+      stack.includes('chrome-extension://') ||
+      stack.includes('moz-extension://') ||
+      stack.includes('safari-web-extension://') ||
+      stack.includes('extension://')
+    ) {
+      return false;
+    }
+  }
+
+  const message = eventOrError.message || eventOrError.error?.message || String(eventOrError);
+  if (message === 'Script error.' && !filename) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Start a client startup watchdog that automatically detects boot crashes
  * or hangs, and rolls back to the previous stable cache.
  *
@@ -165,10 +215,18 @@ export function watchdog({
   };
 
   const errorHandler = (event) => {
+    if (!isFirstPartyError(event)) {
+      logger.debug?.('[NLPWA] Ignoring third-party/extension error during boot:', event.message || event);
+      return;
+    }
     triggerFailure(event.error || event.message || 'Unhandled window error during boot');
   };
 
   const rejectionHandler = (event) => {
+    if (!isFirstPartyError(event.reason)) {
+      logger.debug?.('[NLPWA] Ignoring third-party/extension rejection during boot:', event.reason);
+      return;
+    }
     triggerFailure(event.reason || 'Unhandled promise rejection during boot');
   };
 

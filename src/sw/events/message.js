@@ -13,6 +13,7 @@ import {
   getClientPinStatus,
   getMinVersion,
   getBlockedVersions,
+  setActive,
   readMeta,
   writeMeta,
 } from '../cache/store.js';
@@ -65,22 +66,54 @@ export function handleMessage(config) {
         event.waitUntil((async () => {
           const active = await getActive();
           const version = event.data?.version || active?.version;
-          reply(MESSAGE_TYPES.REPORT_BOOT_HEALTH, { healthy: true, version });
+          const probation = await readMeta('/_nlpwa/probation.json');
+          if (probation && probation.status === 'probation' && (!probation.version || probation.version === active?.version)) {
+            probation.consecutiveFailures = 0;
+            probation.healthyBoots = (probation.healthyBoots || 0) + 1;
+            const required = probation.requiredHealthyBoots ?? 2;
+            if (probation.healthyBoots >= required) {
+              probation.status = 'stable';
+              if (!config.retainPreviousVersionCache && active?.fallbackCache) {
+                await caches.delete(active.fallbackCache).catch(() => {});
+                active.fallbackCache = null;
+                await setActive(active);
+              }
+            }
+            await writeMeta('/_nlpwa/probation.json', probation);
+          }
+          reply(MESSAGE_TYPES.REPORT_BOOT_HEALTH, { healthy: true, version, probation });
         })());
         break;
 
       case MESSAGE_TYPES.REPORT_BOOT_FAILURE:
         event.waitUntil((async () => {
           const error = event.data?.error || 'Boot failure reported by client';
-          const triggerRollback = event.data?.rollback !== false;
+          const probation = await readMeta('/_nlpwa/probation.json');
+          const active = await getActive();
           let rollbackResult = null;
-          if (triggerRollback) {
-            rollbackResult = await rollbackToFallback(error);
+          let shouldRollback = false;
+
+          if (probation && probation.status === 'probation' && (!probation.version || probation.version === active?.version)) {
+            probation.consecutiveFailures = (probation.consecutiveFailures || 0) + 1;
+            const threshold = probation.failureThreshold ?? 2;
+            if (probation.consecutiveFailures >= threshold) {
+              shouldRollback = true;
+            }
+            await writeMeta('/_nlpwa/probation.json', probation);
+          } else {
+            shouldRollback = event.data?.rollback !== false;
           }
+
+          if (shouldRollback) {
+            const ttlMs = probation?.clientBlockTtlMs ?? (24 * 60 * 60 * 1000);
+            rollbackResult = await rollbackToFallback(error, { ttlMs });
+          }
+
           reply(MESSAGE_TYPES.REPORT_BOOT_FAILURE, {
             reported: true,
             rolledBack: Boolean(rollbackResult?.success),
             rollbackResult,
+            probation,
           });
         })());
         break;

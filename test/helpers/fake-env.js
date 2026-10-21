@@ -1,7 +1,8 @@
-// Minimal in-memory stand-ins for CacheStorage / fetch so SW modules can run in Node.
 import { initConfig } from '../../src/sw/config/index.js';
 import { resetStoreMemo } from '../../src/sw/cache/store.js';
 import { resetManifestMemo } from '../../src/sw/update/manifest.js';
+import { setupFakeIDB } from './fake-idb.js';
+import { resetIDBCache } from '../../src/shared/idb.js';
 
 function keyOf(req) {
   return typeof req === 'string' ? new URL(req, 'https://example.com').href : req.url;
@@ -49,6 +50,8 @@ class FakeCacheStorage {
  */
 export function setupEnv(fetchImpl, config = {}) {
   globalThis.caches = new FakeCacheStorage();
+  setupFakeIDB();
+  resetIDBCache();
   resetStoreMemo();
   resetManifestMemo();
   const existingClients = globalThis.self?.clients;

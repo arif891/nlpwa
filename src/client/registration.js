@@ -266,3 +266,15 @@ export function onUpdateRequired(callback) {
   });
 }
 
+/**
+ * Explicitly request persistent storage permission on a user gesture (e.g. settings toggle or button).
+ *
+ * @returns {Promise<boolean>} Whether persistent storage was granted
+ */
+export async function requestPersistentStorage() {
+  if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+    return await navigator.storage.persist().catch(() => false);
+  }
+  return false;
+}
+

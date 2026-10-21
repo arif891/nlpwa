@@ -23,9 +23,31 @@ export async function getCacheNames(page) {
  */
 export async function getActivePointer(page) {
   return await page.evaluate(async () => {
-    const metaCache = await caches.open('nlpwa-meta');
-    const res = await metaCache.match('/_nlpwa/active.json');
-    return res ? await res.json() : null;
+    // Check IndexedDB
+    try {
+      const idbPointer = await new Promise((resolve) => {
+        const req = indexedDB.open('nlpwa-meta');
+        req.onsuccess = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('meta')) return resolve(null);
+          const tx = db.transaction('meta', 'readonly');
+          const getReq = tx.objectStore('meta').get('/_nlpwa/active.json');
+          getReq.onsuccess = () => resolve(getReq.result || null);
+          getReq.onerror = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+      if (idbPointer) return idbPointer;
+    } catch {}
+
+    // Fallback to CacheStorage if present
+    try {
+      const metaCache = await caches.open('nlpwa-meta');
+      const res = await metaCache.match('/_nlpwa/active.json');
+      return res ? await res.json() : null;
+    } catch {
+      return null;
+    }
   });
 }
 
@@ -34,11 +56,32 @@ export async function getActivePointer(page) {
  */
 export async function getActiveSnapshot(page, snapshotPath = '/_nlpwa/snapshot.json') {
   return await page.evaluate(async (path) => {
-    const metaCache = await caches.open('nlpwa-meta');
-    const activePointerRes = await metaCache.match('/_nlpwa/active.json');
-    if (!activePointerRes) return null;
-    const { cache } = await activePointerRes.json();
-    const offlineCache = await caches.open(cache);
+    let activeCacheName = null;
+    try {
+      activeCacheName = await new Promise((resolve) => {
+        const req = indexedDB.open('nlpwa-meta');
+        req.onsuccess = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('meta')) return resolve(null);
+          const tx = db.transaction('meta', 'readonly');
+          const getReq = tx.objectStore('meta').get('/_nlpwa/active.json');
+          getReq.onsuccess = () => resolve(getReq.result?.cache || null);
+          getReq.onerror = () => resolve(null);
+        };
+        req.onerror = () => resolve(null);
+      });
+    } catch {}
+
+    if (!activeCacheName) {
+      try {
+        const metaCache = await caches.open('nlpwa-meta');
+        const res = await metaCache.match('/_nlpwa/active.json');
+        if (res) activeCacheName = (await res.json())?.cache;
+      } catch {}
+    }
+
+    if (!activeCacheName) return null;
+    const offlineCache = await caches.open(activeCacheName);
     const snapshotRes = await offlineCache.match(path);
     return snapshotRes ? await snapshotRes.json() : null;
   }, snapshotPath);

@@ -28,5 +28,9 @@ export {
   getDiagnostics,
   getPinStatus,
 } from './diagnostics.js';
+export {
+  configureTelemetry,
+  sendTelemetryReport,
+} from './telemetry.js';
 
 

@@ -80,7 +80,7 @@ class FakeIDBIndex {
 class FakeIDBObjectStore {
   constructor(name, options = {}) {
     this.name = name;
-    this.keyPath = options.keyPath || 'id';
+    this.keyPath = options.keyPath || null;
     this.autoIncrement = Boolean(options.autoIncrement);
     this.records = new Map();
     this.indexes = new Map();
@@ -94,22 +94,23 @@ class FakeIDBObjectStore {
   index(name) {
     return this.indexes.get(name);
   }
-  add(record) {
+  add(record, key) {
     const req = { onsuccess: null, onerror: null, result: null };
     queueMicrotask(() => {
-      const id = this.autoIncrement ? this.nextId++ : (record[this.keyPath] || this.nextId++);
-      const toStore = { ...record, [this.keyPath]: id };
+      const id = key !== undefined ? key : (this.autoIncrement ? this.nextId++ : (this.keyPath ? record[this.keyPath] : this.nextId++));
+      const toStore = (this.keyPath && record && typeof record === 'object') ? { ...record, [this.keyPath]: id } : record;
       this.records.set(id, toStore);
       req.result = id;
       if (req.onsuccess) req.onsuccess({ target: req });
     });
     return req;
   }
-  put(record) {
+  put(record, key) {
     const req = { onsuccess: null, onerror: null, result: null };
     queueMicrotask(() => {
-      const id = record[this.keyPath] || this.nextId++;
-      this.records.set(id, { ...record, [this.keyPath]: id });
+      const id = key !== undefined ? key : (this.keyPath && record ? record[this.keyPath] : this.nextId++);
+      const toStore = (this.keyPath && record && typeof record === 'object') ? { ...record, [this.keyPath]: id } : record;
+      this.records.set(id, toStore);
       req.result = id;
       if (req.onsuccess) req.onsuccess({ target: req });
     });
@@ -118,7 +119,23 @@ class FakeIDBObjectStore {
   get(id) {
     const req = { onsuccess: null, onerror: null, result: null };
     queueMicrotask(() => {
-      req.result = this.records.get(id) || null;
+      req.result = this.records.get(id) ?? null;
+      if (req.onsuccess) req.onsuccess({ target: req });
+    });
+    return req;
+  }
+  getAll() {
+    const req = { onsuccess: null, onerror: null, result: [] };
+    queueMicrotask(() => {
+      req.result = Array.from(this.records.values());
+      if (req.onsuccess) req.onsuccess({ target: req });
+    });
+    return req;
+  }
+  getAllKeys() {
+    const req = { onsuccess: null, onerror: null, result: [] };
+    queueMicrotask(() => {
+      req.result = Array.from(this.records.keys());
       if (req.onsuccess) req.onsuccess({ target: req });
     });
     return req;
@@ -164,9 +181,9 @@ class FakeIDBDatabase {
       onabort: null,
       objectStore: () => store,
     };
-    queueMicrotask(() => {
+    setTimeout(() => {
       if (tx.oncomplete) tx.oncomplete();
-    });
+    }, 0);
     return tx;
   }
 }

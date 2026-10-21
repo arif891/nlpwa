@@ -1,11 +1,9 @@
-import { createLogger } from '../../../shared/logger.js';
-
-const logger = createLogger();
+import { idbGet, idbSet, idbDel } from '../../../shared/idb.js';
 
 export let META_CACHE = 'nlpwa-meta';
 
 /**
- * Get current meta cache name.
+ * Get current meta database/store name.
  * @returns {string}
  */
 export function getMetaCacheName() {
@@ -13,7 +11,7 @@ export function getMetaCacheName() {
 }
 
 /**
- * Configure the meta cache name (invoked during initConfig).
+ * Configure the meta database name (invoked during initConfig).
  * @param {string} name
  */
 export function setMetaCacheName(name) {
@@ -23,26 +21,24 @@ export function setMetaCacheName(name) {
 }
 
 export async function readMeta(key) {
-  const cache = await caches.open(META_CACHE);
-  const response = await cache.match(key);
-  if (!response) return null;
   try {
-    return await response.json();
+    return await idbGet(META_CACHE, 'meta', key);
   } catch {
     return null;
   }
 }
 
 export async function writeMeta(key, value) {
-  const cache = await caches.open(META_CACHE);
-  await cache.put(key, new Response(JSON.stringify(value), {
-    headers: { 'Content-Type': 'application/json' },
-  }));
+  await idbSet(META_CACHE, 'meta', key, value);
 }
 
 export async function deleteMeta(key) {
-  const cache = await caches.open(META_CACHE);
-  await cache.delete(key);
+  await idbDel(META_CACHE, 'meta', key);
+}
+
+export async function clearMetaStore() {
+  const { idbClear } = await import('../../../shared/idb.js');
+  await idbClear(META_CACHE, 'meta');
 }
 
 const MIN_VERSION_KEY = '/_nlpwa/min-version.json';

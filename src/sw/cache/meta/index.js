@@ -5,6 +5,7 @@ import {
   readMeta,
   writeMeta,
   deleteMeta,
+  clearMetaStore,
   getMinVersion,
   setMinVersion,
 } from './store.js';
@@ -68,13 +69,7 @@ export async function resetMeta() {
   resetStagedMemo();
   resetClientPinsMemo();
   resetBlockedVersionsMemo();
-  await Promise.all([
-    deleteMeta(ACTIVE_KEY),
-    deleteMeta(STAGED_KEY),
-    deleteMeta(PINS_KEY),
-    deleteMeta('/_nlpwa/min-version.json'),
-    deleteMeta(BLOCKED_VERSIONS_KEY),
-  ]);
+  await clearMetaStore().catch(() => {});
 }
 
 export function resetStoreMemo() {

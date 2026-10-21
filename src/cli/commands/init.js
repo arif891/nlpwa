@@ -133,6 +133,7 @@ export async function cmdInit(args) {
  */
 export default {
   version: '1.0.0',
+  verifyHashes: 'warn',
   precache: [
     ${precacheList.join(',\n    ')},
   ],

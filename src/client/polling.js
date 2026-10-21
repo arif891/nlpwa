@@ -65,11 +65,16 @@ export function setupPeriodicSync({ registration, options, logger }) {
 
 /**
  * Request persistent storage if requested and supported.
+ * By default, defers the prompt to 'appinstalled' or explicit user gesture rather than on initial page load.
  *
  * @param {Object} params
  */
 export function setupPersistentStorage({ options, logger }) {
-  if (options.persistentStorage && typeof navigator !== 'undefined' && navigator.storage?.persist) {
+  if (!options.persistentStorage || typeof navigator === 'undefined' || !navigator.storage?.persist) {
+    return;
+  }
+
+  const requestPersist = () => {
     navigator.storage.persist().then((persisted) => {
       if (persisted) {
         logger.log('[NLPWA] Storage is persistent; browser will not evict cached resources under storage pressure.');
@@ -77,5 +82,18 @@ export function setupPersistentStorage({ options, logger }) {
         logger.log('[NLPWA] Storage is best-effort; persistent storage permission was not granted.');
       }
     }).catch(() => {});
+  };
+
+  // If set to 'on-install', defer until app installation event
+  if (options.persistentStorage === 'on-install') {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('appinstalled', () => {
+        logger.log('[NLPWA] App installed. Requesting persistent storage.');
+        requestPersist();
+      }, { once: true });
+    }
+    return;
   }
+
+  requestPersist();
 }

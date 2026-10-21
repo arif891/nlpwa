@@ -46,9 +46,45 @@ export const DEFAULTS = {
    *              every file verifies (retried on the next check)
    *   'warn'   - mismatch is logged but the file is still stored
    *   false    - no verification
-   * Use 'warn' only if a proxy/CDN rewrites your files after the build.
+   * Default: 'warn' (resilient against proxies/CDNs rewriting or minifying files in transit)
    */
-  verifyHashes: 'strict',
+  verifyHashes: 'warn',
+
+  /**
+   * Probation configuration for newly committed versions.
+   * Keeps previous version as fallback until new version boots healthily a configured number of times.
+   */
+  probation: {
+    requiredHealthyBoots: 2,
+    failureThreshold: 2,
+    clientBlockTtlMs: 24 * 60 * 60 * 1000,
+  },
+
+  /**
+   * Threshold in bytes for large assets (>25MB) to delegate to Background Fetch / IndexedDB streaming.
+   * Default: 25 * 1024 * 1024 (25MB)
+   */
+  largeFileThresholdBytes: 25 * 1024 * 1024,
+
+  /**
+   * Update application mode:
+   *   'navigation' - stage in background, apply on next full HTML navigation or restart
+   *   'immediate'  - apply immediately once staged (subject to consensus)
+   * Default: 'navigation'
+   */
+  applyMode: 'navigation',
+
+  /**
+   * Opt-in telemetry reporting: false | { url: '/api/report' }
+   * Default: false
+   */
+  telemetry: false,
+
+  /**
+   * Ed25519 private signing key for update signatures.
+   * Default: false (disabled by default)
+   */
+  signingKey: false,
 
   /**
    * Maximum file size in bytes for in-memory SHA-256 hash verification during staging.

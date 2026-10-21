@@ -89,7 +89,7 @@ test('stage: commit evicts only modified/removed entries from the runtime cache'
 
 test('verify strict: a body that does not match its manifest hash is rejected, nothing goes live', async () => {
   const server = makeServer('1.0.0', v1);
-  setupEnv(server.fetch);
+  setupEnv(server.fetch, { verifyHashes: 'strict' });
   server.lie.set('/app.js', hash8('something else'));
 
   const result = await stageUpdate(await fetchServerInfo());
@@ -105,7 +105,7 @@ test('verify strict: a host that answers 200 with HTML for a missing file is cau
     const path = new URL(r.url).pathname;
     if (path === '/app.js') return new Response('<html>SPA fallback</html>'); // 200, wrong body
     return server.fetch(r);
-  });
+  }, { verifyHashes: 'strict' });
   const result = await stageUpdate(await fetchServerInfo());
   assert.deepEqual(result.failed, ['/app.js']);
 });
@@ -207,7 +207,7 @@ test('stage: strict mode enforces hash verification on oversized files when allo
     '/model.wasm': 'wasm-binary-bytes-data',
   });
   // Explicit opt-out requires strict failure on oversized files
-  setupEnv(server.fetch, { maxVerifyBytes: 10, allowOversizedUnverified: false });
+  setupEnv(server.fetch, { verifyHashes: 'strict', maxVerifyBytes: 10, allowOversizedUnverified: false });
   server.lie.set('/model.wasm', hash8('tampered-or-different'));
 
   const result = await stageUpdate(await fetchServerInfo());

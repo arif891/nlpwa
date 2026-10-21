@@ -1,6 +1,7 @@
 import { getConfig } from '../../config/index.js';
 import { openActive, getActive, getClientPinnedCache } from '../meta/index.js';
 import { matchWithAliases } from './aliases.js';
+import { getLargeAssetFromIDB } from '../large-assets.js';
 
 /**
  * Read a response from the offline (app shell) cache.
@@ -47,6 +48,15 @@ export async function getFromOffline(request, matchOptions, clientId = null) {
       }
     }
   }
+
+  if (!hit) {
+    try {
+      const url = typeof request === 'string' ? request : request.url;
+      const largeAsset = await getLargeAssetFromIDB(url);
+      if (largeAsset) hit = largeAsset;
+    } catch {}
+  }
+
   return hit;
 }
 

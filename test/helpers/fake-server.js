@@ -1,5 +1,5 @@
 // A tiny fake origin: serves files, /api/update/version and /api/update/info,
-// computing the same 8-char sha256 hashes the CLI emits.
+// computing the same 32-char sha256 hashes the CLI emits.
 import { createHash } from 'node:crypto';
 
 export const hash32 = (body) => createHash('sha256').update(body).digest('hex').slice(0, 32);

@@ -47,6 +47,7 @@ import {
  * @property {boolean} isInstalled
  * @property {boolean | null} isStoragePersistent
  * @property {number | null} badgeCount
+ * @property {string | null} channel
  * @property {{ loaded: number, total: number, percent: number, file?: string } | null} stagingProgress
  */
 
@@ -63,6 +64,7 @@ let _state = {
   isInstalled: isInstalled(),
   isStoragePersistent: null,
   badgeCount: null,
+  channel: typeof localStorage !== 'undefined' ? (localStorage.getItem('nlpwa_channel') || null) : null,
   stagingProgress: null,
 };
 
@@ -224,6 +226,43 @@ if (typeof window !== 'undefined') {
 }
 
 /**
+ * Subscribe to a release channel (e.g. 'beta', 'canary', 'stable').
+ *
+ * @param {string} channel
+ * @returns {Promise<string>}
+ */
+export async function subscribeChannel(channel) {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem('nlpwa_channel', channel);
+    } catch {}
+  }
+  setState({ channel });
+  try {
+    const { sendToSW } = await import('./messaging.js');
+    await sendToSW({ type: 'SET_CHANNEL', channel });
+  } catch {}
+  return channel;
+}
+
+export const setChannel = subscribeChannel;
+
+/**
+ * Get currently subscribed release channel.
+ *
+ * @returns {string | null}
+ */
+export function getChannel() {
+  if (_state.channel) return _state.channel;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      return localStorage.getItem('nlpwa_channel') || null;
+    } catch {}
+  }
+  return null;
+}
+
+/**
  * Unified NLPWA client singleton interface.
  */
 export const nlpwa = {
@@ -235,6 +274,9 @@ export const nlpwa = {
   isInstalled,
   checkUpdate: requestUpdateCheck,
   applyUpdate,
+  subscribeChannel,
+  setChannel,
+  getChannel,
   requestPersistentStorage: async () => {
     const granted = await requestPersistentStorage();
     setState({ isStoragePersistent: granted });

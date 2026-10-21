@@ -218,4 +218,53 @@ describe('Runtime Bugfixes & Hardening', () => {
     await queue.clear();
     assert.equal(await queue.size(), 0);
   });
+
+  test('package.json exports expose standalone sw entries and CJS-safe esm defaults', () => {
+    const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'));
+    assert.equal(pkg.exports['.'].default, './out/client.esm.js');
+    assert.equal(pkg.exports['./client'].default, './out/client.esm.js');
+    assert.equal(pkg.exports['./sync/sw'].default, './out/plugins/sync.sw.js');
+    assert.equal(pkg.exports['./share/sw'].default, './out/plugins/share.sw.js');
+    assert.equal(pkg.exports['./badge/sw'].default, './out/plugins/badge.sw.js');
+    assert.equal(pkg.exports['./bg-fetch/sw'].default, './out/plugins/bg-fetch.sw.js');
+    assert.equal(pkg.exports['./out/*'], './out/*');
+  });
+
+  test('checkDirtyTabs returns canReload: !hasDirtyTabs', async () => {
+    const { checkDirtyTabs, setDirty } = await import('../src/client/tabs.js');
+    setDirty(false);
+    const cleanCheck = await checkDirtyTabs();
+    assert.equal(cleanCheck.canReload, true);
+    assert.equal(cleanCheck.hasDirtyTabs, false);
+
+    setDirty(true);
+    const dirtyCheck = await checkDirtyTabs();
+    assert.equal(dirtyCheck.canReload, false);
+    assert.equal(dirtyCheck.hasDirtyTabs, true);
+    setDirty(false);
+  });
+
+  test('subscribeChannel and getChannel track client release channel', async () => {
+    const { nlpwa, subscribeChannel, getChannel } = await import('../src/client/index.js');
+    await subscribeChannel('beta');
+    assert.equal(getChannel(), 'beta');
+    assert.equal(nlpwa.getState().channel, 'beta');
+
+    await nlpwa.subscribeChannel('canary');
+    assert.equal(nlpwa.getChannel(), 'canary');
+    assert.equal(nlpwa.getState().channel, 'canary');
+  });
+
+  test('getDiagnostics exposes top-level properties and structured SW/client fields', async () => {
+    const { getDiagnostics } = await import('../src/client/diagnostics.js');
+    const diag = await getDiagnostics();
+    assert.ok('activeVersion' in diag);
+    assert.ok('pinnedVersion' in diag);
+    assert.ok('isPinned' in diag);
+    assert.ok('channel' in diag);
+    assert.ok('isLeader' in diag);
+    assert.ok('dirtyState' in diag);
+    assert.ok('client' in diag);
+    assert.equal(typeof diag.client.isLeader, 'boolean');
+  });
 });

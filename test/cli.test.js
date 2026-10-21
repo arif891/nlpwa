@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -197,18 +197,31 @@ test('cli add: warns on unknown plugin', () => {
   assert.match(res.stderr, /Unknown plugin "nonexistent"/);
 });
 
-test('cli add: installs sync plugin into target directory', () => {
+test('cli add: installs sync plugin into target directory', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'nlpwa-add-'));
   const outDir = fileURLToPath(new URL('../out', import.meta.url));
   const syncSw = join(outDir, 'plugins/sync.sw.js');
   const syncClient = join(outDir, 'plugins/sync.client.js');
 
+  const createdStubs = [];
   // Ensure source files exist in out/ even if tests run before npm run build
   if (!existsSync(syncSw) || !existsSync(syncClient)) {
     mkdirSync(join(outDir, 'plugins'), { recursive: true });
-    if (!existsSync(syncSw)) writeFileSync(syncSw, '/* NLPWASyncSW */');
-    if (!existsSync(syncClient)) writeFileSync(syncClient, '/* NLPWASyncClient */');
+    if (!existsSync(syncSw)) {
+      writeFileSync(syncSw, '/* NLPWASyncSW */');
+      createdStubs.push(syncSw);
+    }
+    if (!existsSync(syncClient)) {
+      writeFileSync(syncClient, '/* NLPWASyncClient */');
+      createdStubs.push(syncClient);
+    }
   }
+
+  t.after(() => {
+    for (const file of createdStubs) {
+      try { unlinkSync(file); } catch {}
+    }
+  });
 
   const res = spawnSync(process.execPath, [CLI, 'add', 'sync', '--dir', root], { encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);
@@ -248,12 +261,26 @@ test('cli update: marks oversized files and skipVerifyGlobs with skipVerify: tru
   assert.equal(htmlEntry.skipVerify, undefined, 'normal files should not have skipVerify: true');
 });
 
-test('cli init: scaffolds nlpwa.config.js, manifest.webmanifest, icons, and copies sw.js and client.js', () => {
+test('cli init: scaffolds nlpwa.config.js, manifest.webmanifest, icons, and copies sw.js and client.js', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'nlpwa-init-'));
   const outDir = fileURLToPath(new URL('../out', import.meta.url));
   mkdirSync(outDir, { recursive: true });
-  if (!existsSync(join(outDir, 'sw.js'))) writeFileSync(join(outDir, 'sw.js'), '// sw');
-  if (!existsSync(join(outDir, 'client.js'))) writeFileSync(join(outDir, 'client.js'), '// client');
+
+  const createdStubs = [];
+  if (!existsSync(join(outDir, 'sw.js'))) {
+    writeFileSync(join(outDir, 'sw.js'), '// sw');
+    createdStubs.push(join(outDir, 'sw.js'));
+  }
+  if (!existsSync(join(outDir, 'client.js'))) {
+    writeFileSync(join(outDir, 'client.js'), '// client');
+    createdStubs.push(join(outDir, 'client.js'));
+  }
+
+  t.after(() => {
+    for (const file of createdStubs) {
+      try { unlinkSync(file); } catch {}
+    }
+  });
 
   const res = spawnSync(process.execPath, [CLI, 'init', '--dir', root, '--name', 'Test PWA'], { encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);

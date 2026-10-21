@@ -170,8 +170,9 @@ async function _doUpdateCheck({ force = false } = {}) {
   }
 
   // Check release channel filter
-  if (!force && config.channel && versionRes?.channel && config.channel !== versionRes.channel) {
-    logger.log(`[NLPWA] Skipping release channel "${versionRes.channel}" (configured channel: "${config.channel}").`);
+  const activeChannel = config.channel || (await readMeta('/_nlpwa/channel.json'))?.channel;
+  if (!force && activeChannel && versionRes?.channel && activeChannel !== versionRes.channel) {
+    logger.log(`[NLPWA] Skipping release channel "${versionRes.channel}" (configured channel: "${activeChannel}").`);
     return { updated: false, channelMismatch: true };
   }
 
@@ -266,8 +267,8 @@ async function _doUpdateCheck({ force = false } = {}) {
     logger.log(`[NLPWA] Ed25519 manifest signature verified for v${serverManifest.version}.`);
   }
 
-  if (!force && config.channel && serverManifest.channel && config.channel !== serverManifest.channel) {
-    logger.log(`[NLPWA] Skipping manifest release channel "${serverManifest.channel}" (configured channel: "${config.channel}").`);
+  if (!force && activeChannel && serverManifest.channel && activeChannel !== serverManifest.channel) {
+    logger.log(`[NLPWA] Skipping manifest release channel "${serverManifest.channel}" (configured channel: "${activeChannel}").`);
     return { updated: false, channelMismatch: true };
   }
 

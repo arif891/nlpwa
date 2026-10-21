@@ -28,8 +28,8 @@
     },
     {
       "path": "/client.js",
-      "hash": "5ea208d5374bb4ee15d04768d06eed4b",
-      "size": 27140
+      "hash": "0a77f97053271298ed4366254073776f",
+      "size": 28362
     },
     {
       "path": "/manifest.webmanifest",
@@ -52,5 +52,5 @@
       "size": 292
     }
   ],
-  "signature": "HMmcNLtY0wZ5KNl4ypDKvHNRwg2xK8aGNih8EW3wCJvjbcs7evBcUZe3k4efe75wMf3J7Twbf+I/ZjUI9KWMCg=="
+  "signature": "UcEJr+Ywb2y+/n3oWPcDqkLHXNSFC94AD+g2Gc/dX89Wizpbon4ZHeFHSs+3V2TrZaovPJ6p6g+zNxHrKjfABA=="
 }

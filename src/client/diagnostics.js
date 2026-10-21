@@ -80,11 +80,38 @@ export async function getDiagnostics(timeoutMs = 3000) {
     logger.debug('[NLPWA] checkDirtyTabs failed during diagnostics:', err);
   }
 
+  const leader = isLeader();
+  const dirty = isTabDirty();
+  const activeVer = swDiag?.active?.version || null;
+  const pinVer = swDiag?.pinStatus?.version || activeVer;
+  const isPin = swDiag?.pinStatus?.state === 'PINNED';
+  const stagedVer = swDiag?.staged?.version || null;
+  const fallbackAvail = Boolean(swDiag?.active?.fallbackCache);
+
   return {
+    // Top-level aliases matching FEATURES.md
+    activeVersion: activeVer,
+    pinnedVersion: pinVer,
+    isPinned: isPin,
+    stagedVersion: stagedVer,
+    stagingProgress: swDiag?.staged
+      ? {
+          completed: swDiag.staged.complete ? 1 : 0,
+          total: 1,
+          percent: swDiag.staged.complete ? 100 : 0,
+        }
+      : null,
+    fallbackAvailable: fallbackAvail,
+    blockedVersions: swDiag?.blockedVersions || [],
+    channel: swDiag?.channel || null,
+    isLeader: leader,
+    dirtyState: dirty,
+
+    // Structured SW & client details
     ...swDiag,
     client: {
-      isLeader: isLeader(),
-      isTabDirty: isTabDirty(),
+      isLeader: leader,
+      isTabDirty: dirty,
       tabConsensus: dirtyCheck,
     },
   };

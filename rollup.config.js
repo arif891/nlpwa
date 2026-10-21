@@ -22,31 +22,6 @@ export default async () => {
     },
   };
 
-  // ── Auto-sync example/ assets and update manifest ─────────────────────────
-  const syncExamplePlugin = {
-    name: 'sync-example-assets',
-    async writeBundle() {
-      try {
-        const { copyFileSync, existsSync } = await import('node:fs');
-        if (existsSync('out/sw.js') && existsSync('example/sw.js')) {
-          copyFileSync('out/sw.js', 'example/sw.js');
-        }
-        if (existsSync('out/client.js') && existsSync('example/client.js')) {
-          copyFileSync('out/client.js', 'example/client.js');
-        }
-
-        const { cmdUpdate } = await import('./src/cli/commands/update.js');
-        await cmdUpdate({
-          config: 'example/nlpwa.config.js',
-          dir: 'example',
-          version: '1.0.0',
-          pretty: true,
-        });
-      } catch (err) {
-        console.warn('[NLPWA] syncExamplePlugin warning:', err?.message || err);
-      }
-    },
-  };
 
   return [
   // ── Service Worker: standalone ────────────────────────────────────────────
@@ -170,7 +145,7 @@ export default async () => {
       banner:  '/* NLPWA Sync Client (standalone) — https://github.com/arif891/nlpwa */',
       exports: 'named',
     },
-    plugins: [...plugins, syncExamplePlugin],
+    plugins,
   },
 
   // ── Share Plugin: ES module ───────────────────────────────────────────────

@@ -14,6 +14,7 @@ import {
   getMinVersion,
   getBlockedVersions,
   readMeta,
+  writeMeta,
 } from '../cache/store.js';
 import { compare } from '../../shared/version.js';
 import { getLatestSharedData } from '../features/share-target.js';
@@ -138,6 +139,7 @@ export function handleMessage(config) {
               storage,
               rollbackHistory,
               updateStatus,
+              channel: config.channel || (await readMeta('/_nlpwa/channel.json'))?.channel || null,
             });
           } catch (err) {
             reply(MESSAGE_TYPES.DIAGNOSTICS_INFO, null, err);
@@ -307,6 +309,19 @@ export function handleMessage(config) {
             reply(MESSAGE_TYPES.BADGE_RESULT, { success, count: 0 });
           } catch (err) {
             reply(MESSAGE_TYPES.BADGE_RESULT, { success: false }, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.SET_CHANNEL:
+        event.waitUntil((async () => {
+          try {
+            const channel = event.data?.channel || null;
+            config.channel = channel;
+            await writeMeta('/_nlpwa/channel.json', { channel });
+            reply(MESSAGE_TYPES.CHANNEL_INFO, { channel });
+          } catch (err) {
+            reply(MESSAGE_TYPES.CHANNEL_INFO, null, err);
           }
         })());
         break;

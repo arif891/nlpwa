@@ -16,14 +16,14 @@
   "engines": {
     "node": ">=20"
   },
-  "main": "./out/client.js",
+  "main": "./out/client.esm.js",
   "module": "./out/client.esm.js",
   "types": "./types/index.d.ts",
   "exports": {
     ".": {
       "types": "./types/index.d.ts",
       "import": "./out/client.esm.js",
-      "default": "./out/client.js"
+      "default": "./out/client.esm.js"
     },
     "./sw": {
       "types": "./types/sw.d.ts",
@@ -33,7 +33,7 @@
     "./client": {
       "types": "./types/client.d.ts",
       "import": "./out/client.esm.js",
-      "default": "./out/client.js"
+      "default": "./out/client.esm.js"
     },
     "./config.json": {
       "types": "./types/config.d.ts",
@@ -66,7 +66,11 @@
     "./sync/client": {
       "types": "./types/sync-client.d.ts",
       "import": "./out/plugins/sync.client.esm.js",
-      "default": "./out/plugins/sync.client.js"
+      "default": "./out/plugins/sync.client.esm.js"
+    },
+    "./sync/sw": {
+      "types": "./types/sync.d.ts",
+      "default": "./out/plugins/sync.sw.js"
     },
     "./share": {
       "types": "./types/share.d.ts",
@@ -76,7 +80,11 @@
     "./share/client": {
       "types": "./types/share.d.ts",
       "import": "./out/plugins/share.client.esm.js",
-      "default": "./out/plugins/share.client.js"
+      "default": "./out/plugins/share.client.esm.js"
+    },
+    "./share/sw": {
+      "types": "./types/share.d.ts",
+      "default": "./out/plugins/share.sw.js"
     },
     "./badge": {
       "types": "./types/badge.d.ts",
@@ -86,7 +94,11 @@
     "./badge/client": {
       "types": "./types/badge.d.ts",
       "import": "./out/plugins/badge.client.esm.js",
-      "default": "./out/plugins/badge.client.js"
+      "default": "./out/plugins/badge.client.esm.js"
+    },
+    "./badge/sw": {
+      "types": "./types/badge.d.ts",
+      "default": "./out/plugins/badge.sw.js"
     },
     "./bg-fetch": {
       "types": "./types/bg-fetch.d.ts",
@@ -96,7 +108,11 @@
     "./bg-fetch/client": {
       "types": "./types/bg-fetch.d.ts",
       "import": "./out/plugins/bg-fetch.client.esm.js",
-      "default": "./out/plugins/bg-fetch.client.js"
+      "default": "./out/plugins/bg-fetch.client.esm.js"
+    },
+    "./bg-fetch/sw": {
+      "types": "./types/bg-fetch.d.ts",
+      "default": "./out/plugins/bg-fetch.sw.js"
     },
     "./crypto": {
       "types": "./types/crypto.d.ts",
@@ -107,6 +123,7 @@
       "types": "./types/testing.d.ts",
       "default": "./test/helpers/fake-env.js"
     },
+    "./out/*": "./out/*",
     "./package.json": "./package.json"
   },
   "files": [
@@ -127,12 +144,12 @@
     "nlpwa": "bin/nlpwa.js"
   },
   "scripts": {
-    "build": "rollup -c --environment PROD",
-    "build:dev": "rollup -c",
-    "build:prod": "rollup -c --environment PROD",
+    "build": "rollup -c --environment PROD && npm run sync:example",
+    "build:dev": "rollup -c && npm run sync:example",
+    "build:prod": "rollup -c --environment PROD && npm run sync:example",
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
-    "sync:example": "node ./bin/nlpwa.js update --config example/nlpwa.config.js --dir example --version 1.0.0 --pretty",
+    "sync:example": "node ./bin/sync-example.js",
     "check:drift": "git diff --exit-code example/",
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa": "node ./bin/nlpwa.js",

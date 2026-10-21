@@ -5,4 +5,8 @@ export * from './rollup';
 export * from './webpack';
 export * from './sync';
 export * from './sync-client';
+export * from './share';
+export * from './badge';
+export * from './bg-fetch';
+export * from './crypto';
 export * from './testing';

@@ -1,5 +1,5 @@
 import { getConfig, getUpdateEndpoints } from '../config/index.js';
-import { openActive, getActiveSnapshotPaths, setActiveSnapshotPaths } from '../cache/store.js';
+import { openActive, getActiveSnapshotPaths, setActiveSnapshotPaths, readMeta, writeMeta } from '../cache/store.js';
 
 export { getActiveSnapshotPaths, setActiveSnapshotPaths };
 
@@ -29,6 +29,16 @@ export async function fetchServerVersion() {
     _lastVersionEndpoint = versionEndpoint;
   }
 
+  if (!_lastVersionETag) {
+    try {
+      const persisted = await readMeta('/_nlpwa/version-etag.json');
+      if (persisted && persisted.endpoint === versionEndpoint) {
+        _lastVersionETag = persisted.etag;
+        _lastVersionData = persisted.data;
+      }
+    } catch {}
+  }
+
   const baseTimeout = endpoints.timeoutMs ?? config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && baseTimeout > 0
     ? AbortSignal.timeout(baseTimeout)
@@ -51,6 +61,9 @@ export async function fetchServerVersion() {
       notModified: true,
       version: _lastVersionData?.version || undefined,
       minVersion: _lastVersionData?.minVersion || _lastVersionData?.minSupportedVersion || undefined,
+      rolloutPercent: _lastVersionData?.rolloutPercent,
+      blockedVersions: _lastVersionData?.blockedVersions,
+      channel: _lastVersionData?.channel,
     };
   }
 
@@ -67,6 +80,11 @@ export async function fetchServerVersion() {
   if (etag) {
     _lastVersionETag = etag;
     _lastVersionData = { ...data };
+    writeMeta('/_nlpwa/version-etag.json', {
+      endpoint: versionEndpoint,
+      etag,
+      data: { ...data },
+    }).catch(() => {});
   }
 
   return data;

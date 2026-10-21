@@ -60,8 +60,10 @@ export interface CacheKeyWillBeUsedParams {
 }
 
 export interface NLPWAPlugin {
-  /** Called before a network request is made; can return a modified Request */
-  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | void> | Request | void;
+  /** Optional plugin name or identifier */
+  name?: string;
+  /** Called before a network request is made; can return a modified Request or synthetic Response */
+  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | Response | void> | Request | Response | void;
   /** Called before a cached response is used; returning null treats it as a cache miss */
   cachedResponseWillBeUsed?: (params: CachedResponseWillBeUsedParams) => Promise<Response | null | void> | Response | null | void;
   /** Called before writing to cache; returning null or false skips caching */
@@ -74,6 +76,17 @@ export interface NLPWAPlugin {
   cacheDidUpdate?: (params: CacheDidUpdateParams) => Promise<void> | void;
   /** Called to customize or rewrite cache keys on read and write */
   cacheKeyWillBeUsed?: (params: CacheKeyWillBeUsedParams) => Promise<Request | string> | Request | string;
+  /** Notification click lifecycle hook (e.g. BadgePlugin) */
+  onNotificationClick?: (event: any) => Promise<void> | void;
+  /** Push event lifecycle hook (e.g. BadgePlugin) */
+  onPush?: (event: any, payload?: any) => Promise<void> | void;
+  /** Background fetch lifecycle hooks (e.g. BackgroundFetchPlugin) */
+  onBackgroundFetchSuccess?: (event: any, options?: any) => Promise<void> | void;
+  onBackgroundFetchFail?: (event: any) => Promise<void> | void;
+  onBackgroundFetchAbort?: (event: any) => Promise<void> | void;
+  onBackgroundFetchClick?: (event: any, options?: any) => Promise<void> | void;
+  /** Arbitrary properties and methods supported by plugin implementations */
+  [key: string]: any;
 }
 
 export interface RouteConfig {
@@ -112,7 +125,7 @@ export interface RouteConfig {
   /** Route-specific plugin hooks */
   plugins?: NLPWAPlugin[];
   /** Direct requestWillFetch hook shortcut */
-  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | void> | Request | void;
+  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | Response | void> | Request | Response | void;
   /** Direct cachedResponseWillBeUsed hook shortcut */
   cachedResponseWillBeUsed?: (params: CachedResponseWillBeUsedParams) => Promise<Response | null | void> | Response | null | void;
   /** Direct cacheWillUpdate hook shortcut */
@@ -239,7 +252,7 @@ export interface NLPWAConfig {
   /** Global plugins attached to all route strategies */
   plugins?: NLPWAPlugin[];
   /** Direct requestWillFetch hook shortcut */
-  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | void> | Request | void;
+  requestWillFetch?: (params: RequestWillFetchParams) => Promise<Request | Response | void> | Request | Response | void;
   /** Direct cachedResponseWillBeUsed hook shortcut */
   cachedResponseWillBeUsed?: (params: CachedResponseWillBeUsedParams) => Promise<Response | null | void> | Response | null | void;
   /** Direct cacheWillUpdate hook shortcut */

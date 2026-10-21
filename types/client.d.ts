@@ -208,12 +208,28 @@ export function onUpdateApplied(callback?: (data: UpdateAppliedData) => void): (
  */
 export function onStagingProgress(callback?: (data: StagingProgressData) => void): () => void;
 
+export interface ApplyUpdateOptions {
+  timeoutMs?: number;
+  reload?: boolean;
+  force?: boolean;
+  checkTabs?: boolean;
+  details?: boolean;
+}
+
+export interface ApplyUpdateResult {
+  applied: boolean;
+  blockedByDirty?: boolean;
+  dirtyTabs?: Array<{ tabId: string; title: string; local?: boolean }>;
+  reason?: string;
+}
+
 /**
  * Switch to the staged update, then reload the page (or commit without reloading in SPAs).
  *
  * @param options Options including timeout and whether to reload (default: true)
  */
-export function applyUpdate(options?: { timeoutMs?: number; reload?: boolean }): Promise<boolean>;
+export function applyUpdate(options: ApplyUpdateOptions & { details: true }): Promise<ApplyUpdateResult>;
+export function applyUpdate(options?: ApplyUpdateOptions): Promise<boolean | ApplyUpdateResult>;
 
 /**
  * Trigger a manual update check from the client side.
@@ -363,6 +379,7 @@ export interface NLPWAState {
   isInstalled: boolean;
   isStoragePersistent: boolean | null;
   badgeCount: number | null;
+  channel: string | null;
   stagingProgress: { loaded: number; total: number; percent: number; file?: string } | null;
 }
 
@@ -375,6 +392,21 @@ export function getState(): NLPWAState;
  * Subscribe to NLPWA state changes.
  */
 export function subscribe(listener: (state: NLPWAState) => void): () => void;
+
+/**
+ * Subscribe to a release channel (e.g. 'beta', 'canary', 'stable').
+ */
+export function subscribeChannel(channel: string): Promise<string>;
+
+/**
+ * Alias for subscribeChannel.
+ */
+export function setChannel(channel: string): Promise<string>;
+
+/**
+ * Get the current subscribed release channel.
+ */
+export function getChannel(): string | null;
 
 export interface RollbackResult {
   success: boolean;
@@ -442,13 +474,22 @@ export function setDirty(dirty: boolean): void;
  */
 export function isTabDirty(): boolean;
 
+export interface DirtyTabInfo {
+  tabId: string;
+  title: string;
+  local?: boolean;
+}
+
+export interface CheckDirtyTabsResult {
+  canReload: boolean;
+  hasDirtyTabs: boolean;
+  dirtyTabs: DirtyTabInfo[];
+}
+
 /**
  * Query all open tabs across the tab consensus bus for unsaved changes.
  */
-export function checkDirtyTabs(timeoutMs?: number): Promise<{
-  hasDirtyTabs: boolean;
-  dirtyTabs: Array<{ tabId: string; title: string; local?: boolean }>;
-}>;
+export function checkDirtyTabs(timeoutMs?: number): Promise<CheckDirtyTabsResult>;
 
 /**
  * Whether this tab is currently the elected leader among all open tabs.
@@ -473,10 +514,58 @@ export function getPinStatus(timeoutMs?: number): Promise<{
   graceRemainingMs: number | null;
 } | null>;
 
+export interface DiagnosticsData {
+  activeVersion: string | null;
+  pinnedVersion: string | null;
+  isPinned: boolean;
+  stagedVersion: string | null;
+  stagingProgress: { completed: number; total: number; percent: number } | null;
+  fallbackAvailable: boolean;
+  blockedVersions: string[];
+  channel: string | null;
+  isLeader: boolean;
+  dirtyState: boolean;
+  active: {
+    version: string;
+    cache: string;
+    fallbackVersion: string | null;
+    fallbackCache: string | null;
+  } | null;
+  staged: {
+    version: string;
+    cache: string;
+    complete: boolean;
+    retryCount: number;
+    failedFiles: string[];
+  } | null;
+  pinStatus: {
+    clientId: string | null;
+    state: 'BOOTING' | 'PINNED' | 'ORPHANED' | 'EXPIRED';
+    version: string | null;
+    cache: string | null;
+    pinnedAt: number | null;
+    lastSeenAt: number | null;
+    graceRemainingMs: number | null;
+  } | null;
+  storage: CacheInfoData | null;
+  rollbackHistory: Array<{
+    timestamp: number;
+    fromVersion: string;
+    toVersion: string;
+    reason: string;
+  }>;
+  updateStatus: string;
+  client: {
+    isLeader: boolean;
+    isTabDirty: boolean;
+    tabConsensus: CheckDirtyTabsResult;
+  };
+}
+
 /**
  * Retrieve comprehensive runtime diagnostics from the SW and client tab consensus bus.
  */
-export function getDiagnostics(timeoutMs?: number): Promise<any>;
+export function getDiagnostics(timeoutMs?: number): Promise<DiagnosticsData>;
 
 export interface NLPWAClientAPI {
   register: typeof register;
@@ -518,6 +607,9 @@ export interface NLPWAClientAPI {
   watchdog: typeof watchdog;
   getState: typeof getState;
   subscribe: typeof subscribe;
+  subscribeChannel: typeof subscribeChannel;
+  setChannel: typeof setChannel;
+  getChannel: typeof getChannel;
   registerDirtyGuard: typeof registerDirtyGuard;
   setDirty: typeof setDirty;
   isTabDirty: typeof isTabDirty;

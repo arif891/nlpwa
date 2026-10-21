@@ -47,6 +47,8 @@ export const MESSAGE_TYPES = {
   DIAGNOSTICS_INFO:    'DIAGNOSTICS_INFO',    // SW → client: reply with comprehensive diagnostics
   GET_PIN_STATUS:      'GET_PIN_STATUS',      // client → SW: request pin state of client
   PIN_STATUS_INFO:     'PIN_STATUS_INFO',     // SW → client: reply with pin state info
+  SET_CHANNEL:         'SET_CHANNEL',         // client → SW: subscribe to release channel
+  CHANNEL_INFO:        'CHANNEL_INFO',        // SW → client: reply confirming channel subscription
 };
 
 /** Runtime cache cleanup strategies */

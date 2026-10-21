@@ -117,7 +117,11 @@ export async function checkDirtyTabs(timeoutMs = 150) {
 
   const channel = getBus();
   if (!channel) {
-    return { hasDirtyTabs: dirtyTabs.length > 0, dirtyTabs };
+    return {
+      canReload: dirtyTabs.length === 0,
+      hasDirtyTabs: dirtyTabs.length > 0,
+      dirtyTabs,
+    };
   }
 
   const queryId = Math.random().toString(36).slice(2);
@@ -155,6 +159,7 @@ export async function checkDirtyTabs(timeoutMs = 150) {
   });
 
   return {
+    canReload: dirtyTabs.length === 0,
     hasDirtyTabs: dirtyTabs.length > 0,
     dirtyTabs,
   };

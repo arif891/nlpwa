@@ -260,6 +260,45 @@ export default async () => {
     plugins,
   },
 
+  // ── Share SW: Standalone drop-in IIFE ─────────────────────────────────────
+  {
+    input: 'src/plugins/share/sw.js',
+    output: {
+      file:    'out/plugins/share.sw.js',
+      format:  'iife',
+      name:    'NLPWAShareSW',
+      banner:  '/* NLPWA Share Target SW (standalone) — https://github.com/arif891/nlpwa */',
+      exports: 'named',
+    },
+    plugins,
+  },
+
+  // ── Badge SW: Standalone drop-in IIFE ─────────────────────────────────────
+  {
+    input: 'src/plugins/badge/sw.js',
+    output: {
+      file:    'out/plugins/badge.sw.js',
+      format:  'iife',
+      name:    'NLPWABadgeSW',
+      banner:  '/* NLPWA App Badging SW (standalone) — https://github.com/arif891/nlpwa */',
+      exports: 'named',
+    },
+    plugins,
+  },
+
+  // ── Background Fetch SW: Standalone drop-in IIFE ──────────────────────────
+  {
+    input: 'src/plugins/bg-fetch/sw.js',
+    output: {
+      file:    'out/plugins/bg-fetch.sw.js',
+      format:  'iife',
+      name:    'NLPWABgFetchSW',
+      banner:  '/* NLPWA Background Fetch SW (standalone) — https://github.com/arif891/nlpwa */',
+      exports: 'named',
+    },
+    plugins,
+  },
+
   // ── Crypto Plugin: ES module ──────────────────────────────────────────────
   {
     input: 'src/plugins/crypto/index.js',

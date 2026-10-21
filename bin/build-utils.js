@@ -55,8 +55,32 @@ export function emitBuildManifests({
     syncSourceConfigVersion(targetConfigPath, appVersion);
   }
 
+  const {
+    signingKey: _extractedSigningKey,
+    plugins: _plugins,
+    onPush: _onPush,
+    onNotificationClick: _onNotificationClick,
+    ...safeConfig
+  } = rawConfig;
+
+  // Sanitize routes to strip non-serializable functions / plugins
+  const sanitizedRoutes = (rawConfig.routes || []).map((route) => {
+    const {
+      plugins,
+      requestWillFetch,
+      cachedResponseWillBeUsed,
+      cacheWillUpdate,
+      fetchDidFail,
+      fetchDidSucceed,
+      cacheDidUpdate,
+      cacheKeyWillBeUsed,
+      ...safeRoute
+    } = route;
+    return safeRoute;
+  });
+
   const runtimeConfig = {
-    ...rawConfig,
+    ...safeConfig,
     version: appVersion,
     configPath: rawConfig.configPath || '/api/update/config.json',
     updateAPI: rawConfig.updateAPI || {
@@ -64,7 +88,7 @@ export function emitBuildManifests({
       info: '/api/update/info.json',
     },
     precache: expandedPrecache,
-    routes: rawConfig.routes || [],
+    routes: sanitizedRoutes,
   };
 
   // 3. Emit config file in distDir with expanded precache list

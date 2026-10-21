@@ -1,3 +1,4 @@
+import { getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
 import { checkForUpdate } from '../update/index.js';
 
@@ -9,29 +10,57 @@ import { checkForUpdate } from '../update/index.js';
  */
 export function handlePush(userConfig = {}) {
   return (event) => {
-    if (typeof userConfig.onPush === 'function') {
+    let activeConfig = {};
+    try {
+      activeConfig = getConfig() || {};
+    } catch {
+      activeConfig = {};
+    }
+    const effectiveConfig = { ...userConfig, ...activeConfig };
+    const plugins = Array.isArray(activeConfig.plugins)
+      ? activeConfig.plugins
+      : (Array.isArray(userConfig.plugins) ? userConfig.plugins : []);
+
+    let customHandled = false;
+    if (typeof effectiveConfig.onPush === 'function') {
       try {
-        const customRes = userConfig.onPush(event);
+        const customRes = effectiveConfig.onPush(event);
         if (customRes && typeof customRes.then === 'function') {
           event.waitUntil(customRes);
-          return;
+          customHandled = true;
         }
       } catch (err) {
         logger.warn('[NLPWA] onPush handler error:', err?.message || err);
       }
     }
 
-    if (!event.data) return;
+    let payload = null;
+    if (event.data) {
+      try {
+        payload = event.data.json();
+      } catch {
+        payload = { body: event.data.text() };
+      }
+    }
+
+    // Call onPush on plugins (e.g. BadgePlugin)
+    for (const plugin of plugins) {
+      if (typeof plugin?.onPush === 'function') {
+        try {
+          const res = plugin.onPush(event, payload);
+          if (res && typeof res.then === 'function') {
+            event.waitUntil(res);
+          }
+        } catch (err) {
+          logger.warn('[NLPWA] plugin.onPush handler error:', err?.message || err);
+        }
+      }
+    }
+
+    if (customHandled || !payload) return;
 
     event.waitUntil((async () => {
       try {
-        let payload;
-        try {
-          payload = event.data.json();
-        } catch {
-          payload = { body: event.data.text() };
-        }
-
         // Silent background update trigger via Push
         if (payload?.type === 'CHECK_UPDATE' || payload?.nlpwa === 'check-update') {
           await checkForUpdate({ force: true });
@@ -68,22 +97,48 @@ export function handlePush(userConfig = {}) {
  */
 export function handleNotificationClick(userConfig = {}) {
   return (event) => {
-    if (typeof userConfig.onNotificationClick === 'function') {
+    let activeConfig = {};
+    try {
+      activeConfig = getConfig() || {};
+    } catch {
+      activeConfig = {};
+    }
+    const effectiveConfig = { ...userConfig, ...activeConfig };
+    const plugins = Array.isArray(activeConfig.plugins)
+      ? activeConfig.plugins
+      : (Array.isArray(userConfig.plugins) ? userConfig.plugins : []);
+
+    let customHandled = false;
+    if (typeof effectiveConfig.onNotificationClick === 'function') {
       try {
-        const customRes = userConfig.onNotificationClick(event);
+        const customRes = effectiveConfig.onNotificationClick(event);
         if (customRes && typeof customRes.then === 'function') {
           event.waitUntil(customRes);
-          return;
+          customHandled = true;
         }
       } catch (err) {
         logger.warn('[NLPWA] onNotificationClick handler error:', err?.message || err);
       }
     }
 
+    for (const plugin of plugins) {
+      if (typeof plugin?.onNotificationClick === 'function') {
+        try {
+          const res = plugin.onNotificationClick(event);
+          if (res && typeof res.then === 'function') {
+            event.waitUntil(res);
+          }
+        } catch (err) {
+          logger.warn('[NLPWA] plugin.onNotificationClick handler error:', err?.message || err);
+        }
+      }
+    }
+
     event.notification.close();
 
     // Clear application badge when notification is clicked unless opted out
-    if (userConfig.clearBadgeOnClick !== false && typeof navigator !== 'undefined' && typeof navigator.clearAppBadge === 'function') {
+    const clearBadge = effectiveConfig.clearBadgeOnClick !== false;
+    if (clearBadge && typeof navigator !== 'undefined' && typeof navigator.clearAppBadge === 'function') {
       navigator.clearAppBadge().catch(() => {});
     }
 

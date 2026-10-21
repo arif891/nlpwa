@@ -100,6 +100,10 @@ export async function commitStaged(event) {
       if (previousActive?.cache) {
         keep.push(previousActive.cache);
       }
+      const activeMeta = await getActive();
+      if (activeMeta?.fallbackCache) {
+        keep.push(activeMeta.fallbackCache);
+      }
       await pruneClientPins();
       const pinned = getAllPinnedCaches();
       keep.push(...pinned);
@@ -252,7 +256,7 @@ export async function sweepOrphanCaches() {
   await cleanupCaches({
     base: config.caches.offline,
     runtime: config.caches.runtime,
-    keep: [await getActiveName(config.caches.offline), staged?.cache, active?.previousCache, ...pinned],
+    keep: [await getActiveName(config.caches.offline), staged?.cache, active?.previousCache, active?.fallbackCache, ...pinned],
   });
 }
 

@@ -123,10 +123,15 @@ export class SyncQueue {
    */
   async clearDeadLetter() {
     const items = await this.getDeadLetter();
+    if (!items.length) return;
     return withStore('readwrite', (store) => {
-      for (const item of items) {
-        store.delete(item.id);
-      }
+      return Promise.all(
+        items.map((item) => new Promise((resolve, reject) => {
+          const req = store.delete(item.id);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        }))
+      );
     });
   }
 
@@ -185,7 +190,11 @@ export class SyncQueue {
    */
   async remove(id) {
     return withStore('readwrite', (store) => {
-      store.delete(id);
+      return new Promise((resolve, reject) => {
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
     });
   }
 
@@ -195,15 +204,20 @@ export class SyncQueue {
    */
   async clear() {
     return withStore('readwrite', (store) => {
-      const index = store.index('queueName');
-      const req = index.openCursor(IDBKeyRange.only(this.name));
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          cursor.delete();
-          cursor.continue();
-        }
-      };
+      return new Promise((resolve, reject) => {
+        const index = store.index('queueName');
+        const req = index.openCursor(IDBKeyRange.only(this.name));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            cursor.delete();
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
     });
   }
 

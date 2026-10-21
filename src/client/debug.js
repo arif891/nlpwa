@@ -53,8 +53,8 @@ export function attachDebugPanel({ position = 'bottom-right' } = {}) {
         NLPWA Inspector
       </div>
       <div style="display:flex;gap:6px;">
-        <button id="nlpwa-dbg-refresh" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:2px 4px;font-size:11px;" title="Refresh">↻</button>
-        <button id="nlpwa-dbg-close" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:2px 4px;font-size:11px;" title="Close">✕</button>
+        <button id="nlpwa-dbg-refresh" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:2px 4px;font-size:11px;" title="Refresh">&#x21bb;</button>
+        <button id="nlpwa-dbg-close" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:2px 4px;font-size:11px;" title="Close">&#x2715;</button>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;margin-bottom:10px;">

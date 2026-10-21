@@ -117,7 +117,7 @@ export function handleMessage(config) {
             const clientId = event.source?.id;
             const pinStatus = getClientPinStatus(clientId, { activeCache: active?.cache });
             const rollbackHistory = (await readMeta('/_nlpwa/rollback-history.json')) || [];
-            const updateStatus = getUpdateStatus();
+            const updateStatus = await getUpdateStatus();
 
             reply(MESSAGE_TYPES.DIAGNOSTICS_INFO, {
               active: active ? {

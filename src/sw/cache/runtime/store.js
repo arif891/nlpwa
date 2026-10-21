@@ -40,6 +40,21 @@ export async function putInRuntime(request, response) {
       if (!headers.has('X-NLPWA-Cached-At')) {
         headers.set('X-NLPWA-Cached-At', String(Date.now()));
       }
+      const rawUrl = typeof request === 'string' ? request : request.url;
+      const cleanedUrl = cleanTrackingParams(rawUrl, ignoreURLParametersMatching);
+      let keyToStore = request;
+      if (cleanedUrl !== rawUrl) {
+        if (typeof request === 'string') {
+          keyToStore = cleanedUrl;
+        } else {
+          try {
+            keyToStore = new Request(cleanedUrl, request);
+          } catch {
+            keyToStore = cleanedUrl;
+          }
+        }
+      }
+
       if (isNullBody) {
         headers.set('X-NLPWA-Content-Length', '0');
         responseToStore = new Response(null, {
@@ -47,7 +62,7 @@ export async function putInRuntime(request, response) {
           statusText: response.statusText,
           headers,
         });
-        await cache.put(request, responseToStore);
+        await cache.put(keyToStore, responseToStore);
         return;
       }
       if (!headers.has('X-NLPWA-Content-Length')) {
@@ -61,6 +76,8 @@ export async function putInRuntime(request, response) {
         statusText: response.statusText,
         headers,
       });
+      await cache.put(keyToStore, responseToStore);
+      return;
     } catch {
       responseToStore = response.clone();
     }
@@ -68,7 +85,18 @@ export async function putInRuntime(request, response) {
 
   const rawUrl = typeof request === 'string' ? request : request.url;
   const cleanedUrl = cleanTrackingParams(rawUrl, ignoreURLParametersMatching);
-  const keyToStore = cleanedUrl !== rawUrl ? cleanedUrl : request;
+  let keyToStore = request;
+  if (cleanedUrl !== rawUrl) {
+    if (typeof request === 'string') {
+      keyToStore = cleanedUrl;
+    } else {
+      try {
+        keyToStore = new Request(cleanedUrl, request);
+      } catch {
+        keyToStore = cleanedUrl;
+      }
+    }
+  }
   await cache.put(keyToStore, responseToStore);
 }
 

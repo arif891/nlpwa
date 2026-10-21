@@ -1,4 +1,4 @@
-import { writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { c, printBanner } from '../ui/terminal.js';
 import { incrementPatch } from '../../shared/version.js';
@@ -15,8 +15,34 @@ import {
   syncSourceConfigVersion,
   resolvePackageVersion,
 } from '../core/config.js';
+import { signManifestSync } from '../core/signing.js';
+
+function tryLoadLocalEnv() {
+  const envPath = resolve(process.cwd(), '.env');
+  if (existsSync(envPath)) {
+    try {
+      const content = readFileSync(envPath, 'utf8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const match = trimmed.match(/^([A-Za-z_0-9]+)=(.*)$/);
+        if (match) {
+          const key = match[1];
+          let val = match[2].trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (!process.env[key]) {
+            process.env[key] = val;
+          }
+        }
+      }
+    } catch {}
+  }
+}
 
 export async function cmdUpdate(args) {
+  tryLoadLocalEnv();
   let configPath = null;
   try {
     configPath = findConfigFile(args.config);
@@ -68,9 +94,42 @@ export async function cmdUpdate(args) {
   const defaultVersionEndpoint = isClean ? '/api/update/version' : '/api/update/version.json';
   const defaultInfoEndpoint = isClean ? '/api/update/info' : '/api/update/info.json';
 
-  // Prepare runtime config object
+  // Extract signing key from environment, arguments, or config
+  const extractedSigningKey =
+    process.env.NLPWA_SIGNING_KEY ||
+    process.env.NLPWA_PRIVATE_KEY ||
+    args.signingKey ||
+    args.privateKey ||
+    args['signing-key'] ||
+    args['private-key'] ||
+    rawConfig.signingKey;
+
+  // Prepare safe runtime config object (strip private keys, plugins, and non-serializable hooks)
+  const {
+    signingKey: _extractedKey,
+    plugins: _plugins,
+    onPush: _onPush,
+    onNotificationClick: _onNotificationClick,
+    ...safeConfig
+  } = rawConfig;
+
+  const sanitizedRoutes = (rawConfig.routes || []).map((route) => {
+    const {
+      plugins,
+      requestWillFetch,
+      cachedResponseWillBeUsed,
+      cacheWillUpdate,
+      fetchDidFail,
+      fetchDidSucceed,
+      cacheDidUpdate,
+      cacheKeyWillBeUsed,
+      ...safeRoute
+    } = route;
+    return safeRoute;
+  });
+
   const runtimeConfig = {
-    ...rawConfig,
+    ...safeConfig,
     version: newVersion,
     configPath: rawConfig.configPath || '/api/update/config.json',
     updateAPI: rawConfig.updateAPI || {
@@ -78,7 +137,7 @@ export async function cmdUpdate(args) {
       info: defaultInfoEndpoint,
     },
     precache: expandedPrecache,
-    routes: rawConfig.routes || [],
+    routes: sanitizedRoutes,
   };
 
   // 3. Write runtime config into target directory (with expanded precache paths)
@@ -130,6 +189,19 @@ export async function cmdUpdate(args) {
     ...(minVer ? { minVersion: minVer } : {}),
     files,
   };
+
+  if (extractedSigningKey) {
+    try {
+      const signature = signManifestSync(infoPayload, extractedSigningKey);
+      if (signature) {
+        infoPayload.signature = signature;
+        versionPayload.signature = signature;
+        console.log(`  ${c.green}✓${c.reset} Manifest signed with Ed25519 key`);
+      }
+    } catch (err) {
+      console.warn(`  ${c.yellow}! Warning: Could not sign manifest with Ed25519:${c.reset}`, err?.message || err);
+    }
+  }
 
   const versionJson = JSON.stringify(versionPayload, null, jsonIndent);
   const infoJson = JSON.stringify(infoPayload, null, jsonIndent);

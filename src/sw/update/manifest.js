@@ -4,14 +4,12 @@ import { openActive, getActiveSnapshotPaths, setActiveSnapshotPaths } from '../c
 export { getActiveSnapshotPaths, setActiveSnapshotPaths };
 
 let _lastVersionETag = null;
-let _lastVersionValue = null;
-let _lastMinVersion = null;
+let _lastVersionData = null;
 let _lastVersionEndpoint = null;
 
 export function resetManifestMemo() {
   _lastVersionETag = null;
-  _lastVersionValue = null;
-  _lastMinVersion = null;
+  _lastVersionData = null;
   _lastVersionEndpoint = null;
 }
 
@@ -27,8 +25,7 @@ export async function fetchServerVersion() {
 
   if (_lastVersionEndpoint !== versionEndpoint) {
     _lastVersionETag = null;
-    _lastVersionValue = null;
-    _lastMinVersion = null;
+    _lastVersionData = null;
     _lastVersionEndpoint = versionEndpoint;
   }
 
@@ -50,9 +47,10 @@ export async function fetchServerVersion() {
 
   if (response.status === 304) {
     return {
+      ...(_lastVersionData || {}),
       notModified: true,
-      version: _lastVersionValue || undefined,
-      minVersion: _lastMinVersion || undefined,
+      version: _lastVersionData?.version || undefined,
+      minVersion: _lastVersionData?.minVersion || _lastVersionData?.minSupportedVersion || undefined,
     };
   }
 
@@ -68,8 +66,7 @@ export async function fetchServerVersion() {
   const etag = response.headers?.get('ETag');
   if (etag) {
     _lastVersionETag = etag;
-    _lastVersionValue = data.version;
-    _lastMinVersion = data.minVersion || data.minSupportedVersion || null;
+    _lastVersionData = { ...data };
   }
 
   return data;

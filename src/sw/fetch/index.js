@@ -28,7 +28,17 @@ export function handleFetch(event) {
     event.respondWith(
       (async () => {
         await ensureConfigReady();
-        return handleShareTarget(event, getConfig());
+        const conf = getConfig();
+        let shareConfig = conf.shareTarget || conf.share_target;
+        if (!shareConfig && Array.isArray(conf.plugins)) {
+          const plugin = conf.plugins.find(
+            (p) => p && (p.isShareTargetPlugin || p.constructor?.name === 'ShareTargetPlugin' || p.options?.action)
+          );
+          if (plugin) {
+            shareConfig = plugin.options || {};
+          }
+        }
+        return handleShareTarget(event, { ...conf, shareTarget: shareConfig });
       })()
     );
     return;

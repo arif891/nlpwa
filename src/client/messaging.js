@@ -166,6 +166,7 @@ export async function getStatus(timeoutMs = 5000) {
       MESSAGE_TYPES.STATUS_INFO,
       timeoutMs
     );
+    if (res?.commitDeferred) return 'commit-deferred';
     return res?.status || 'idle';
   } catch {
     return 'idle';

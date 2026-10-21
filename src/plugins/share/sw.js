@@ -18,7 +18,15 @@ export { SHARE_CACHE_NAME, SHARE_QUEUE_KEY, DEFAULT_MAX_FILE_BYTES, SHARE_MESSAG
  * @returns {boolean}
  */
 export function isShareTargetRequest(request, config = {}) {
-  const shareConfig = config.shareTarget || config.share_target;
+  let shareConfig = config.shareTarget || config.share_target;
+  if (!shareConfig && Array.isArray(config.plugins)) {
+    const plugin = config.plugins.find(
+      (p) => p && (p instanceof ShareTargetPlugin || p.isShareTargetPlugin || p.constructor?.name === 'ShareTargetPlugin' || p.options?.action)
+    );
+    if (plugin) {
+      shareConfig = plugin.options || {};
+    }
+  }
   if (!shareConfig) return false;
 
   const action = shareConfig.action || '/_share-target';
@@ -72,7 +80,10 @@ async function saveShareQueue(cache, queue) {
  * @returns {Promise<Response>}
  */
 export async function handleShareTarget(event, config = {}) {
-  const { request } = event;
+  const request = event?.request || (event instanceof Request ? event : null);
+  if (!request) {
+    throw new TypeError('[NLPWA:Share] handleShareTarget requires an event or Request.');
+  }
   const shareConfig = config.shareTarget || config.share_target || {};
   const redirectUrl = shareConfig.redirectUrl || '/?shared=1';
   const maxFileBytes = Number(shareConfig.maxFileBytes) || DEFAULT_MAX_FILE_BYTES;
@@ -251,7 +262,7 @@ export class ShareTargetPlugin {
 
   async requestWillFetch({ request, event }) {
     if (isShareTargetRequest(request, { shareTarget: this.options })) {
-      return handleShareTarget(event, { shareTarget: this.options });
+      return handleShareTarget(event || request, { shareTarget: this.options });
     }
   }
 }

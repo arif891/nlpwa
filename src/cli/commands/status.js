@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { c, printBanner } from '../ui/terminal.js';
 import { resolveUpdateEndpoints } from '../../shared/url.js';
 import { getApiDiskPath } from '../core/manifest.js';
-import { findConfigFile } from '../core/config.js';
+import { findConfigFile, loadConfig } from '../core/config.js';
 
 export async function cmdStatus(args) {
   printBanner();
@@ -11,7 +11,19 @@ export async function cmdStatus(args) {
   console.log(`${c.bold}[NLPWA] Status for ${c.cyan}${targetDir}${c.reset}\n`);
 
   const configFile = findConfigFile(args.config, process.cwd());
-  const configJsonPath = resolve(targetDir, 'config.json');
+  let sourceConfig = null;
+  if (configFile) {
+    try {
+      sourceConfig = await loadConfig(configFile);
+    } catch {}
+  }
+
+  const rawConfigPath = sourceConfig?.configPath || '/api/update/config.json';
+  const cleanConfigPath = rawConfigPath.replace(/^\/+/, '');
+  let configJsonPath = resolve(targetDir, cleanConfigPath);
+  if (!existsSync(configJsonPath) && existsSync(resolve(targetDir, 'config.json'))) {
+    configJsonPath = resolve(targetDir, 'config.json');
+  }
 
   let activeConfig = null;
   if (existsSync(configJsonPath)) {
@@ -20,9 +32,9 @@ export async function cmdStatus(args) {
     } catch {}
   }
 
-  const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(activeConfig ?? {});
-  const versionOut = getApiDiskPath(targetDir, versionEndpoint, activeConfig?.base);
-  const infoOut = getApiDiskPath(targetDir, infoEndpoint, activeConfig?.base);
+  const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(activeConfig ?? sourceConfig ?? {});
+  const versionOut = getApiDiskPath(targetDir, versionEndpoint, activeConfig?.base || sourceConfig?.base);
+  const infoOut = getApiDiskPath(targetDir, infoEndpoint, activeConfig?.base || sourceConfig?.base);
 
   let versionData = null;
   let infoData = null;

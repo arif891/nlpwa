@@ -204,7 +204,9 @@ if (typeof window !== 'undefined') {
         patch.updateRequired = Boolean(ver.updateRequired);
       }
       if (stat) {
-        patch.updateStatus = stat.commitDeferred ? 'commit-deferred' : (stat.status || 'idle');
+        patch.updateStatus = typeof stat === 'string'
+          ? stat
+          : (stat.commitDeferred ? 'commit-deferred' : (stat.status || 'idle'));
       }
       if (Object.keys(patch).length > 0) {
         setState(patch);

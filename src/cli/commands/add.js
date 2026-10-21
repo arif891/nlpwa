@@ -27,6 +27,68 @@ export const AVAILABLE_PLUGINS = {
       '   </script>',
     ],
   },
+  share: {
+    id: 'share',
+    name: 'Web Share Target',
+    description: 'Captures incoming native OS share sheet actions (text, links, files) into an offline FIFO queue',
+    files: [
+      { src: 'plugins/share.sw.js', dest: 'plugins/share.sw.js' },
+      { src: 'plugins/share.client.js', dest: 'plugins/share.client.js' },
+    ],
+    instructions: [
+      '1. In your Service Worker (sw.js):',
+      '   importScripts(\'/plugins/share.sw.js\');',
+      '   const share = new NLPWAShareSW.ShareTargetPlugin({ action: \'/_share-target\' });',
+      '',
+      '2. In your web page (index.html):',
+      '   <script src="/plugins/share.client.js"></script>',
+      '   <script>',
+      '     const { onShareTarget, getSharedData } = window.NLPWAShareClient;',
+      '     onShareTarget((shared) => console.log(\'Received share:\', shared));',
+      '   </script>',
+    ],
+  },
+  badge: {
+    id: 'badge',
+    name: 'App Badging API',
+    description: 'Controls OS application icon badge counts with automatic clearance on push notifications',
+    files: [
+      { src: 'plugins/badge.sw.js', dest: 'plugins/badge.sw.js' },
+      { src: 'plugins/badge.client.js', dest: 'plugins/badge.client.js' },
+    ],
+    instructions: [
+      '1. In your Service Worker (sw.js):',
+      '   importScripts(\'/plugins/badge.sw.js\');',
+      '   const badge = new NLPWABadgeSW.BadgePlugin({ clearOnClick: true });',
+      '',
+      '2. In your web page (index.html):',
+      '   <script src="/plugins/badge.client.js"></script>',
+      '   <script>',
+      '     const { setBadge, clearBadge } = window.NLPWABadgeClient;',
+      '     await setBadge(5);',
+      '   </script>',
+    ],
+  },
+  'bg-fetch': {
+    id: 'bg-fetch',
+    name: 'Background Fetch',
+    description: 'Manages large file background downloads with OS notification progress indicators',
+    files: [
+      { src: 'plugins/bg-fetch.sw.js', dest: 'plugins/bg-fetch.sw.js' },
+      { src: 'plugins/bg-fetch.client.js', dest: 'plugins/bg-fetch.client.js' },
+    ],
+    instructions: [
+      '1. In your Service Worker (sw.js):',
+      '   importScripts(\'/plugins/bg-fetch.sw.js\');',
+      '   const bgFetch = new NLPWABgFetchSW.BackgroundFetchPlugin();',
+      '',
+      '2. In your web page (index.html):',
+      '   <script src="/plugins/bg-fetch.client.js"></script>',
+      '   <script>',
+      '     const { fetchBackground } = window.NLPWABgFetchClient;',
+      '   </script>',
+    ],
+  },
 };
 
 export async function cmdAdd(args) {

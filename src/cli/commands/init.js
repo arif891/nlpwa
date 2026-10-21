@@ -138,7 +138,7 @@ export default {
   ],
   routes: [
     { match: '/assets/**', strategy: 'cache-first' },
-    { match: '/api/**', strategy: 'network-first', options: { networkTimeoutMs: 3000 } },
+    { match: '/api/**', strategy: 'network-first', networkTimeoutMs: 3000 },
   ],
 };
 `;

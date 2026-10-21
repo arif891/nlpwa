@@ -46,6 +46,9 @@ export async function serveCached(request, response, tag) {
  */
 export async function performFetch(request, event, options = {}, plugins = getPlugins(options)) {
   const finalRequest = await runRequestWillFetch(plugins, { request, event, options });
+  if (finalRequest instanceof Response) {
+    return finalRequest;
+  }
   try {
     const rawResponse = await fetch(finalRequest);
     const finalResponse = await runFetchDidSucceed(plugins, {

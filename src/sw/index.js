@@ -23,6 +23,6 @@ export function initSW(userConfig = {}) {
   self.addEventListener('fetch', handleFetch);
   self.addEventListener('message', handleMessage(config));
   self.addEventListener('periodicsync', handleSync);
-  self.addEventListener('push', handlePush(userConfig));
-  self.addEventListener('notificationclick', handleNotificationClick(userConfig));
+  self.addEventListener('push', handlePush(config));
+  self.addEventListener('notificationclick', handleNotificationClick(config));
 }

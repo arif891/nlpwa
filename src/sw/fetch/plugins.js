@@ -69,6 +69,9 @@ export async function runRequestWillFetch(plugins, params) {
   for (const plugin of plugins) {
     if (typeof plugin?.requestWillFetch === 'function') {
       const result = await plugin.requestWillFetch({ ...params, request: req });
+      if (result instanceof Response) {
+        return result;
+      }
       if (result instanceof Request) {
         req = result;
       }

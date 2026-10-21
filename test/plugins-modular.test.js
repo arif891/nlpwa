@@ -1,0 +1,219 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+// Share plugin
+import {
+  ShareTargetPlugin,
+  isShareTargetRequest,
+  handleShareTarget,
+  getLatestSharedData,
+  SHARE_CACHE_NAME,
+  ShareTargetClient,
+  shareTargetClient,
+} from '../src/plugins/share/index.js';
+
+// Badge plugin
+import {
+  BadgePlugin,
+  clearBadgeOnNotificationClick,
+  setBadgeFromPush,
+  isBadgingSupported,
+  setAppBadge,
+  clearAppBadge,
+  BadgeClient,
+  badgeClient,
+} from '../src/plugins/badge/index.js';
+
+// Bg-fetch plugin
+import {
+  BackgroundFetchPlugin,
+  handleBackgroundFetchSuccess,
+  handleBackgroundFetchFail,
+  handleBackgroundFetchAbort,
+  BackgroundFetchClient,
+  backgroundFetchClient,
+  BG_FETCH_CACHE_NAME,
+} from '../src/plugins/bg-fetch/index.js';
+
+// Crypto plugin
+import {
+  getManifestSignPayload,
+  decodePublicKey,
+  verifyManifestSignature,
+} from '../src/plugins/crypto/index.js';
+
+import { signManifestSync } from '../src/cli/core/signing.js';
+import crypto from 'node:crypto';
+
+test('share plugin: ShareTargetPlugin intercepts share requests and stores data', async () => {
+  const plugin = new ShareTargetPlugin({ action: '/share-post', redirectUrl: '/app?shared=1' });
+  const req = new Request('http://localhost:3000/share-post?title=TestTitle&text=TestText');
+
+  assert.equal(isShareTargetRequest(req, { shareTarget: { action: '/share-post' } }), true);
+  assert.equal(isShareTargetRequest(new Request('http://localhost:3000/other'), { shareTarget: { action: '/share-post' } }), false);
+
+  // Mock cache
+  const stored = new Map();
+  const mockCache = {
+    async put(request, response) {
+      const url = typeof request === 'string' ? request : request.url;
+      stored.set(url, response);
+    },
+    async match(request) {
+      const url = typeof request === 'string' ? request : request.url;
+      return stored.get(url) || null;
+    },
+    async delete(request) {
+      const url = typeof request === 'string' ? request : request.url;
+      return stored.delete(url);
+    },
+  };
+  globalThis.caches = {
+    open: async (name) => mockCache,
+  };
+
+  const response = await plugin.requestWillFetch({
+    request: req,
+    event: { request: req },
+  });
+
+  assert.ok(response instanceof Response);
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get('Location'), 'http://localhost:3000/app?shared=1');
+
+  // Verify getLatestSharedData consumes from queue
+  const latest = await getLatestSharedData();
+  assert.ok(latest);
+  assert.equal(latest.title, 'TestTitle');
+  assert.equal(latest.text, 'TestText');
+
+  assert.ok(shareTargetClient instanceof ShareTargetClient);
+});
+
+test('badge plugin: BadgePlugin and client methods manipulate app badge', async () => {
+  let badgeVal = null;
+  let cleared = false;
+
+  Object.defineProperty(globalThis, 'navigator', {
+    value: {
+      setAppBadge: async (num) => { badgeVal = num; },
+      clearAppBadge: async () => { cleared = true; badgeVal = 0; },
+    },
+    configurable: true,
+    writable: true,
+  });
+
+  assert.equal(isBadgingSupported(), true);
+
+  await setAppBadge(5);
+  assert.equal(badgeVal, 5);
+
+  await clearAppBadge();
+  assert.equal(cleared, true);
+  assert.equal(badgeVal, 0);
+
+  // Test BadgePlugin SW hooks
+  const plugin = new BadgePlugin({ clearOnClick: true });
+
+  cleared = false;
+  plugin.onNotificationClick({
+    waitUntil: (p) => p,
+  });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(cleared, true);
+
+  // Push payload
+  plugin.onPush({ waitUntil: (p) => p }, { badge: 12 });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(badgeVal, 12);
+
+  assert.ok(badgeClient instanceof BadgeClient);
+});
+
+test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists records', async () => {
+  const cachedRecords = new Map();
+  const mockCache = {
+    async put(request, response) {
+      const url = typeof request === 'string' ? request : request.url;
+      cachedRecords.set(url, response);
+    },
+    async match(request) {
+      const url = typeof request === 'string' ? request : request.url;
+      return cachedRecords.get(url) || null;
+    },
+  };
+  globalThis.caches = {
+    open: async () => mockCache,
+  };
+
+  const broadcasted = [];
+  globalThis.self = {
+    clients: {
+      matchAll: async () => [{
+        postMessage: (msg) => broadcasted.push(msg),
+      }],
+    },
+  };
+
+  const event = {
+    registration: {
+      id: 'download-ai-weights',
+      matchAll: async () => [
+        {
+          request: new Request('http://localhost:3000/models/weights.bin'),
+          responseReady: Promise.resolve(new Response('binary weights data', { status: 200 })),
+        },
+      ],
+    },
+  };
+
+  await handleBackgroundFetchSuccess(event, { cacheName: BG_FETCH_CACHE_NAME });
+
+  assert.equal(cachedRecords.has('http://localhost:3000/models/weights.bin'), true);
+  assert.equal(broadcasted.length, 1);
+  assert.equal(broadcasted[0].id, 'download-ai-weights');
+  assert.equal(broadcasted[0].count, 1);
+
+  // Test fail event
+  await handleBackgroundFetchFail({
+    registration: {
+      id: 'download-fail-task',
+      failureReason: 'quota-exceeded',
+    },
+  });
+  assert.equal(broadcasted.length, 2);
+  assert.equal(broadcasted[1].failureReason, 'quota-exceeded');
+
+  // Test abort event
+  await handleBackgroundFetchAbort({
+    registration: { id: 'download-abort-task' },
+  });
+  assert.equal(broadcasted.length, 3);
+  assert.equal(broadcasted[2].id, 'download-abort-task');
+
+  assert.ok(backgroundFetchClient instanceof BackgroundFetchClient);
+});
+
+test('crypto plugin: verifies Ed25519 manifest payloads', async () => {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+  const manifest = {
+    version: '2.0.0',
+    files: [
+      { path: '/app.js', hash: 'abc1234', size: 100 },
+      { path: '/index.html', hash: 'def5678', size: 50 },
+    ],
+  };
+
+  const signature = signManifestSync(manifest, privateKey);
+  assert.ok(signature);
+  const signed = { ...manifest, signature };
+
+  const spkiPem = publicKey.export({ type: 'spki', format: 'pem' });
+  const isValid = await verifyManifestSignature(signed, spkiPem);
+  assert.equal(isValid, true, 'Crypto plugin verifyManifestSignature validates valid signature');
+
+  // Tampered payload
+  const tampered = { ...signed, version: '2.0.1' };
+  const isInvalid = await verifyManifestSignature(tampered, spkiPem);
+  assert.equal(isInvalid, false, 'Crypto plugin rejects tampered signature');
+});

@@ -1,14 +1,21 @@
 import { getConfig } from '../config/index.js';
 import { logger } from '../logger.js';
-import { getStaged, clearStaged, withLock, setMinVersion, unpinClientsBelowVersion } from '../cache/store.js';
+import {
+  getStaged, clearStaged, withLock, setMinVersion, unpinClientsBelowVersion,
+  readMeta, writeMeta, isVersionBlocked, syncBlockedVersions,
+} from '../cache/store.js';
 import { fetchServerVersion, fetchServerInfo, loadCachedSnapshot } from './manifest.js';
 import { stageUpdate } from './stage.js';
-import { commitStaged } from './commit.js';
+import { commitStaged, rollbackToFallback } from './commit.js';
 import { setUpdateStatus, getUpdateStatus, getCurrentStatus, isCommitDeferred, setCommitDeferred } from './status.js';
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 import { compare } from '../../shared/version.js';
+import { verifyManifestSignature } from '../../shared/crypto.js';
 
-export { setUpdateStatus, getUpdateStatus, getCurrentStatus, isCommitDeferred, setCommitDeferred };
+export {
+  setUpdateStatus, getUpdateStatus, getCurrentStatus, isCommitDeferred, setCommitDeferred,
+  rollbackToFallback,
+};
 
 /**
  * Notify all connected clients with a postMessage.
@@ -87,6 +94,17 @@ async function runUpdateCheck({ force = false } = {}) {
   }
 }
 
+async function getRolloutCohort() {
+  const SEED_KEY = '/_nlpwa/rollout-seed.json';
+  const existing = await readMeta(SEED_KEY).catch(() => null);
+  if (existing && typeof existing.seed === 'number') {
+    return existing.seed;
+  }
+  const seed = Math.floor(Math.random() * 100);
+  await writeMeta(SEED_KEY, { seed, createdAt: Date.now() }).catch(() => {});
+  return seed;
+}
+
 async function _doUpdateCheck({ force = false } = {}) {
   const config = getConfig();
 
@@ -107,11 +125,67 @@ async function _doUpdateCheck({ force = false } = {}) {
     logger.warn('[NLPWA] Cannot reach version endpoint, falling back to manifest:', err.message);
   }
 
+  // Synchronize blocked versions list from Tier 1 if present
+  if (Array.isArray(versionRes?.blockedVersions)) {
+    await syncBlockedVersions(versionRes.blockedVersions);
+  }
+
+  const discardStaged = async () => {
+    if (staged) {
+      await withLock(async () => {
+        logger.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
+        await clearStaged();
+        if (staged.cache) {
+          await caches.delete(staged.cache).catch((err) => {
+            logger.debug('[NLPWA] Failed to delete rolled-back staged cache:', err?.message || err);
+          });
+        }
+      });
+    }
+  };
+
+  // If active version has been blocked by remote kill-switch, execute emergency rollback
+  if (active?.version && (await isVersionBlocked(active.version))) {
+    logger.warn(`[NLPWA] Active version v${active.version} is blocked by remote kill-switch. Triggering emergency rollback...`);
+    const rollbackRes = await rollbackToFallback(`Active version v${active.version} is blocked`);
+    if (rollbackRes.success) {
+      await discardStaged();
+      setUpdateStatus('idle');
+      return { updated: false, rolledBack: true, version: rollbackRes.version };
+    }
+  }
+
   // Check minimum supported version from Tier 1 if present
   const tier1Enforced = await enforceMinVersion(versionRes, {
     active,
     targetVersion: serverVersion,
   });
+
+  // If server target version is blocked, do not stage it
+  if (serverVersion && (await isVersionBlocked(serverVersion))) {
+    logger.warn(`[NLPWA] Target version v${serverVersion} is blocked. Skipping update.`);
+    await discardStaged();
+    setUpdateStatus('idle');
+    return { updated: false, blocked: true, version: serverVersion };
+  }
+
+  // Check release channel filter
+  if (!force && config.channel && versionRes?.channel && config.channel !== versionRes.channel) {
+    logger.log(`[NLPWA] Skipping release channel "${versionRes.channel}" (configured channel: "${config.channel}").`);
+    return { updated: false, channelMismatch: true };
+  }
+
+  // Check phased rollout percentage
+  if (!force && typeof versionRes?.rolloutPercent === 'number') {
+    const pct = versionRes.rolloutPercent;
+    if (pct >= 0 && pct < 100) {
+      const cohort = await getRolloutCohort();
+      if (cohort >= pct) {
+        logger.log(`[NLPWA] Client cohort (${cohort}) excluded from phased rollout of v${serverVersion} (${pct}%).`);
+        return { updated: false, rolloutExcluded: true, rolloutPercent: pct };
+      }
+    }
+  }
 
   // A complete update is already staged and waiting for the next navigation, and the server confirms it.
   if (staged?.complete && staged.swVersion === config.version
@@ -129,20 +203,6 @@ async function _doUpdateCheck({ force = false } = {}) {
   const isFresh = !active;
   const swVersionChanged = Boolean(active?.swVersion && active.swVersion !== config.version);
   const isCurrent = (version) => !isFresh && !swVersionChanged && version === active.version;
-
-  const discardStaged = async () => {
-    if (staged) {
-      await withLock(async () => {
-        logger.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
-        await clearStaged();
-        if (staged.cache) {
-          await caches.delete(staged.cache).catch((err) => {
-            logger.debug('[NLPWA] Failed to delete rolled-back staged cache:', err?.message || err);
-          });
-        }
-      });
-    }
-  };
 
   if (serverVersion && isCurrent(serverVersion)) {
     await discardStaged();
@@ -163,6 +223,52 @@ async function _doUpdateCheck({ force = false } = {}) {
       return { updated: true, version: staged.version, staged: true };
     }
     return { updated: false };
+  }
+
+  // Synchronize blocked versions list from Tier 2 if present
+  if (Array.isArray(serverManifest?.blockedVersions)) {
+    await syncBlockedVersions(serverManifest.blockedVersions);
+  }
+
+  if (await isVersionBlocked(serverManifest.version)) {
+    logger.warn(`[NLPWA] Manifest version v${serverManifest.version} is blocked. Skipping staging.`);
+    await discardStaged();
+    setUpdateStatus('idle');
+    return { updated: false, blocked: true, version: serverManifest.version };
+  }
+
+  // Cryptographic Ed25519 signature verification
+  if (config.publicKey) {
+    let isValid = false;
+    try {
+      isValid = await verifyManifestSignature(serverManifest, config.publicKey);
+    } catch (err) {
+      logger.error('[NLPWA] Manifest signature verification error:', err?.message || err);
+    }
+
+    if (!isValid) {
+      logger.error(`[NLPWA] Signature verification FAILED for v${serverManifest.version}! Untrusted manifest rejected.`);
+      await discardStaged();
+      setUpdateStatus('idle');
+      await broadcast({
+        type: MESSAGE_TYPES.UPDATE_FAILED,
+        errorCode: 'SIGNATURE_VERIFICATION_FAILED',
+        version: serverManifest.version,
+        error: `Manifest signature verification failed for v${serverManifest.version}`,
+      });
+      return {
+        updated: false,
+        errorCode: 'SIGNATURE_VERIFICATION_FAILED',
+        version: serverManifest.version,
+        error: 'Signature verification failed',
+      };
+    }
+    logger.log(`[NLPWA] Ed25519 manifest signature verified for v${serverManifest.version}.`);
+  }
+
+  if (!force && config.channel && serverManifest.channel && config.channel !== serverManifest.channel) {
+    logger.log(`[NLPWA] Skipping manifest release channel "${serverManifest.channel}" (configured channel: "${config.channel}").`);
+    return { updated: false, channelMismatch: true };
   }
 
   // Check minimum supported version from Tier 2 manifest
@@ -190,6 +296,45 @@ async function _doUpdateCheck({ force = false } = {}) {
   return withLock(async () => {
     const currentActive = await loadCachedSnapshot();
     const result = await stageUpdate(serverManifest, { activeSnapshot: currentActive, forceRefetch: swVersionChanged });
+
+    if (result.status === 'deferred') {
+      setUpdateStatus('idle');
+      await broadcast({
+        type: MESSAGE_TYPES.UPDATE_DEFERRED,
+        version: serverManifest.version,
+        reason: result.reason,
+        estimatedDeltaBytes: result.estimatedDeltaBytes,
+        wifiOnlyThresholdBytes: result.wifiOnlyThresholdBytes,
+      });
+      return {
+        updated: false,
+        deferred: true,
+        reason: result.reason,
+        version: serverManifest.version,
+        estimatedDeltaBytes: result.estimatedDeltaBytes,
+      };
+    }
+
+    if (result.status === 'budget-exceeded') {
+      setUpdateStatus('idle');
+      const errorMsg = `Update delta (${result.estimatedDeltaBytes} bytes) exceeds budget of ${result.maxUpdateBytes} bytes`;
+      await broadcast({
+        type: MESSAGE_TYPES.UPDATE_FAILED,
+        errorCode: 'BUDGET_EXCEEDED',
+        version: serverManifest.version,
+        error: errorMsg,
+        estimatedDeltaBytes: result.estimatedDeltaBytes,
+        maxUpdateBytes: result.maxUpdateBytes,
+      });
+      return {
+        updated: false,
+        errorCode: 'BUDGET_EXCEEDED',
+        version: serverManifest.version,
+        error: errorMsg,
+        estimatedDeltaBytes: result.estimatedDeltaBytes,
+        maxUpdateBytes: result.maxUpdateBytes,
+      };
+    }
 
     if (result.status === 'incomplete') {
       setUpdateStatus('idle');

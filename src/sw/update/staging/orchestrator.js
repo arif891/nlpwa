@@ -35,6 +35,53 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const maxVerifyBytes = config.maxVerifyBytes ?? (20 * 1024 * 1024);
   const allowOversizedUnverified = config.allowOversizedUnverified ?? true;
   const files = manifest.files.filter((f) => isSafePath(f?.path));
+  const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
+
+  const respectSaveData = config.staging?.respectSaveData ?? config.respectSaveData ?? false;
+  const maxUpdateBytes = config.staging?.maxUpdateBytes ?? config.maxUpdateBytes ?? 0;
+  const wifiOnlyThresholdBytes = config.staging?.wifiOnlyThresholdBytes ?? config.wifiOnlyThresholdBytes ?? 0;
+
+  const conn = typeof navigator !== 'undefined' ? navigator?.connection : null;
+  if (respectSaveData && conn?.saveData === true) {
+    logger.log('[NLPWA] Staging deferred: saveData is enabled on client connection.');
+    return {
+      status: 'deferred',
+      reason: 'save-data',
+    };
+  }
+
+  const networkFiles = files.filter((f) => !(!forceRefetch && activeSnapshot && f.hash && activeHashes.get(f.path) === f.hash));
+  const estimatedDeltaBytes = networkFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+
+  if (maxUpdateBytes > 0 && estimatedDeltaBytes > maxUpdateBytes) {
+    logger.warn(
+      `[NLPWA] Staging rejected: update delta (${estimatedDeltaBytes} bytes) exceeds maxUpdateBytes budget (${maxUpdateBytes} bytes).`
+    );
+    return {
+      status: 'budget-exceeded',
+      reason: 'budget-exceeded',
+      estimatedDeltaBytes,
+      maxUpdateBytes,
+    };
+  }
+
+  const isCellularOrMetered = conn && (
+    conn.type === 'cellular' ||
+    conn.type === 'bluetooth' ||
+    conn.type === 'wimax' ||
+    conn.metered === true
+  );
+  if (wifiOnlyThresholdBytes > 0 && isCellularOrMetered && estimatedDeltaBytes > wifiOnlyThresholdBytes) {
+    logger.log(
+      `[NLPWA] Staging deferred: update delta (${estimatedDeltaBytes} bytes) exceeds wifiOnlyThresholdBytes (${wifiOnlyThresholdBytes} bytes) on cellular/metered connection.`
+    );
+    return {
+      status: 'deferred',
+      reason: 'wifi-only',
+      estimatedDeltaBytes,
+      wifiOnlyThresholdBytes,
+    };
+  }
 
   const diff = computeDiff(files, activeSnapshot?.files ?? null);
   const evict = [...diff.modified, ...diff.removed];
@@ -59,9 +106,8 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
 
   const next = await caches.open(staged.cache);
   const activeCache = activeSnapshot ? await openActive(config.caches.offline) : null;
-  const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
 
-  const stats = { reused: 0, copied: 0, fetched: 0 };
+  const stats = { reused: 0, copied: 0, fetched: 0, fetchedBytes: 0 };
   const failed = [];
   const failedDetails = {};
 
@@ -110,6 +156,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       total: totalFiles,
       percent,
       file: filePath,
+      fetchedBytes: stats.fetchedBytes,
     };
     latestProgressPayload = payload;
 
@@ -182,6 +229,9 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
         skipVerify,
       });
       const fetchedRes = await doFetch();
+      const contentLen = fetchedRes.headers?.get?.('content-length');
+      const bytes = contentLen ? Number(contentLen) : (size || 0);
+      stats.fetchedBytes += (bytes || 0);
       await putWithQuotaRecovery(fetchUrl, fetchedRes, doFetch);
       stats.fetched++;
       notifyProgress(path);
@@ -281,5 +331,5 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     `${stats.reused} reused`
   );
 
-  return { status: 'ready', failed: [], ...stats };
+  return { status: 'ready', failed: [], ...stats, estimatedDeltaBytes };
 }

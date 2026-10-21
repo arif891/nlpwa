@@ -75,6 +75,15 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'badging',
   'shareTarget',
   'share_target',
+  'channel',
+  'blockedVersions',
+  'rolloutPercent',
+  'publicKey',
+  'signingKey',
+  'respectSaveData',
+  'maxUpdateBytes',
+  'wifiOnlyThresholdBytes',
+  'staging',
   'cacheKeyWillBeUsed',
   'requestWillFetch',
   'cachedResponseWillBeUsed',
@@ -178,6 +187,22 @@ export function validateConfig(config) {
 
   if (config.clearRuntimeOnUpdate !== undefined && typeof config.clearRuntimeOnUpdate !== 'boolean') {
     errors.push('config.clearRuntimeOnUpdate must be a boolean');
+  }
+
+  if (config.respectSaveData !== undefined && typeof config.respectSaveData !== 'boolean') {
+    errors.push('config.respectSaveData must be a boolean');
+  }
+
+  if (config.maxUpdateBytes !== undefined && (typeof config.maxUpdateBytes !== 'number' || config.maxUpdateBytes < 0)) {
+    errors.push('config.maxUpdateBytes must be a non-negative number');
+  }
+
+  if (config.wifiOnlyThresholdBytes !== undefined && (typeof config.wifiOnlyThresholdBytes !== 'number' || config.wifiOnlyThresholdBytes < 0)) {
+    errors.push('config.wifiOnlyThresholdBytes must be a non-negative number');
+  }
+
+  if (config.staging !== undefined && (typeof config.staging !== 'object' || config.staging === null || Array.isArray(config.staging))) {
+    errors.push('config.staging must be an object');
   }
 
   if (!Array.isArray(config.precache)) {

@@ -18,6 +18,21 @@ import {
   getStatus,
   requestUpdateCheck,
 } from './messaging.js';
+import { getDiagnostics, getPinStatus } from './diagnostics.js';
+import {
+  registerDirtyGuard,
+  setDirty,
+  isTabDirty,
+  checkDirtyTabs,
+  isLeader,
+  onLeaderChange,
+} from './tabs.js';
+import {
+  markHealthy,
+  reportBootFailure,
+  rollback,
+  getBlockedVersions,
+} from './watchdog.js';
 
 /**
  * @typedef {Object} NLPWAState
@@ -241,6 +256,19 @@ export const nlpwa = {
   isBadgingSupported,
   getSharedData,
   onShareTarget,
+  diagnostics: getDiagnostics,
+  getDiagnostics,
+  getPinStatus,
+  registerDirtyGuard,
+  setDirty,
+  isTabDirty,
+  checkDirtyTabs,
+  isLeader,
+  onLeaderChange,
+  markHealthy,
+  reportBootFailure,
+  rollback,
+  getBlockedVersions,
 };
 
 export const client = nlpwa;

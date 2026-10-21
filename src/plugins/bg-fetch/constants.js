@@ -1,0 +1,8 @@
+export const BG_FETCH_CACHE_NAME = 'nlpwa-bg-fetch';
+
+export const BG_FETCH_MESSAGE_TYPES = {
+  BG_FETCH_SUCCESS: 'BG_FETCH_SUCCESS',
+  BG_FETCH_FAIL:    'BG_FETCH_FAIL',
+  BG_FETCH_ABORT:   'BG_FETCH_ABORT',
+  BG_FETCH_CLICK:   'BG_FETCH_CLICK',
+};

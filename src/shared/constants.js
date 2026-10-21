@@ -36,6 +36,17 @@ export const MESSAGE_TYPES = {
   BADGE_RESULT:        'BADGE_RESULT',        // SW → client: reply confirming badge action
   GET_SHARED_DATA:     'GET_SHARED_DATA',     // client → SW: request pending Web Share Target payload
   SHARED_DATA:         'SHARED_DATA',         // SW → client: reply or broadcast with Web Share Target payload
+  REPORT_BOOT_HEALTH:  'REPORT_BOOT_HEALTH',  // client → SW: client reports healthy startup
+  REPORT_BOOT_FAILURE: 'REPORT_BOOT_FAILURE', // client → SW: client reports startup crash or error
+  TRIGGER_ROLLBACK:    'TRIGGER_ROLLBACK',    // client → SW: request immediate rollback to fallback version
+  ROLLBACK_APPLIED:    'ROLLBACK_APPLIED',    // SW → client: broadcast confirming rollback executed ({ version, previousVersion, reason })
+  GET_BLOCKED_VERSIONS:'GET_BLOCKED_VERSIONS',// client → SW: request blocked/blacklisted versions
+  BLOCKED_VERSIONS_INFO:'BLOCKED_VERSIONS_INFO',// SW → client: reply with blocked versions
+  UPDATE_DEFERRED:     'UPDATE_DEFERRED',     // SW → client: update check deferred due to saveData, metered connection, or byte budget
+  GET_DIAGNOSTICS:     'GET_DIAGNOSTICS',     // client → SW: request comprehensive diagnostics info
+  DIAGNOSTICS_INFO:    'DIAGNOSTICS_INFO',    // SW → client: reply with comprehensive diagnostics
+  GET_PIN_STATUS:      'GET_PIN_STATUS',      // client → SW: request pin state of client
+  PIN_STATUS_INFO:     'PIN_STATUS_INFO',     // SW → client: reply with pin state info
 };
 
 /** Runtime cache cleanup strategies */

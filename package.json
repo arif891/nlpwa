@@ -68,6 +68,41 @@
       "import": "./out/plugins/sync.client.esm.js",
       "default": "./out/plugins/sync.client.js"
     },
+    "./share": {
+      "types": "./types/share.d.ts",
+      "import": "./out/plugins/share.js",
+      "default": "./out/plugins/share.js"
+    },
+    "./share/client": {
+      "types": "./types/share.d.ts",
+      "import": "./out/plugins/share.client.esm.js",
+      "default": "./out/plugins/share.client.js"
+    },
+    "./badge": {
+      "types": "./types/badge.d.ts",
+      "import": "./out/plugins/badge.js",
+      "default": "./out/plugins/badge.js"
+    },
+    "./badge/client": {
+      "types": "./types/badge.d.ts",
+      "import": "./out/plugins/badge.client.esm.js",
+      "default": "./out/plugins/badge.client.js"
+    },
+    "./bg-fetch": {
+      "types": "./types/bg-fetch.d.ts",
+      "import": "./out/plugins/bg-fetch.js",
+      "default": "./out/plugins/bg-fetch.js"
+    },
+    "./bg-fetch/client": {
+      "types": "./types/bg-fetch.d.ts",
+      "import": "./out/plugins/bg-fetch.client.esm.js",
+      "default": "./out/plugins/bg-fetch.client.js"
+    },
+    "./crypto": {
+      "types": "./types/crypto.d.ts",
+      "import": "./out/plugins/crypto.js",
+      "default": "./out/plugins/crypto.js"
+    },
     "./testing": {
       "types": "./types/testing.d.ts",
       "default": "./test/helpers/fake-env.js"
@@ -78,6 +113,8 @@
     "bin",
     "out",
     "src/cli",
+    "src/client",
+    "src/plugins",
     "src/shared",
     "src/sw",
     "src/config.js",

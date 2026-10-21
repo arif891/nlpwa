@@ -4,6 +4,7 @@ import { cmdAdd } from './commands/add.js';
 import { cmdUpdate } from './commands/update.js';
 import { cmdStatus } from './commands/status.js';
 import { cmdGenerateOffline } from './commands/generate-offline.js';
+import { cmdGenerateKeys } from './commands/keys.js';
 
 export function parseArgs(argv) {
   const args = { _: [] };
@@ -56,6 +57,10 @@ export async function runCLI(argv = process.argv.slice(2)) {
       break;
     case 'status':
       await cmdStatus(args);
+      break;
+    case 'keys:generate':
+    case 'generate-keys':
+      await cmdGenerateKeys(args);
       break;
     default:
       if (!command) {

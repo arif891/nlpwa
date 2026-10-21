@@ -40,6 +40,7 @@ ${c.bold}COMMANDS${c.reset}
                    and emits update API endpoints (/api/update/version & info).
   ${c.green}build${c.reset}             Alias for "update" — builds manifest and update endpoints.
   ${c.green}status${c.reset}            Inspects manifest version, update endpoints, and tracked files.
+  ${c.green}keys:generate${c.reset}     Generates an Ed25519 signing keypair for cryptographic OTA manifests.
 
 ${c.bold}OPTIONS (init)${c.reset}
   --dir <path>         Target project directory (default: .)

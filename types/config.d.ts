@@ -154,6 +154,16 @@ export interface NLPWAConfig {
   minVersion?: string;
   /** Minimum supported version alias (same semantics as minVersion) */
   minSupportedVersion?: string;
+  /** Active release channel (e.g. 'stable', 'beta', 'canary') */
+  channel?: string;
+  /** Blacklisted/revoked versions that will be rejected or trigger emergency rollback if active */
+  blockedVersions?: string[];
+  /** Phased rollout percentage (0-100) for gradual Canary deployment */
+  rolloutPercent?: number;
+  /** Ed25519 public key (SPKI PEM, Base64, or Hex) for cryptographic manifest verification */
+  publicKey?: string;
+  /** Ed25519 private signing key (PKCS8 PEM or Base64) for CLI build signing */
+  signingKey?: string;
   /** Custom Web Push notification event handler */
   onPush?: (event: any) => Promise<void> | void;
   /** Custom notification click event handler */
@@ -248,6 +258,18 @@ export interface NLPWAConfig {
   shareTarget?: ShareTargetConfig;
   /** Web Share Target configuration alias */
   share_target?: ShareTargetConfig;
+  /** Respect client navigator.connection.saveData by deferring staging */
+  respectSaveData?: boolean;
+  /** Maximum update network delta bytes allowed before rejecting staging */
+  maxUpdateBytes?: number;
+  /** Maximum update bytes allowed on cellular/metered connection before deferring staging to Wi-Fi */
+  wifiOnlyThresholdBytes?: number;
+  /** Staging budget & network-awareness options */
+  staging?: {
+    respectSaveData?: boolean;
+    maxUpdateBytes?: number;
+    wifiOnlyThresholdBytes?: number;
+  };
 }
 
 export interface ShareTargetFileParam {

@@ -14,6 +14,9 @@ export function makeServer(version, files, minVersion = null) {
     if (path === '/api/update/version' || path === '/api/update/version.json') {
       const body = { version: state.version };
       if (state.minVersion) body.minVersion = state.minVersion;
+      if (state.blockedVersions) body.blockedVersions = state.blockedVersions;
+      if (state.rolloutPercent !== undefined) body.rolloutPercent = state.rolloutPercent;
+      if (state.channel) body.channel = state.channel;
       return Response.json(body);
     }
     if (path === '/api/update/info' || path === '/api/update/info.json') {
@@ -27,6 +30,10 @@ export function makeServer(version, files, minVersion = null) {
         })),
       };
       if (state.minVersion) body.minVersion = state.minVersion;
+      if (state.blockedVersions) body.blockedVersions = state.blockedVersions;
+      if (state.rolloutPercent !== undefined) body.rolloutPercent = state.rolloutPercent;
+      if (state.channel) body.channel = state.channel;
+      if (state.signature) body.signature = state.signature;
       return Response.json(body);
     }
     if (state.broken.has(path)) return new Response('nope', { status: 404 });

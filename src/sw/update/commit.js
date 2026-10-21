@@ -5,6 +5,7 @@ import { evictByRoute } from '../cache/evict.js';
 import {
   getActive, getActiveName, setActive, getStaged, clearStaged,
   cleanupCaches, getAllPinnedCaches, pruneClientPins, withLock,
+  blockVersion, readMeta, writeMeta,
 } from '../cache/store.js';
 import { getSnapshotPath } from './manifest.js';
 import { setUpdateStatus, setCommitDeferred } from './status.js';
@@ -65,6 +66,10 @@ export async function commitStaged(event) {
     cache: staged.cache,
     version: staged.version,
     swVersion: staged.swVersion,
+    ...(previousActive?.cache ? {
+      fallbackCache: previousActive.cache,
+      fallbackVersion: previousActive.version,
+    } : {}),
     ...(retainPrevious && previousActive?.cache ? { previousCache: previousActive.cache } : {}),
   });
   await clearStaged();
@@ -92,7 +97,7 @@ export async function commitStaged(event) {
       await evictByRoute();
 
       const keep = [staged.cache];
-      if (currentConfig.retainPreviousVersionCache && previousActive?.cache) {
+      if (previousActive?.cache) {
         keep.push(previousActive.cache);
       }
       await pruneClientPins();
@@ -128,6 +133,94 @@ export async function commitStaged(event) {
   setCommitDeferred(false);
   logger.log(`[NLPWA] Switched to v${staged.version}`);
   return true;
+}
+
+/**
+ * Emergency or watchdog rollback: Revert active version to the fallback cache,
+ * block the failing version, and notify all open clients.
+ *
+ * @param {string} [reason] - Reason for rollback
+ * @returns {Promise<{ success: boolean, version?: string, rolledBackFrom?: string, error?: string }>}
+ */
+export async function rollbackToFallback(reason = '') {
+  return await withLock(async () => {
+    const active = await getActive();
+    if (!active?.fallbackCache || !active?.fallbackVersion) {
+      logger.warn('[NLPWA] Rollback requested, but no fallback cache is available.');
+      return { success: false, error: 'NO_FALLBACK_CACHE' };
+    }
+
+    const fallbackCacheName = active.fallbackCache;
+    const fallbackVersion = active.fallbackVersion;
+    const failingVersion = active.version;
+    const failingCache = active.cache;
+
+    // Verify fallback cache is intact
+    if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+      const names = await caches.keys();
+      if (!names.includes(fallbackCacheName)) {
+        logger.warn(`[NLPWA] Fallback cache "${fallbackCacheName}" was evicted; cannot roll back.`);
+        return { success: false, error: 'FALLBACK_CACHE_EVICTED' };
+      }
+    }
+
+    // 1. Blacklist the failing version
+    await blockVersion(failingVersion, reason || 'Emergency/watchdog rollback');
+
+    try {
+      const historyEntry = {
+        timestamp: Date.now(),
+        fromVersion: failingVersion,
+        toVersion: fallbackVersion,
+        reason: reason || 'Emergency/watchdog rollback',
+      };
+      const existing = (await readMeta('/_nlpwa/rollback-history.json')) || [];
+      existing.push(historyEntry);
+      await writeMeta('/_nlpwa/rollback-history.json', existing.slice(-20));
+    } catch (e) {
+      logger.debug('[NLPWA] Failed to record rollback history:', e);
+    }
+
+    // 2. Atomic switch active pointer back to fallback cache
+    await setActive({
+      cache: fallbackCacheName,
+      version: fallbackVersion,
+      swVersion: active.swVersion,
+    });
+
+    // 3. Reload config from restored cache
+    await loadConfigFromCache();
+
+    // 4. Delete the broken failing cache
+    if (failingCache && failingCache !== fallbackCacheName) {
+      await caches.delete(failingCache).catch((err) => {
+        logger.debug('[NLPWA] Failed to delete broken cache after rollback:', err?.message || err);
+      });
+    }
+
+    logger.warn(`[NLPWA] ROLLBACK EXECUTED: Reverted from v${failingVersion} to v${fallbackVersion}.${reason ? ` Reason: ${reason}` : ''}`);
+
+    // 5. Broadcast ROLLBACK_APPLIED to all clients so they can reload or display a notice
+    if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
+      self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then((clients) => {
+        clients.forEach((c) => c.postMessage({
+          type: MESSAGE_TYPES.ROLLBACK_APPLIED,
+          version: fallbackVersion,
+          rolledBackFrom: failingVersion,
+          reason,
+        }));
+      }).catch((err) => {
+        logger.debug('[NLPWA] Failed to broadcast ROLLBACK_APPLIED to clients:', err?.message || err);
+      });
+    }
+
+    return {
+      success: true,
+      version: fallbackVersion,
+      rolledBackFrom: failingVersion,
+      reason,
+    };
+  });
 }
 
 /**

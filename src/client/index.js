@@ -8,4 +8,25 @@ export { isStoragePersistent, requestPersistentStorage } from './storage.js';
 export { isBadgingSupported, setAppBadge, clearAppBadge } from './badge.js';
 export { getSharedData, onShareTarget } from './share-target.js';
 export { getState, subscribe, nlpwa, client } from './status-store.js';
+export {
+  markHealthy,
+  reportBootFailure,
+  rollback,
+  getBlockedVersions,
+  onRollbackApplied,
+  watchdog,
+} from './watchdog.js';
+export {
+  registerDirtyGuard,
+  setDirty,
+  isTabDirty,
+  checkDirtyTabs,
+  isLeader,
+  onLeaderChange,
+} from './tabs.js';
+export {
+  getDiagnostics,
+  getPinStatus,
+} from './diagnostics.js';
+
 

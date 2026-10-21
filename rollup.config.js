@@ -172,6 +172,104 @@ export default async () => {
     },
     plugins: [...plugins, syncExamplePlugin],
   },
+
+  // ── Share Plugin: ES module ───────────────────────────────────────────────
+  {
+    input: 'src/plugins/share/index.js',
+    output: {
+      file:    'out/plugins/share.js',
+      format:  'es',
+      banner:  '/* NLPWA Web Share Target Plugin (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+  {
+    input: 'src/plugins/share/client.js',
+    output: [
+      {
+        file:    'out/plugins/share.client.esm.js',
+        format:  'es',
+        banner:  '/* NLPWA Share Client (module) — https://github.com/arif891/nlpwa */',
+      },
+      {
+        file:    'out/plugins/share.client.js',
+        format:  'iife',
+        name:    'NLPWAShareClient',
+        banner:  '/* NLPWA Share Client (standalone) — https://github.com/arif891/nlpwa */',
+        exports: 'named',
+      },
+    ],
+    plugins,
+  },
+
+  // ── Badge Plugin: ES module ───────────────────────────────────────────────
+  {
+    input: 'src/plugins/badge/index.js',
+    output: {
+      file:    'out/plugins/badge.js',
+      format:  'es',
+      banner:  '/* NLPWA App Badging Plugin (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+  {
+    input: 'src/plugins/badge/client.js',
+    output: [
+      {
+        file:    'out/plugins/badge.client.esm.js',
+        format:  'es',
+        banner:  '/* NLPWA Badge Client (module) — https://github.com/arif891/nlpwa */',
+      },
+      {
+        file:    'out/plugins/badge.client.js',
+        format:  'iife',
+        name:    'NLPWABadgeClient',
+        banner:  '/* NLPWA Badge Client (standalone) — https://github.com/arif891/nlpwa */',
+        exports: 'named',
+      },
+    ],
+    plugins,
+  },
+
+  // ── Background Fetch Plugin: ES module ────────────────────────────────────
+  {
+    input: 'src/plugins/bg-fetch/index.js',
+    output: {
+      file:    'out/plugins/bg-fetch.js',
+      format:  'es',
+      banner:  '/* NLPWA Background Fetch Plugin (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+  {
+    input: 'src/plugins/bg-fetch/client.js',
+    output: [
+      {
+        file:    'out/plugins/bg-fetch.client.esm.js',
+        format:  'es',
+        banner:  '/* NLPWA Background Fetch Client (module) — https://github.com/arif891/nlpwa */',
+      },
+      {
+        file:    'out/plugins/bg-fetch.client.js',
+        format:  'iife',
+        name:    'NLPWABgFetchClient',
+        banner:  '/* NLPWA Background Fetch Client (standalone) — https://github.com/arif891/nlpwa */',
+        exports: 'named',
+      },
+    ],
+    plugins,
+  },
+
+  // ── Crypto Plugin: ES module ──────────────────────────────────────────────
+  {
+    input: 'src/plugins/crypto/index.js',
+    output: {
+      file:    'out/plugins/crypto.js',
+      format:  'es',
+      banner:  '/* NLPWA Crypto Plugin (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
 ];
 };
 

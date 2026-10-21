@@ -761,6 +761,79 @@ Custom notification click hook. By default, focuses an existing window matching 
 
 ---
 
+## Enterprise Release & Security Options
+
+### `publicKey` · `string` · default: `null`
+
+Base64-encoded Ed25519 public key. When configured, the Service Worker validates the detached cryptographic signature in `info.json` using the Web Crypto API (`crypto.subtle.verify`) before staging an update. If the signature is missing or fails verification, staging is rejected.
+
+```javascript
+publicKey: 'MCowBQYDK2VwAyEAGb/...'
+```
+
+*(Generate keys via `npx nlpwa keys:generate`).*
+
+---
+
+### `channel` · `'stable'` | `'beta'` · default: `'stable'`
+
+Specifies the deployment channel for the application. The Service Worker will only accept updates whose manifest matches its active channel.
+
+```javascript
+channel: 'stable'
+```
+
+---
+
+### `rolloutPercent` · `number` (0–100) · default: `100`
+
+Enables gradual rollout. When less than 100, each browser tab is assigned a stable deterministic percentile based on its client identifier. Only clients falling within the threshold download and stage the update.
+
+```javascript
+rolloutPercent: 20 // 20% phased rollout
+```
+
+---
+
+### `blockedVersions` · `string[]` · default: `[]`
+
+A remote kill-switch list of version strings that are blocked from running. Any client currently running a blocked version is immediately unpinned, prompted to reload, and prevented from staging that release.
+
+```javascript
+blockedVersions: ['1.0.4', '1.0.5-badbuild']
+```
+
+---
+
+### `stagingBudget` · `object`
+
+Defines network bandwidth and data-saver constraints for update staging:
+
+```javascript
+stagingBudget: {
+  respectSaveData: true,               // Abort staging if navigator.connection.saveData is true
+  maxUpdateBytes: 50 * 1024 * 1024,   // Max cumulative update download cap (e.g. 50 MB)
+  wifiOnlyThresholdBytes: 10 * 1024 * 1024, // Require Wi-Fi for updates exceeding 10 MB
+}
+```
+
+---
+
+### `watchdog` · `object`
+
+Controls the automatic boot watchdog and rollback mechanism:
+
+```javascript
+watchdog: {
+  enabled: true,         // Enable boot watchdog timer
+  timeoutMs: 10000,      // Timeout in ms (default: 10s) before auto-rollback
+}
+```
+
+When an update activates, the Service Worker retains the previous known-good version as `nlpwa-fallback`. If the client does not call `nlpwa.markHealthy()` before `timeoutMs` expires or reports a fatal crash, the Service Worker automatically rolls back to `nlpwa-fallback`.
+
+---
+
 ## Config Validation
 
 NLPWA validates your config at startup and logs any errors to the SW console

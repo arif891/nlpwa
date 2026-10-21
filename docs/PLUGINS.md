@@ -299,3 +299,89 @@ async function handleUserLogout() {
 | **Native Background Sync** | ✅ Native `SyncManager` | ❌ Not supported | ❌ Not supported |
 | **Window Auto-Sync Replay** | Supported | ✅ Supported via `autoSyncOnOnline()` | ✅ Supported via `autoSyncOnOnline()` |
 | **Manual Replay (`syncClient.replay()`)** | ✅ Supported | ✅ Supported | ✅ Supported |
+
+---
+
+## Official Modular Plugins
+
+NLPWA provides additional zero-dependency official plugins that can be imported individually to keep bundle sizes minimal:
+
+### 1. Web Share Target (`nlpwa/share`)
+
+Captures incoming shares from native apps and mobile share sheets into an offline FIFO queue.
+
+```javascript
+// In sw.js:
+import { initSW } from 'nlpwa/sw';
+import { ShareTargetPlugin } from 'nlpwa/share';
+
+initSW({
+  plugins: [
+    new ShareTargetPlugin({
+      action: '/_share-target',
+      redirectUrl: '/?shared=1',
+      maxPayloadBytes: 25 * 1024 * 1024,
+    }),
+  ],
+});
+```
+
+```javascript
+// In client.js:
+import { onShareTarget, getSharedData } from 'nlpwa/share';
+
+onShareTarget((shared) => {
+  console.log('Received shared content:', shared.title, shared.files);
+});
+```
+
+---
+
+### 2. OS App Badging (`nlpwa/badge`)
+
+Controls the app icon badge count across Windows, macOS, Android, and iOS, with automatic clearance on push notification clicks.
+
+```javascript
+// In sw.js:
+import { BadgePlugin } from 'nlpwa/badge';
+
+initSW({
+  plugins: [new BadgePlugin({ clearOnClick: true })],
+});
+```
+
+```javascript
+// In client.js:
+import { setBadge, clearBadge } from 'nlpwa/badge';
+
+await setBadge(5); // Set unread counter to 5
+await clearBadge(); // Clear counter
+```
+
+---
+
+### 3. Background Fetch (`nlpwa/bg-fetch`)
+
+Manages large file downloads (podcasts, videos, asset packs) in the background with native OS download indicators.
+
+```javascript
+// In sw.js:
+import { BackgroundFetchPlugin } from 'nlpwa/bg-fetch';
+
+initSW({
+  plugins: [new BackgroundFetchPlugin()],
+});
+```
+
+---
+
+### 4. Cryptographic Verification (`nlpwa/crypto`)
+
+Shared Web Crypto utilities for detached Ed25519 signature verification:
+
+```javascript
+import { verifyManifestSignature, canonicalizeManifest } from 'nlpwa/crypto';
+
+const isValid = await verifyManifestSignature(manifest, signature, publicKey);
+```
+

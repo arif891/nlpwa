@@ -15,6 +15,7 @@ import {
   syncSourceConfigVersion,
   resolvePackageVersion,
 } from '../src/cli/core/config.js';
+import { signManifestSync } from '../src/cli/core/signing.js';
 
 /**
  * Shared manifest and update API emission pipeline for bundler plugins (Vite, Rollup, Webpack).
@@ -106,6 +107,25 @@ export function emitBuildManifests({
     ...(minVer ? { minVersion: minVer } : {}),
     files,
   };
+
+  const signingKey =
+    process.env.NLPWA_SIGNING_KEY ||
+    process.env.NLPWA_PRIVATE_KEY ||
+    options.signingKey ||
+    options.privateKey ||
+    rawConfig.signingKey;
+
+  if (signingKey) {
+    try {
+      const signature = signManifestSync(infoPayload, signingKey);
+      if (signature) {
+        infoPayload.signature = signature;
+        versionPayload.signature = signature;
+      }
+    } catch (err) {
+      console.warn('[NLPWA] Warning: Could not sign manifest with Ed25519:', err?.message || err);
+    }
+  }
 
   writeFileSync(versionOut, JSON.stringify(versionPayload, null, jsonIndent), 'utf8');
   writeFileSync(infoOut, JSON.stringify(infoPayload, null, jsonIndent), 'utf8');

@@ -1,6 +1,7 @@
 import { MESSAGE_TYPES } from '../shared/constants.js';
 import { onSWMessage, sendToSW, requestFromSW } from './messaging.js';
 import { logger } from './logger.js';
+import { checkDirtyTabs } from './tabs.js';
 
 /**
  * Register a handler to be called when the SW signals an update is ready.
@@ -123,10 +124,25 @@ export function onUpdateFailed(callback) {
  *
  * Call this from your update prompt's "Refresh" button.
  *
- * @param {{ timeoutMs?: number, reload?: boolean }} [options]
- * @returns {Promise<boolean>}
+ * @param {{ timeoutMs?: number, reload?: boolean, force?: boolean, checkTabs?: boolean, details?: boolean }} [options]
+ * @returns {Promise<boolean | { applied: boolean, blockedByDirty?: boolean, dirtyTabs?: Array<{ tabId: string, title: string }> }>}
  */
-export async function applyUpdate({ timeoutMs = 3000, reload = true } = {}) {
+export async function applyUpdate({ timeoutMs = 3000, reload = true, force = false, checkTabs = true, details = false } = {}) {
+  if (!force && checkTabs) {
+    const dirtyResult = await checkDirtyTabs();
+    if (dirtyResult.hasDirtyTabs) {
+      logger.warn(
+        `[NLPWA] applyUpdate: update deferred because active tab(s) have unsaved changes: ` +
+        dirtyResult.dirtyTabs.map((t) => t.title || t.tabId).join(', ')
+      );
+      safeDispatchEvent('nlpwa:update-deferred', { reason: 'dirty-tabs', dirtyTabs: dirtyResult.dirtyTabs });
+      if (details) {
+        return { applied: false, blockedByDirty: true, dirtyTabs: dirtyResult.dirtyTabs };
+      }
+      return false;
+    }
+  }
+
   let applied = null;
   try {
     const res = await requestFromSW(
@@ -146,13 +162,13 @@ export async function applyUpdate({ timeoutMs = 3000, reload = true } = {}) {
   // If the SW explicitly replied that no update could be applied (e.g. not ready), abort reload
   if (applied === false) {
     logger.warn('[NLPWA] applyUpdate: no staged update ready to commit, reload aborted.');
-    return false;
+    return details ? { applied: false, reason: 'not-ready' } : false;
   }
 
-  if (reload) {
+  if (reload && typeof window !== 'undefined' && window.location && typeof window.location.reload === 'function') {
     window.location.reload();
   }
-  return true;
+  return details ? { applied: true } : true;
 }
 
 /**

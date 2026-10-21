@@ -376,6 +376,108 @@ export function getState(): NLPWAState;
  */
 export function subscribe(listener: (state: NLPWAState) => void): () => void;
 
+export interface RollbackResult {
+  success: boolean;
+  version?: string;
+  rolledBackFrom?: string;
+  reason?: string;
+  error?: string;
+}
+
+export interface RollbackAppliedData {
+  version: string;
+  rolledBackFrom?: string;
+  reason?: string;
+}
+
+export interface WatchdogOptions {
+  timeoutMs?: number;
+  onCrash?: 'rollback' | 'warn';
+  autoReload?: boolean;
+}
+
+/**
+ * Report to the Service Worker that the application has booted successfully and is healthy.
+ */
+export function markHealthy(version?: string): Promise<void>;
+
+/**
+ * Report a boot failure or startup crash to the Service Worker.
+ */
+export function reportBootFailure(error: Error | string, options?: { rollback?: boolean; version?: string }): Promise<any>;
+
+/**
+ * Manually trigger an immediate rollback to the fallback version.
+ */
+export function rollback(reason?: string): Promise<RollbackResult>;
+
+/**
+ * Query the list of blocked/blacklisted version strings from the Service Worker.
+ */
+export function getBlockedVersions(): Promise<string[]>;
+
+/**
+ * Subscribe to rollback events broadcast by the Service Worker.
+ */
+export function onRollbackApplied(handler: (data: RollbackAppliedData) => void): () => void;
+
+/**
+ * Start a client startup watchdog that automatically detects boot crashes
+ * or hangs, and rolls back to the previous stable cache.
+ */
+export function watchdog(options?: WatchdogOptions): () => void;
+
+/**
+ * Register a dirty form guard function for tab consensus coordination.
+ */
+export function registerDirtyGuard(guardFn: () => boolean): () => void;
+
+/**
+ * Programmatically mark this tab as having unsaved dirty changes.
+ */
+export function setDirty(dirty: boolean): void;
+
+/**
+ * Check whether the current tab has unsaved changes or active user editing.
+ */
+export function isTabDirty(): boolean;
+
+/**
+ * Query all open tabs across the tab consensus bus for unsaved changes.
+ */
+export function checkDirtyTabs(timeoutMs?: number): Promise<{
+  hasDirtyTabs: boolean;
+  dirtyTabs: Array<{ tabId: string; title: string; local?: boolean }>;
+}>;
+
+/**
+ * Whether this tab is currently the elected leader among all open tabs.
+ */
+export function isLeader(): boolean;
+
+/**
+ * Subscribe to tab leader election changes.
+ */
+export function onLeaderChange(callback: (isLeader: boolean) => void): () => void;
+
+/**
+ * Request formalized pin status of the current client tab from the Service Worker.
+ */
+export function getPinStatus(timeoutMs?: number): Promise<{
+  clientId: string | null;
+  state: 'BOOTING' | 'PINNED' | 'ORPHANED' | 'EXPIRED';
+  version: string | null;
+  cache: string | null;
+  pinnedAt: number | null;
+  lastSeenAt: number | null;
+  graceRemainingMs: number | null;
+} | null>;
+
+/**
+ * Retrieve comprehensive runtime diagnostics from the SW and client tab consensus bus.
+ */
+export function getDiagnostics(timeoutMs?: number): Promise<any>;
+
 export interface NLPWAClientAPI {
   register: typeof register;
   unregister: typeof unregister;
@@ -408,8 +510,23 @@ export interface NLPWAClientAPI {
   isBadgingSupported: typeof isBadgingSupported;
   getSharedData: typeof getSharedData;
   onShareTarget: typeof onShareTarget;
+  markHealthy: typeof markHealthy;
+  reportBootFailure: typeof reportBootFailure;
+  rollback: typeof rollback;
+  getBlockedVersions: typeof getBlockedVersions;
+  onRollbackApplied: typeof onRollbackApplied;
+  watchdog: typeof watchdog;
   getState: typeof getState;
   subscribe: typeof subscribe;
+  registerDirtyGuard: typeof registerDirtyGuard;
+  setDirty: typeof setDirty;
+  isTabDirty: typeof isTabDirty;
+  checkDirtyTabs: typeof checkDirtyTabs;
+  isLeader: typeof isLeader;
+  onLeaderChange: typeof onLeaderChange;
+  diagnostics: typeof getDiagnostics;
+  getDiagnostics: typeof getDiagnostics;
+  getPinStatus: typeof getPinStatus;
 }
 
 export declare const nlpwa: NLPWAClientAPI;

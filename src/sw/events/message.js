@@ -1,6 +1,6 @@
 import { MESSAGE_TYPES } from '../../shared/constants.js';
 import { checkForUpdate, getUpdateStatus, isCommitDeferred } from '../update/index.js';
-import { commitIfReady } from '../update/commit.js';
+import { commitIfReady, rollbackToFallback } from '../update/commit.js';
 import { getStorageQuotaInfo, cleanRuntimeCache } from '../cache/cleanup.js';
 import {
   getActive,
@@ -10,7 +10,10 @@ import {
   unpinClient,
   getClientPinnedCache,
   getClientPinnedVersion,
+  getClientPinStatus,
   getMinVersion,
+  getBlockedVersions,
+  readMeta,
 } from '../cache/store.js';
 import { compare } from '../../shared/version.js';
 import { getLatestSharedData } from '../features/share-target.js';
@@ -54,6 +57,91 @@ export function handleMessage(config) {
         event.waitUntil((async () => {
           const applied = await commitIfReady(event).catch(() => false);
           reply(MESSAGE_TYPES.APPLY_UPDATE_RESULT, { applied });
+        })());
+        break;
+
+      case MESSAGE_TYPES.REPORT_BOOT_HEALTH:
+        event.waitUntil((async () => {
+          const active = await getActive();
+          const version = event.data?.version || active?.version;
+          reply(MESSAGE_TYPES.REPORT_BOOT_HEALTH, { healthy: true, version });
+        })());
+        break;
+
+      case MESSAGE_TYPES.REPORT_BOOT_FAILURE:
+        event.waitUntil((async () => {
+          const error = event.data?.error || 'Boot failure reported by client';
+          const triggerRollback = event.data?.rollback !== false;
+          let rollbackResult = null;
+          if (triggerRollback) {
+            rollbackResult = await rollbackToFallback(error);
+          }
+          reply(MESSAGE_TYPES.REPORT_BOOT_FAILURE, {
+            reported: true,
+            rolledBack: Boolean(rollbackResult?.success),
+            rollbackResult,
+          });
+        })());
+        break;
+
+      case MESSAGE_TYPES.TRIGGER_ROLLBACK:
+        event.waitUntil((async () => {
+          try {
+            const reason = event.data?.reason || 'Manual rollback requested by client';
+            const result = await rollbackToFallback(reason);
+            reply(MESSAGE_TYPES.TRIGGER_ROLLBACK, result);
+          } catch (err) {
+            reply(MESSAGE_TYPES.TRIGGER_ROLLBACK, null, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.GET_BLOCKED_VERSIONS:
+        event.waitUntil((async () => {
+          try {
+            const versions = await getBlockedVersions();
+            reply(MESSAGE_TYPES.BLOCKED_VERSIONS_INFO, { versions });
+          } catch (err) {
+            reply(MESSAGE_TYPES.BLOCKED_VERSIONS_INFO, null, err);
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.GET_DIAGNOSTICS:
+        event.waitUntil((async () => {
+          try {
+            const active = await getActive();
+            const staged = await getStaged();
+            const blockedVersions = await getBlockedVersions();
+            const storage = await getStorageQuotaInfo();
+            const clientId = event.source?.id;
+            const pinStatus = getClientPinStatus(clientId, { activeCache: active?.cache });
+            const rollbackHistory = (await readMeta('/_nlpwa/rollback-history.json')) || [];
+            const updateStatus = getUpdateStatus();
+
+            reply(MESSAGE_TYPES.DIAGNOSTICS_INFO, {
+              active: active ? {
+                version: active.version,
+                cache: active.cache,
+                fallbackVersion: active.fallbackVersion || null,
+                fallbackCache: active.fallbackCache || null,
+              } : null,
+              staged: staged ? {
+                version: staged.version,
+                cache: staged.cache,
+                complete: staged.complete,
+                retryCount: staged.retryCount || 0,
+                failedFiles: staged.failedFiles || [],
+              } : null,
+              pinStatus,
+              blockedVersions,
+              storage,
+              rollbackHistory,
+              updateStatus,
+            });
+          } catch (err) {
+            reply(MESSAGE_TYPES.DIAGNOSTICS_INFO, null, err);
+          }
         })());
         break;
 
@@ -102,6 +190,19 @@ export function handleMessage(config) {
           if (clientId) {
             await unpinClient(clientId);
             reply(MESSAGE_TYPES.CLIENT_UNPINNED, { clientId });
+          }
+        })());
+        break;
+
+      case MESSAGE_TYPES.GET_PIN_STATUS:
+        event.waitUntil((async () => {
+          try {
+            const clientId = event.source?.id;
+            const active = await getActive();
+            const status = getClientPinStatus(clientId, { activeCache: active?.cache });
+            reply(MESSAGE_TYPES.PIN_STATUS_INFO, status);
+          } catch (err) {
+            reply(MESSAGE_TYPES.PIN_STATUS_INFO, null, err);
           }
         })());
         break;

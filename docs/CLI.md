@@ -9,6 +9,7 @@ The NLPWA command-line tool (`nlpwa`) and bundler plugins automate manifest gene
 - [Overview & Invocation](#overview--invocation)
 - [Commands](#commands)
   - [`init`](#nlpwa-init)
+  - [`keys:generate`](#nlpwa-keysgenerate)
   - [`add`](#nlpwa-add)
   - [`update` (or `build`)](#nlpwa-update-or-nlpwa-build)
   - [`status`](#nlpwa-status)
@@ -75,21 +76,48 @@ npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 
 ---
 
+### `nlpwa keys:generate`
+
+Generates a cryptographically secure Ed25519 keypair for signing update manifests (`info.json`). The private key is securely appended to your local `.env` file (which is gitignored), and the public key is printed for inclusion in `nlpwa.config.js`.
+
+```bash
+npx nlpwa keys:generate
+
+# Or specify a custom env file
+npx nlpwa keys:generate --env .env.local
+```
+
+**Output:**
+```
+✓ Generated Ed25519 keypair!
+  Private key appended to .env (NLPWA_PRIVATE_KEY)
+  
+Add this public key to your nlpwa.config.js:
+  publicKey: 'MCowBQYDK2VwAyEA...'
+```
+
+---
+
 ### `nlpwa add`
 
 Installs pre-bundled standalone plugins directly into your project's `plugins/` directory for no-build static sites.
 
 ```bash
-# Add official Background Sync plugin
+# Add official plugins
 npx nlpwa add sync
+npx nlpwa add share
+npx nlpwa add badge
+npx nlpwa add bg-fetch
 
 # Specify target directory
 npx nlpwa add sync --dir ./public
 ```
 
-**Files added for `sync`:**
-- `<dir>/plugins/sync.sw.js` — Standalone IIFE Service Worker plugin (`NLPWASyncSW.BackgroundSyncPlugin`).
-- `<dir>/plugins/sync.client.js` — Standalone IIFE Client SDK (`NLPWASyncClient.syncClient`).
+**Available Plugins:**
+- `sync` — Background Sync offline mutation queue (`plugins/sync.sw.js`, `plugins/sync.client.js`).
+- `share` — Web Share Target listener and FIFO queue (`plugins/share.sw.js`, `plugins/share.client.js`).
+- `badge` — OS App Icon Badging API (`plugins/badge.sw.js`, `plugins/badge.client.js`).
+- `bg-fetch` — Background Fetch API wrapper (`plugins/bg-fetch.sw.js`, `plugins/bg-fetch.client.js`).
 
 See [docs/PLUGINS.md](PLUGINS.md) for full plugin documentation.
 
@@ -97,7 +125,7 @@ See [docs/PLUGINS.md](PLUGINS.md) for full plugin documentation.
 
 ### `nlpwa update` (or `nlpwa build`)
 
-Processes your application assets, calculates deterministic SHA-256 content hashes, compiles `config.js` into runtime `config.json`, and emits the two-tier update manifests (`version.json` and `info.json`).
+Processes your application assets, calculates deterministic SHA-256 content hashes, compiles `config.js` into runtime `config.json`, and emits the two-tier update manifests (`version.json` and `info.json`). If `NLPWA_PRIVATE_KEY` is present in your environment or `.env`, it automatically signs `info.json` with an Ed25519 detached signature.
 
 ```bash
 # Default build for ./dist
@@ -113,14 +141,15 @@ npx nlpwa update --dir ./dist --config ./src/nlpwa.config.js
   ```json
   { "version": "1.0.0-a1b2c3d4e5f6" }
   ```
-- `<dir>/api/update/info.json` — Tier 2 full manifest with asset digests:
+- `<dir>/api/update/info.json` — Tier 2 full manifest with asset digests and optional detached signature:
   ```json
   {
     "version": "1.0.0-a1b2c3d4e5f6",
     "files": [
       { "path": "/index.html", "hash": "d41d8cd98f00b204e9800998ecf8427e" },
       { "path": "/styles.css", "hash": "8b1a9953c4611296a827abf8c47804d7" }
-    ]
+    ],
+    "signature": "MEQCIE3..."
   }
   ```
 

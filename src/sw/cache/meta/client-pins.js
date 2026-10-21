@@ -1,8 +1,17 @@
 import { readMeta, writeMeta, deleteMeta } from './store.js';
 import { compare } from '../../../shared/version.js';
-import { logger } from '../../logger.js';
+import { createLogger } from '../../../shared/logger.js';
+
+const logger = createLogger('NLPWA');
 
 const PINS_KEY = '/_nlpwa/client-pins.json';
+
+export const PIN_STATES = {
+  BOOTING:  'BOOTING',
+  PINNED:   'PINNED',
+  ORPHANED: 'ORPHANED',
+  EXPIRED:  'EXPIRED',
+};
 const _clientPins = new Map();
 let _pinsLoaded = false;
 let _savePinsTimeout = null;
@@ -102,6 +111,76 @@ export function getClientPinnedVersion(clientId) {
   if (!clientId) return null;
   const pin = _clientPins.get(clientId);
   return typeof pin === 'object' ? (pin?.version || null) : null;
+}
+
+/**
+ * Retrieve formalized pin lifecycle state and details for a client.
+ *
+ * @param {string} clientId
+ * @param {{ activeCache?: string, graceMs?: number }} [options]
+ * @returns {{
+ *   clientId: string|null,
+ *   state: 'BOOTING' | 'PINNED' | 'ORPHANED' | 'EXPIRED',
+ *   version: string|null,
+ *   cache: string|null,
+ *   pinnedAt: number|null,
+ *   lastSeenAt: number|null,
+ *   graceRemainingMs: number|null
+ * }}
+ */
+export function getClientPinStatus(clientId, { activeCache = null, graceMs = PIN_GRACE_PERIOD_MS } = {}) {
+  if (!clientId) {
+    return {
+      clientId: null,
+      state: PIN_STATES.BOOTING,
+      version: null,
+      cache: null,
+      pinnedAt: null,
+      lastSeenAt: null,
+      graceRemainingMs: null,
+    };
+  }
+
+  const pin = _clientPins.get(clientId);
+  if (!pin) {
+    return {
+      clientId,
+      state: PIN_STATES.EXPIRED,
+      version: null,
+      cache: null,
+      pinnedAt: null,
+      lastSeenAt: null,
+      graceRemainingMs: null,
+    };
+  }
+
+  const cacheName = typeof pin === 'string' ? pin : pin.cache;
+  const version = typeof pin === 'object' ? (pin.version || null) : null;
+  const pinnedAt = typeof pin === 'object' ? (pin.pinnedAt || 0) : 0;
+  const lastSeenAt = typeof pin === 'object' ? (pin.lastSeenAt || pinnedAt) : 0;
+
+  let state = PIN_STATES.PINNED;
+  let graceRemainingMs = null;
+
+  if (activeCache && cacheName !== activeCache) {
+    state = PIN_STATES.ORPHANED;
+    const now = Date.now();
+    const elapsed = now - lastSeenAt;
+    graceRemainingMs = Math.max(0, graceMs - elapsed);
+    if (graceRemainingMs === 0) {
+      state = PIN_STATES.EXPIRED;
+    }
+  }
+
+  return {
+    clientId,
+    state,
+    version,
+    cache: cacheName,
+    pinnedAt,
+    lastSeenAt,
+    graceRemainingMs,
+  };
 }
 
 export function getAllPinnedCaches() {

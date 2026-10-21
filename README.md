@@ -1,9 +1,9 @@
 # NLPWA — Native-like PWA Framework
 
-A lightweight, zero-runtime-dependency Service Worker framework that makes Progressive Web Apps feel truly native. It handles install-time caching, per-route fetch strategies, atomic over-the-air (OTA) delta updates, client version pinning, and background sync — all from three drop-in files (or npm package exports).
+A lightweight, zero-runtime-dependency Service Worker framework that makes Progressive Web Apps feel truly native. It delivers atomic over-the-air (OTA) delta updates, per-tab client version pinning, cryptographic manifest signing, automated health-gated rollbacks, and modular plugins — all from drop-in files or npm package exports.
 
 > [!NOTE]
-> **Prototype Stage:** NLPWA is currently in prototype development and under active evolution. APIs, configuration options, and storage protocols may be refined as we head toward a stable 1.0 release. Feedback, issues, and contributions are very welcome!
+> **Prototype Stage:** NLPWA is currently in prototype development and under active evolution. For a complete deep dive into all capabilities, see the [**FEATURES.md**](FEATURES.md) reference guide. Feedback, issues, and contributions are very welcome!
 
 ---
 
@@ -13,7 +13,7 @@ In traditional Service Worker setups (like Workbox), every app update requires r
 1. **Version Drift / Broken Tabs:** The new Service Worker calls `skipWaiting()`, abruptly swapping cached assets out from underneath active tabs. The user clicks a route or dynamically imports a chunk, and gets a `404 ChunkLoadError` or loads mixed-version code.
 2. **Infinite Waiting Workers:** The user is trapped on an obsolete version until *all* open tabs are closed simultaneously.
 
-**NLPWA eliminates this completely through Atomic OTA Updates and Client Version Pinning.**
+**NLPWA eliminates this completely through Atomic OTA Updates, Client Version Pinning, and Health-Gated Deploys.**
 
 ---
 
@@ -21,10 +21,13 @@ In traditional Service Worker setups (like Workbox), every app update requires r
 
 - **Atomic Over-The-Air (OTA) Updates** — Updates stage into an isolated delta cache in the background. Only after 100% of files are downloaded and verified does the version atomically flip. You never get half-updated states.
 - **Client Version Pinning (Zero Version Drift)** — Each open tab is pinned to the exact version it booted with. Subresource requests continue serving from that version until the tab navigates or the user confirms an update banner.
+- **Cryptographic Manifest Signing (Ed25519)** — Manifests are signed at build time with a detached Ed25519 signature; the Service Worker validates the signature via Web Crypto before staging files, locking out compromised CDNs.
+- **Health-Gated Commits & Boot Watchdog Rollback** — Retains a fallback cache across updates. If an activated release fails to boot or times out, the Service Worker automatically rolls back to the known-good version.
+- **Deploy Safety & Phased Rollouts** — Target users via `rolloutPercent` cohort percentiles, isolate pre-releases via release `channel` (`stable`/`beta`), or instantly revoke bad versions using the remote `blockedVersions` kill-switch.
+- **Resumable & Budgeted Staging** — Respects `navigator.connection.saveData`, enforces maximum update byte quotas, halts large downloads on cellular, and resumes interrupted staging checkpoints.
+- **Multi-Tab Consensus & Dirty Form Protection** — Open tabs coordinate over `nlpwa-tab-bus`. Tab leader election guards active sessions, while `registerDirtyGuard()` blocks update reloads when users have unsaved edits.
 - **Decoupled SW vs. App Lifecycle** — The Service Worker engine installs once and stays running. App releases arrive as data-driven OTA deltas without worker re-registration churn.
-- **Two-Tier Update Protocol** — A tiny Tier 1 check (~20 bytes) confirms if an update exists before downloading any file manifests, keeping network and battery overhead near zero.
-- **Cryptographic Hash Verification** — Every staged file is validated against SHA-256 digests in transit, protecting against captive portal HTML intercepts, proxy glitches, and corrupted downloads.
-- **Minimum Supported Version (`minVersion`)** — Breaking backend API change? Set `minVersion` on your server to automatically unpin deprecated versions and force a clean reload.
+- **Modular Micro-Kernel & Plugin Ecosystem** — Ultra-lightweight core engine with modular zero-dependency plugins for Background Sync (`nlpwa/sync`), Web Share Target (`nlpwa/share`), OS App Badging (`nlpwa/badge`), and Background Fetch (`nlpwa/bg-fetch`).
 
 ---
 
@@ -36,11 +39,14 @@ In traditional Service Worker setups (like Workbox), every app update requires r
 | **Open Tab Isolation** | ❌ None (`skipWaiting` breaks active tabs) | ✅ **Client Version Pinning** isolates each tab to its boot version |
 | **Atomic Staging** | ❌ Live in-place cache mutation | ✅ **Isolated staging cache** with zero mixed-version states |
 | **Asset Download Strategy** | Re-downloads revised precache assets | Downloads only diffs; copies unchanged files locally (0 bytes) |
-| **Integrity Verification** | Custom revision string comparison | In-transit **SHA-256** checksum verification on all staged files |
+| **Integrity & Signatures** | Custom revision string comparison | **In-transit SHA-256** checks + **Ed25519 signed manifests** |
+| **Deploy Safety & Rollback** | ❌ None | ✅ **Automatic boot watchdog rollback** + `nlpwa-fallback` cache |
+| **Phased Rollouts** | ❌ None | ✅ **`rolloutPercent`** cohorts + remote **`blockedVersions`** kill-switch |
+| **Multi-Tab Consensus** | ❌ Manual messaging | ✅ **Tab bus**, leader election, and dirty form reload guards |
 | **Breaking Version Guard** | ❌ Requires custom messaging logic | ✅ Built-in **`minVersion`** auto-evicts outdated clients |
 | **Deploy Workflow** | Must re-compile / re-inject `sw.js` every build | `sw.js` stays static; CLI emits lightweight JSON update manifests |
 | **Dependencies** | Dozens of packages (`workbox-*`) | **Zero runtime dependencies** (drop-in pre-bundled files or npm exports) |
-| **Native OS Integrations** | ❌ None (must hand-roll) | ✅ Built-in Install manager, Badging, Share Target, and Persistent Storage |
+| **Modular Plugins** | Monolithic plugin hooks | Official plugins: `sync`, `share`, `badge`, `bg-fetch`, `crypto` |
 
 ---
 
@@ -50,9 +56,10 @@ In addition to atomic updates, NLPWA provides zero-dependency native OS wrappers
 - **PWA Installation Manager** — Captures `beforeinstallprompt` automatically, persists deferred prompt across navigation, and exposes `nlpwa.install()`.
 - **Persistent Storage** — `nlpwa.requestPersistentStorage()` guards offline caches from browser eviction under storage pressure.
 - **Unified Reactive State Store** — `nlpwa.subscribe((state) => ...)` exposes unified status (`online`, `updateStatus`, `badgeCount`, `isInstallable`) for React, Vue, Svelte, or vanilla JS.
-- **OS Badging API** — `nlpwa.setBadge()` / `nlpwa.clearBadge()` sets app icon badges across Windows, macOS, Android, and iOS, with automatic clearing on push clicks.
-- **Web Share Target** — Intercepts system share sheet submissions (files, text, URLs) into a safe FIFO queue with size protection and `nlpwa.onShareTarget()`.
-- **Background Sync** — Queue offline `POST`/`PUT`/`DELETE` mutations in IndexedDB with automatic replay, dead-letter storage, and session redirect protection.
+- **OS Badging API** — `nlpwa.setBadge()` / `nlpwa.clearBadge()` (or `nlpwa/badge`) sets app icon badges across Windows, macOS, Android, and iOS.
+- **Web Share Target** — Intercepts system share sheet submissions (files, text, URLs) into a safe FIFO queue with size protection (`nlpwa/share`).
+- **Background Sync** — Queue offline `POST`/`PUT`/`DELETE` mutations in IndexedDB with automatic replay, dead-letter storage, and session redirect protection (`nlpwa/sync`).
+- **Diagnostics API** — `nlpwa.diagnostics()` returns real-time storage metrics, pin states, fallback availability, and leader status.
 
 ## Quick Start
 
@@ -298,8 +305,15 @@ During update staging, each downloaded file is verified against its SHA-256 dige
   - **Partial multi-CDN deployments:** Updates are never committed if CDN propagation is delayed for any single file.
 - **What it does not protect against:** An adversary with write access to your origin server or CDN credentials can overwrite both the assets and `info.json`.
 
-### 2. Cryptographic Tamper-Evidence (Ed25519 Detached Signatures Roadmap)
-Because `sw.js` is byte-checked directly by the browser (bypassing HTTP caches on navigation), an **Ed25519 public key** embedded into `sw.js` can serve as an authenticated root of trust. Build pipelines sign `info.json` with a private key, and the SW verifies the detached signature using the Web Crypto API (`crypto.subtle.verify`) before staging an update. This yields end-to-end cryptographic tamper-evidence against compromised CDNs or man-in-the-middle attacks without requiring Subresource Integrity (SRI) on every HTML tag.
+### 2. Cryptographic Tamper-Evidence (Built-in Ed25519 Signatures)
+Because `sw.js` is byte-checked directly by the browser (bypassing HTTP caches on navigation), an **Ed25519 public key** configured in `nlpwa.config.js` or `sw.js` serves as an authenticated root of trust. Build pipelines sign `info.json` at build time using the developer's private key (`NLPWA_PRIVATE_KEY`), and the Service Worker verifies the detached signature using the Web Crypto API (`crypto.subtle.verify`) before staging an update.
+
+```bash
+# Generate an Ed25519 keypair and append private key to your local .env
+npx nlpwa keys:generate
+```
+
+This yields end-to-end cryptographic tamper-evidence against compromised CDNs, rogue server writes, or man-in-the-middle attacks without requiring Subresource Integrity (SRI) on every HTML tag.
 
 ---
 
@@ -311,38 +325,44 @@ Because `sw.js` is byte-checked directly by the browser (bypassing HTTP caches o
 |---|---|
 | `offline@<version>-<id>` | One per app version: app shell (`precache`) + `/api/update/config.json` + internal snapshot `/_nlpwa/snapshot.json`. Only the **active** one serves requests. |
 | `runtime` | Assets cached lazily on first request; evicted when stale. |
-| `nlpwa-meta` | Small JSON pointers: which `offline@…` cache is active, client version pins, minimum version, and whether a complete update is staged. |
+| `nlpwa-fallback` | Holds previous known-good version as an automatic safety rollback target during updates. |
+| `nlpwa-meta` | Small JSON pointers: which `offline@…` cache is active, client version pins, minimum version, blocked versions, and whether a complete update is staged. |
 
 ### Two-Tier Update Flow
 
 ```
 1. Client triggers check (on register + interval + tab focus + periodic sync)
-2. Tier 1: GET /api/update/version.json → { version, minVersion }
-3. Check minVersion → unpin deprecated tabs and broadcast UPDATE_REQUIRED if needed.
-4. Compare against live version → already up to date? STOP immediately.
-5. Tier 2: GET /api/update/info.json → { version, files: [{path, hash}] }
-6. Stage a new offline@<version>-<id> cache in background:
+2. Tier 1: GET /api/update/version.json → { version, minVersion, blockedVersions, channel, rolloutPercent }
+3. Check blockedVersions & minVersion → unpin affected tabs and broadcast UPDATE_REQUIRED.
+4. Evaluate cohort rolloutPercent & channel subscription → skip if client not in rollout.
+5. Compare against live version → already up to date? STOP immediately.
+6. Tier 2: GET /api/update/info.json → { version, files: [{path, hash}], signature }
+7. Verify Ed25519 signature via crypto.subtle.verify() → abort if invalid.
+8. Stage a new offline@<version>-<id> cache in background:
+   - Check bandwidth budget (saveData, maxUpdateBytes, wifiOnlyThresholdBytes)
    - unchanged files (same hash as live) are copied locally (zero network bytes)
    - changed files are fetched (no-store) and verified against SHA-256 hashes
-7. Write snapshot last (marks staged cache complete)
-8. postMessage UPDATE_READY ({ version }) → client displays update prompt
-9. On navigation or NLPWAClient.applyUpdate():
-   atomically switch active pointer in nlpwa-meta, reload config, evict runtime
+9. Write snapshot last (marks staged cache complete)
+10. postMessage UPDATE_READY ({ version }) → client displays update prompt
+11. On navigation or NLPWAClient.applyUpdate():
+    atomically switch active pointer in nlpwa-meta, retain previous as nlpwa-fallback, reload config.
+12. Boot Watchdog: Client calls nlpwa.markHealthy() within timeout, or SW auto-rolls back to fallback.
 ```
 
 ---
 
 ## Documentation Hub
 
-Explore the complete documentation in the [`docs/`](docs/) directory:
+Explore the complete documentation:
 
 | Document | Topic & Details |
 |---|---|
+| 🌟 [**Features & Capabilities**](FEATURES.md) | **Definitive reference:** Atomic OTA updates, client pinning, Ed25519 signing, rollback watchdog, staging budgets, and modular plugins |
 | 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) | System design, internal module map, client version pinning, and update state machine |
 | ⚙️ [**Configuration Reference**](docs/CONFIG.md) | Full schema reference for `nlpwa.config.js` and runtime options |
 | 💻 [**Client SDK & Runtime API**](docs/CLIENT-API.md) | `NLPWAClient` methods, options, DOM events, multi-tab coherence, and storage quota cleanup |
-| 🛠️ [**CLI & Bundler Integration**](docs/CLI.md) | `nlpwa init/add/update/status`, Rollup & Vite plugins, and CI/CD pipelines |
-| 🔌 [**Plugins & Background Sync**](docs/PLUGINS.md) | Plugin lifecycle hooks and official `nlpwa/sync` offline mutation queue |
+| 🛠️ [**CLI & Bundler Integration**](docs/CLI.md) | `nlpwa init/add/update/status/keys:generate`, Rollup & Vite plugins, and CI/CD pipelines |
+| 🔌 [**Plugins & Background Sync**](docs/PLUGINS.md) | Plugin lifecycle hooks and official plugins (`nlpwa/sync`, `nlpwa/share`, `nlpwa/badge`, `nlpwa/bg-fetch`) |
 | 🚦 [**Fetch Strategies**](docs/STRATEGIES.md) | Caching behavior for `cache-first`, `network-first`, `stale-while-revalidate`, etc. |
 | 📦 [**Update Protocol Spec**](docs/UPDATE-PROTOCOL.md) | Two-tier JSON manifests, SHA-256 hashing format, and atomic staging lifecycle |
 

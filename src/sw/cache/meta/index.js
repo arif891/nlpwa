@@ -33,6 +33,8 @@ import {
   unpinClient,
   getClientPinnedCache,
   getClientPinnedVersion,
+  getClientPinStatus,
+  PIN_STATES,
   getAllPinnedCaches,
   pruneClientPins,
   flushClientPins,
@@ -41,6 +43,16 @@ import {
   PIN_GRACE_PERIOD_MS,
   PINS_KEY,
 } from './client-pins.js';
+import {
+  getBlockedVersions,
+  isVersionBlocked,
+  blockVersion,
+  unblockVersion,
+  syncBlockedVersions,
+  clearBlockedVersions,
+  resetBlockedVersionsMemo,
+  BLOCKED_VERSIONS_KEY,
+} from './blocked-versions.js';
 import {
   tryAcquire,
   release,
@@ -55,11 +67,13 @@ export async function resetMeta() {
   resetActiveMemo();
   resetStagedMemo();
   resetClientPinsMemo();
+  resetBlockedVersionsMemo();
   await Promise.all([
     deleteMeta(ACTIVE_KEY),
     deleteMeta(STAGED_KEY),
     deleteMeta(PINS_KEY),
     deleteMeta('/_nlpwa/min-version.json'),
+    deleteMeta(BLOCKED_VERSIONS_KEY),
   ]);
 }
 
@@ -67,6 +81,7 @@ export function resetStoreMemo() {
   resetActiveMemo();
   resetStagedMemo();
   resetClientPinsMemo();
+  resetBlockedVersionsMemo();
   resetLockState();
 }
 
@@ -113,6 +128,8 @@ export {
   unpinClient,
   getClientPinnedCache,
   getClientPinnedVersion,
+  getClientPinStatus,
+  PIN_STATES,
   getAllPinnedCaches,
   pruneClientPins,
   flushClientPins,
@@ -124,4 +141,12 @@ export {
   tryAcquire,
   release,
   withLock,
+  getBlockedVersions,
+  isVersionBlocked,
+  blockVersion,
+  unblockVersion,
+  syncBlockedVersions,
+  clearBlockedVersions,
+  resetBlockedVersionsMemo,
+  BLOCKED_VERSIONS_KEY,
 };

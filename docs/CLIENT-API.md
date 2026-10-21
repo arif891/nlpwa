@@ -636,3 +636,103 @@ if (pending) {
 }
 ```
 
+---
+
+## Health-Gated Commits & Boot Watchdog
+
+When a new version activates, the Service Worker keeps the previous version in `nlpwa-fallback` and monitors the boot lifecycle.
+
+### `nlpwa.markHealthy()`
+
+Explicitly confirms that the application has initialized and rendered successfully. Cancels the boot watchdog timer and permanently commits the active version.
+
+```javascript
+import { nlpwa } from 'nlpwa/client';
+
+// In your root mount / main component:
+try {
+  await renderRootApplication();
+  nlpwa.markHealthy();
+} catch (err) {
+  nlpwa.reportBootFailure(err);
+}
+```
+
+### `nlpwa.reportBootFailure(error)`
+
+Manually reports a critical initialization failure, instructing the Service Worker to immediately roll back the cache pointer to `nlpwa-fallback`, block the offending release, and reload into the stable state.
+
+```javascript
+nlpwa.reportBootFailure(new Error('Critical chunk missing'));
+```
+
+---
+
+## Multi-Tab Consensus & Dirty Form Protection
+
+Coordinate updates across open tabs and prevent unwanted reloads while forms or documents have unsaved changes.
+
+### `nlpwa.setDirty(isDirty)`
+
+Manually sets the dirty status for the current tab.
+
+```javascript
+nlpwa.setDirty(true);  // Mark as having unsaved edits
+nlpwa.setDirty(false); // Clean
+```
+
+### `nlpwa.registerDirtyGuard(guardFn)`
+
+Registers a synchronous or asynchronous callback that returns `true` if the tab contains unsaved work.
+
+```javascript
+nlpwa.registerDirtyGuard(() => {
+  return document.querySelector('#comment-textarea').value.length > 0;
+});
+```
+
+### `nlpwa.checkDirtyTabs()`
+
+Queries all open browser tabs via `nlpwa-tab-bus` to check if any tab is currently dirty.
+
+```javascript
+const { canReload, dirtyTabs } = await nlpwa.checkDirtyTabs();
+if (!canReload) {
+  console.log(`Update delayed: ${dirtyTabs.length} tabs have unsaved edits`);
+}
+```
+
+---
+
+## Runtime Observability & Diagnostics
+
+### `nlpwa.diagnostics()`
+
+Queries the Service Worker and returns a comprehensive snapshot of cache status, pins, fallbacks, storage quotas, and tab coordination.
+
+```javascript
+const diag = await nlpwa.diagnostics();
+console.log(diag);
+// {
+//   activeVersion: '1.2.0',
+//   pinnedVersion: '1.2.0',
+//   isPinned: true,
+//   stagedVersion: null,
+//   fallbackAvailable: true,
+//   blockedVersions: [],
+//   channel: 'stable',
+//   storage: { usageBytes, quotaBytes, percentUsed },
+//   isLeader: true,
+//   dirtyState: false
+// }
+```
+
+### `nlpwa.getPinStatus()`
+
+Inspects the version pinning state of the current tab.
+
+```javascript
+const { pinnedVersion, activeVersion, isPinned } = await nlpwa.getPinStatus();
+```
+
+

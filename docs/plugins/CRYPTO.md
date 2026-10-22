@@ -49,9 +49,8 @@ You can also call the verification helper directly in any Web Crypto environment
 ```javascript
 import { verifyManifestSignature } from 'nlpwa/crypto';
 
-// Supports both 2 arguments (reads manifest.signature) or 3 arguments:
+// Verifies manifest.signature against the public key
 const isValid = await verifyManifestSignature(manifest, publicKey);
-// Or: await verifyManifestSignature(manifest, manifest.signature, publicKey);
 
 if (!isValid) {
   throw new Error('Manifest signature verification failed! Untrusted CDN response.');

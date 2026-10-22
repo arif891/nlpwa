@@ -4,7 +4,7 @@ Monitors device storage quotas, manages persistent storage permissions, and prov
 
 ---
 
-## 1. Storage Quotas: `getCacheInfo()` (or `getStorageEstimate()`)
+## 1. Storage Quotas: `getCacheInfo()`
 
 Queries the Service Worker and `navigator.storage.estimate()` to inspect origin disk usage and runtime cache size:
 
@@ -48,7 +48,7 @@ if (!isPersistent) {
 
 ---
 
-## 3. Runtime Cache Cleanup: `cleanupRuntimeCache(options)` (or `cleanRuntimeCache`)
+## 3. Runtime Cache Cleanup: `cleanupRuntimeCache(options)`
 
 Triggers an on-demand cleanup of the runtime cache using LRU (least-recently-used) or quota-based eviction:
 

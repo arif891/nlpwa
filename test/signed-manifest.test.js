@@ -69,10 +69,6 @@ test('crypto: sign and verify manifest with Ed25519', async () => {
   const validPem = await verifyManifestSignature(signedManifest, spkiPem);
   assert.equal(validPem, true);
 
-  // Verification succeeds with 3 arguments (manifest, signature, publicKey)
-  const validThreeArgs = await verifyManifestSignature(manifest, sig, spkiPem);
-  assert.equal(validThreeArgs, true);
-
   // Tampering with manifest version causes verification to fail
   const tamperedManifest1 = { ...signedManifest, version: '1.2.1' };
   assert.equal(await verifyManifestSignature(tamperedManifest1, rawPubBase64), false);

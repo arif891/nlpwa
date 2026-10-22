@@ -253,8 +253,6 @@ export async function subscribeChannel(channel) {
   return channel;
 }
 
-export const setChannel = subscribeChannel;
-
 /**
  * Get currently subscribed release channel.
  *
@@ -283,22 +281,16 @@ export const nlpwa = {
   getState,
   subscribe,
   subscribeChannel,
-  setChannel,
   getChannel,
 
   // Installation
-  install: promptInstall,
-  promptInstall,
   isInstallable,
-  canInstall: isInstallable,
   isInstalled,
+  promptInstall,
   onInstallable,
-  onInstallPrompt: onInstallable,
   onAppInstalled,
-  onInstalled: onAppInstalled,
 
   // Update Lifecycle & UI
-  checkUpdate: requestUpdateCheck,
   requestUpdateCheck,
   applyUpdate,
   onUpdateReady,
@@ -316,9 +308,7 @@ export const nlpwa = {
 
   // Cache & Storage
   getCacheInfo,
-  getStorageEstimate: getCacheInfo,
   cleanupRuntimeCache,
-  cleanRuntimeCache: cleanupRuntimeCache,
   requestPersistentStorage: async () => {
     const granted = await requestPersistentStorage();
     setState({ isStoragePersistent: granted });
@@ -327,14 +317,14 @@ export const nlpwa = {
   isStoragePersistent,
 
   // App Badging
-  setBadge: async (count) => {
+  setAppBadge: async (count) => {
     const ok = await setAppBadge(count);
     if (ok) {
       setState({ badgeCount: count === undefined || count === null ? 1 : Math.max(0, Math.floor(Number(count))) });
     }
     return ok;
   },
-  clearBadge: async () => {
+  clearAppBadge: async () => {
     const ok = await clearAppBadge();
     if (ok) {
       setState({ badgeCount: 0 });
@@ -342,14 +332,12 @@ export const nlpwa = {
     return ok;
   },
   isBadgingSupported,
-  isBadgeSupported: isBadgingSupported,
 
   // Share Target
   getSharedData,
   onShareTarget,
 
   // Diagnostics & Pinning
-  diagnostics: getDiagnostics,
   getDiagnostics,
   getPinStatus,
 

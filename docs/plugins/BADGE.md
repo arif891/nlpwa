@@ -27,18 +27,18 @@ initSW({
 ## Client SDK Usage
 
 ```javascript
-import { setBadge, clearBadge, isBadgeSupported } from 'nlpwa/badge';
+import { setAppBadge, clearAppBadge, isBadgingSupported } from 'nlpwa/badge';
 
 // Check browser support
-if (isBadgeSupported()) {
+if (isBadgingSupported()) {
   // Set badge to specific count
-  await setBadge(5);
+  await setAppBadge(5);
 
   // Set indeterminate badge (dot)
-  await setBadge();
+  await setAppBadge();
 
   // Clear badge
-  await clearBadge();
+  await clearAppBadge();
 }
 ```
 

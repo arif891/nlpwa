@@ -81,11 +81,11 @@ test('badging: setAppBadge(0) and clearAppBadge clears the badge', async () => {
   assert.equal(clearBadgeCalls.length, 2);
 });
 
-test('badging: nlpwa.setBadge and nlpwa.clearBadge update reactive state store', async () => {
-  await nlpwa.setBadge(9);
+test('badging: nlpwa.setAppBadge and nlpwa.clearAppBadge update reactive state store', async () => {
+  await nlpwa.setAppBadge(9);
   assert.equal(getState().badgeCount, 9);
 
-  await nlpwa.clearBadge();
+  await nlpwa.clearAppBadge();
   assert.equal(getState().badgeCount, 0);
 });
 

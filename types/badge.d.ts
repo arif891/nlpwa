@@ -1,9 +1,6 @@
 export function isBadgingSupported(): boolean;
-export function isBadgeSupported(): boolean;
 export function setAppBadge(count?: number | null): Promise<boolean>;
-export function setBadge(count?: number | null): Promise<boolean>;
 export function clearAppBadge(): Promise<boolean>;
-export function clearBadge(): Promise<boolean>;
 
 export declare class BadgeClient {
   isSupported(): boolean;

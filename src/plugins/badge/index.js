@@ -6,11 +6,8 @@ export {
 
 export {
   isBadgingSupported,
-  isBadgeSupported,
   setAppBadge,
-  setBadge,
   clearAppBadge,
-  clearBadge,
   BadgeClient,
   badgeClient,
 } from './client.js';

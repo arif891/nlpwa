@@ -10,13 +10,13 @@ Provides a complete manager for handling native browser install prompts (`before
 import { nlpwa } from 'nlpwa/client';
 ```
 
-### `nlpwa.isInstallable()` (or `nlpwa.canInstall()`)
+### `nlpwa.isInstallable()`
 Returns `true` if the browser has fired `beforeinstallprompt` and the app is ready to prompt for installation.
 
 ### `nlpwa.isInstalled()`
 Returns `true` if the app is currently running in standalone display mode (e.g. `display-mode: standalone` or `navigator.standalone`).
 
-### `nlpwa.promptInstall()` (or `nlpwa.install()`)
+### `nlpwa.promptInstall()`
 Presents the native browser installation prompt to the user and resolves with the user's choice:
 
 ```javascript
@@ -42,5 +42,3 @@ nlpwa.onAppInstalled((event) => {
   showWelcomeToast('App successfully installed!');
 });
 ```
-
-*(Convenience aliases `nlpwa.onInstallPrompt` and `nlpwa.onInstalled` are also supported).*

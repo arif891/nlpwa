@@ -88,13 +88,13 @@ NLPWA is ideal when you want:
 ## Built-in Native OS Integrations
 
 In addition to atomic updates, NLPWA provides zero-dependency native OS wrappers:
-- **PWA Installation Manager** — Captures `beforeinstallprompt` automatically, persists deferred prompt across navigation, and exposes `nlpwa.install()`.
+- **PWA Installation Manager** — Captures `beforeinstallprompt` automatically, persists deferred prompt across navigation, and exposes `nlpwa.promptInstall()`.
 - **Persistent Storage** — `nlpwa.requestPersistentStorage()` guards offline caches from browser eviction under storage pressure.
 - **Unified Reactive State Store** — `nlpwa.subscribe((state) => ...)` exposes unified status (`online`, `updateStatus`, `badgeCount`, `isInstallable`) for React, Vue, Svelte, or vanilla JS.
-- **OS Badging API** — `nlpwa.setBadge()` / `nlpwa.clearBadge()` (or `nlpwa/badge`) sets app icon badges across Windows, macOS, Android, and iOS.
+- **OS Badging API** — `nlpwa.setAppBadge()` / `nlpwa.clearAppBadge()` (or `nlpwa/badge`) sets app icon badges across Windows, macOS, Android, and iOS.
 - **Web Share Target** — Intercepts system share sheet submissions (files, text, URLs) into a safe FIFO queue with size protection (`nlpwa/share`).
 - **Background Sync** — Queue offline `POST`/`PUT`/`DELETE` mutations in IndexedDB with automatic replay, dead-letter storage, and session redirect protection (`nlpwa/sync`).
-- **Diagnostics API** — `nlpwa.diagnostics()` returns real-time storage metrics, pin states, fallback availability, and leader status.
+- **Diagnostics API** — `nlpwa.getDiagnostics()` returns real-time storage metrics, pin states, fallback availability, and leader status.
 
 ## Quick Start
 
@@ -181,7 +181,7 @@ export default {
     <button onclick="NLPWAClient.applyUpdate()">Refresh</button>
   </div>
 
-  <button id="install-btn" hidden onclick="NLPWAClient.nlpwa.install()">Install App</button>
+  <button id="install-btn" hidden onclick="NLPWAClient.nlpwa.promptInstall()">Install App</button>
 
   <script>
     const { nlpwa, register } = NLPWAClient;

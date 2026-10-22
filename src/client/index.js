@@ -7,7 +7,7 @@ export { isInstalled, isInstallable, onInstallable, onAppInstalled, promptInstal
 export { isStoragePersistent, requestPersistentStorage } from './storage.js';
 export { isBadgingSupported, setAppBadge, clearAppBadge } from './badge.js';
 export { getSharedData, onShareTarget } from './share-target.js';
-export { getState, subscribe, subscribeChannel, setChannel, getChannel, nlpwa, client } from './status-store.js';
+export { getState, subscribe, subscribeChannel, getChannel, nlpwa, client } from './status-store.js';
 export {
   markHealthy,
   reportBootFailure,

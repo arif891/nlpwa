@@ -399,11 +399,6 @@ export function subscribe(listener: (state: NLPWAState) => void): () => void;
 export function subscribeChannel(channel: string): Promise<string>;
 
 /**
- * Alias for subscribeChannel.
- */
-export function setChannel(channel: string): Promise<string>;
-
-/**
  * Get the current subscribed release channel.
  */
 export function getChannel(): string | null;
@@ -583,26 +578,18 @@ export interface NLPWAClientAPI {
   getVersion: typeof getVersion;
   getStatus: typeof getStatus;
   getCacheInfo: typeof getCacheInfo;
-  getStorageEstimate: typeof getCacheInfo;
   cleanupRuntimeCache: typeof cleanupRuntimeCache;
-  cleanRuntimeCache: typeof cleanupRuntimeCache;
   isUserEditing: typeof isUserEditing;
   isInstalled: typeof isInstalled;
   isInstallable: typeof isInstallable;
-  canInstall: typeof isInstallable;
   onInstallable: typeof onInstallable;
-  onInstallPrompt: typeof onInstallable;
   onAppInstalled: typeof onAppInstalled;
-  onInstalled: typeof onAppInstalled;
-  install: typeof promptInstall;
   promptInstall: typeof promptInstall;
-  checkUpdate: typeof requestUpdateCheck;
   isStoragePersistent: typeof isStoragePersistent;
   requestPersistentStorage: typeof requestPersistentStorage;
-  setBadge: (count?: number | null) => Promise<boolean>;
-  clearBadge: () => Promise<boolean>;
+  setAppBadge: (count?: number | null) => Promise<boolean>;
+  clearAppBadge: () => Promise<boolean>;
   isBadgingSupported: typeof isBadgingSupported;
-  isBadgeSupported: typeof isBadgingSupported;
   getSharedData: typeof getSharedData;
   onShareTarget: typeof onShareTarget;
   markHealthy: typeof markHealthy;
@@ -614,7 +601,6 @@ export interface NLPWAClientAPI {
   getState: typeof getState;
   subscribe: typeof subscribe;
   subscribeChannel: typeof subscribeChannel;
-  setChannel: typeof setChannel;
   getChannel: typeof getChannel;
   registerDirtyGuard: typeof registerDirtyGuard;
   setDirty: typeof setDirty;
@@ -622,7 +608,6 @@ export interface NLPWAClientAPI {
   checkDirtyTabs: typeof checkDirtyTabs;
   isLeader: typeof isLeader;
   onLeaderChange: typeof onLeaderChange;
-  diagnostics: typeof getDiagnostics;
   getDiagnostics: typeof getDiagnostics;
   getPinStatus: typeof getPinStatus;
 }

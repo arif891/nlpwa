@@ -87,6 +87,7 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
 
     const storedRequests = [];
     const usedCacheNames = new Set();
+    const uploadResults = [];
     const config = (typeof self !== 'undefined' && self.__NLPWA_CONFIG__)
       ? self.__NLPWA_CONFIG__
       : (options.config || {});
@@ -97,25 +98,59 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
         let response = await record.responseReady;
         if (response && response.ok) {
           const rawUrl = typeof record.request === 'string' ? record.request : record.request.url;
-          const { cache, cacheName } = await resolveTargetCache(record.request, options);
+          const method = (typeof record.request === 'object' && record.request.method)
+            ? record.request.method.toUpperCase()
+            : 'GET';
 
-          // If asset is large (>25MB), mirror into IndexedDB for reliable streaming
-          const contentLen = Number(response.headers?.get?.('content-length') || 0);
-          if (contentLen > largeThreshold) {
-            response = await storeLargeAssetInIDB(rawUrl, response);
+          if (method === 'GET') {
+            const { cache, cacheName } = await resolveTargetCache(record.request, options);
+
+            // Determine file size: inspect Content-Length, fallback to blob.size if missing (e.g. CDN CORS / chunked)
+            let contentLen = Number(response.headers?.get?.('content-length') || 0);
+            if (!contentLen && typeof response.clone === 'function') {
+              try {
+                const clone = response.clone();
+                const blob = await clone.blob();
+                contentLen = blob.size;
+              } catch {}
+            }
+
+            // If asset is large (>25MB), mirror into IndexedDB for reliable chunk streaming
+            if (contentLen > largeThreshold) {
+              response = await storeLargeAssetInIDB(rawUrl, response);
+            }
+
+            await cache.put(record.request, response);
+            usedCacheNames.add(cacheName);
+            storedRequests.push(rawUrl);
+          } else {
+            // Upload request (POST/PUT/PATCH): CacheStorage does not support non-GET requests.
+            // Extract the server's reply payload to return to client listeners.
+            let responseData = null;
+            try {
+              const text = await response.text();
+              try {
+                responseData = JSON.parse(text);
+              } catch {
+                responseData = text;
+              }
+            } catch {}
+
+            uploadResults.push({
+              url: rawUrl,
+              method,
+              status: response.status,
+              response: responseData,
+            });
           }
-
-          await cache.put(record.request, response);
-          usedCacheNames.add(cacheName);
-          storedRequests.push(rawUrl);
         }
       } catch (err) {
-        logger.warn(`[NLPWA] Failed to cache record in background fetch ${bgFetch.id}:`, err?.message || err);
+        logger.warn(`[NLPWA] Failed to process record in background fetch ${bgFetch.id}:`, err?.message || err);
       }
     }
 
     const primaryCacheName = usedCacheNames.values().next().value || options.cacheName || BG_FETCH_CACHE_NAME;
-    logger.log(`[NLPWA] Background fetch "${bgFetch.id}" succeeded: stored ${storedRequests.length} asset(s) in [${Array.from(usedCacheNames).join(', ')}].`);
+    logger.log(`[NLPWA] Background fetch "${bgFetch.id}" succeeded: ${storedRequests.length} cached, ${uploadResults.length} uploaded.`);
 
     // Notify clients
     if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
@@ -128,6 +163,8 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
           cacheName: primaryCacheName,
           caches: Array.from(usedCacheNames),
           storedRequests,
+          uploadResults,
+          isUpload: uploadResults.length > 0 && storedRequests.length === 0,
         });
       }
     }

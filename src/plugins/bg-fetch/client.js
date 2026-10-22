@@ -69,11 +69,19 @@ export class BackgroundFetchClient {
   }
 
   /**
-   * Start a new background fetch download task.
+   * Start a new background fetch download or upload task.
+   * If downloadTotal or uploadTotal are omitted, automatically attempts to
+   * inspect HEAD Content-Length or Request body size where possible.
    *
-   * @param {string} id Unique identifier for this download task
+   * @param {string} id Unique identifier for this task
    * @param {string[]|Request[]} requests URLs or Request objects to download
-   * @param {{ title?: string, icons?: Array<{ src: string, sizes?: string, type?: string }>, downloadTotal?: number }} [options]
+   * @param {{
+   *   title?: string,
+   *   icons?: Array<{ src: string, sizes?: string, type?: string }>,
+   *   downloadTotal?: number,
+   *   uploadTotal?: number,
+   *   autoDetermineTotals?: boolean
+   * }} [options]
    * @returns {Promise<Object>} BackgroundFetchRegistration
    */
   async fetch(id, requests, options = {}) {
@@ -82,7 +90,55 @@ export class BackgroundFetchClient {
     if (!reg || !reg.backgroundFetch) {
       throw new Error('Background Fetch API is not supported or SW is not registered.');
     }
-    return reg.backgroundFetch.fetch(id, requests, options);
+
+    let finalOptions = { ...options };
+    const reqList = Array.isArray(requests) ? requests : [requests];
+
+    // Auto-detect uploadTotal if request body is a Blob/File
+    if (finalOptions.uploadTotal === undefined) {
+      let uploadSum = 0;
+      let hasUploads = false;
+      for (const req of reqList) {
+        if (req && typeof req === 'object' && req.method && req.method.toUpperCase() !== 'GET') {
+          if (req.body && typeof req.body.size === 'number') {
+            uploadSum += req.body.size;
+            hasUploads = true;
+          }
+        }
+      }
+      if (hasUploads && uploadSum > 0) {
+        finalOptions.uploadTotal = uploadSum;
+      }
+    }
+
+    // Auto-detect downloadTotal via HEAD request if enabled (defaults to true for GET requests when omitted)
+    if (finalOptions.downloadTotal === undefined && finalOptions.autoDetermineTotals !== false) {
+      let downloadSum = 0;
+      let hasDownloads = false;
+      for (const req of reqList) {
+        const isGet = typeof req === 'string' || (req && (!req.method || req.method.toUpperCase() === 'GET'));
+        if (isGet) {
+          const url = typeof req === 'string' ? req : req.url;
+          try {
+            if (typeof fetch === 'function') {
+              const headRes = await fetch(url, { method: 'HEAD' });
+              const len = headRes.headers?.get?.('content-length');
+              if (len && Number(len) > 0) {
+                downloadSum += Number(len);
+                hasDownloads = true;
+              }
+            }
+          } catch {
+            // Silently ignore if HEAD fails (e.g. offline, CORS restricted), browser will use indeterminate bar
+          }
+        }
+      }
+      if (hasDownloads && downloadSum > 0) {
+        finalOptions.downloadTotal = downloadSum;
+      }
+    }
+
+    return reg.backgroundFetch.fetch(id, requests, finalOptions);
   }
 
   /**

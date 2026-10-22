@@ -214,6 +214,28 @@ test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists record
   assert.equal(customCaches.has('videos-cache'), true);
   assert.equal(customCaches.get('videos-cache').has('http://localhost:3000/media/intro.mp4'), true);
 
+  // Test background upload handling (POST request with JSON reply)
+  const uploadEvent = {
+    registration: {
+      id: 'upload-logs',
+      matchAll: async () => [
+        {
+          request: new Request('http://localhost:3000/api/upload', { method: 'POST' }),
+          responseReady: Promise.resolve(new Response(JSON.stringify({ uploaded: true, id: 'log-123' }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          })),
+        },
+      ],
+    },
+  };
+
+  await handleBackgroundFetchSuccess(uploadEvent);
+  assert.equal(broadcasted.length, 3);
+  assert.equal(broadcasted[2].id, 'upload-logs');
+  assert.equal(broadcasted[2].isUpload, true);
+  assert.deepEqual(broadcasted[2].uploadResults[0].response, { uploaded: true, id: 'log-123' });
+
   // Test fail event
   await handleBackgroundFetchFail({
     registration: {
@@ -221,15 +243,15 @@ test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists record
       failureReason: 'quota-exceeded',
     },
   });
-  assert.equal(broadcasted.length, 3);
-  assert.equal(broadcasted[2].failureReason, 'quota-exceeded');
+  assert.equal(broadcasted.length, 4);
+  assert.equal(broadcasted[3].failureReason, 'quota-exceeded');
 
   // Test abort event
   await handleBackgroundFetchAbort({
     registration: { id: 'download-abort-task' },
   });
-  assert.equal(broadcasted.length, 4);
-  assert.equal(broadcasted[3].id, 'download-abort-task');
+  assert.equal(broadcasted.length, 5);
+  assert.equal(broadcasted[4].id, 'download-abort-task');
 
   assert.ok(backgroundFetchClient instanceof BackgroundFetchClient);
 });

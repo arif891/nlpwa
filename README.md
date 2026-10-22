@@ -382,12 +382,13 @@ Explore the complete documentation:
 
 | Document | Topic & Details |
 |---|---|
+| 📚 [**Documentation Portal**](docs/README.md) | Central documentation directory and complete topic index |
 | 🌟 [**Features & Capabilities**](FEATURES.md) | **Definitive reference:** Atomic OTA updates, client pinning, Ed25519 signing, rollback watchdog, staging budgets, and modular plugins |
 | 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) | System design, internal module map, client version pinning, and update state machine |
-| ⚙️ [**Configuration Reference**](docs/CONFIG.md) | Full schema reference for `nlpwa.config.js` and runtime options |
-| 💻 [**Client SDK & Runtime API**](docs/CLIENT-API.md) | `NLPWAClient` methods, options, DOM events, multi-tab coherence, and storage quota cleanup |
+| ⚙️ [**Configuration Reference**](docs/config/README.md) | Full schema reference for `nlpwa.config.js`, global options, and routing rules |
+| 💻 [**Client SDK & Runtime API**](docs/client/README.md) | `NLPWAClient` methods, options, DOM events, multi-tab coherence, state, and storage |
 | 🛠️ [**CLI & Bundler Integration**](docs/CLI.md) | `nlpwa init/add/update/status/keys:generate`, Rollup & Vite plugins, and CI/CD pipelines |
-| 🔌 [**Plugins & Background Sync**](docs/PLUGINS.md) | Plugin lifecycle hooks and official plugins (`nlpwa/sync`, `nlpwa/share`, `nlpwa/badge`, `nlpwa/bg-fetch`) |
+| 🔌 [**Plugins & Background Sync**](docs/plugins/README.md) | Plugin lifecycle hooks and official plugins (`sync`, `bg-fetch`, `share`, `badge`, `crypto`) |
 | 🚦 [**Fetch Strategies**](docs/STRATEGIES.md) | Caching behavior for `cache-first`, `network-first`, `stale-while-revalidate`, etc. |
 | 📦 [**Update Protocol Spec**](docs/UPDATE-PROTOCOL.md) | Two-tier JSON manifests, SHA-256 hashing format, and atomic staging lifecycle |
 

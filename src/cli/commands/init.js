@@ -177,6 +177,7 @@ ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
      <link rel="apple-touch-icon" href="/assets/image/icon/icon-192.png">
      <meta name="theme-color" content="${args.themeColor || '#0ea5e9'}">
      <script src="/client.js"></script>${c.reset}
+     ${c.dim}(client.js automatically registers /sw.js by default)${c.reset}
 
   2. Configure routes & offline precache in ${c.bold}nlpwa.config.js${c.reset}
 

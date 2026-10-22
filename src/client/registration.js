@@ -12,6 +12,8 @@ import {
 
 export { isUserEditing };
 
+let _activeUnsubscribe = null;
+
 /**
  * Register the NLPWA Service Worker and set up update handling.
  *
@@ -20,6 +22,11 @@ export { isUserEditing };
  * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
  */
 export async function register(swUrl = '/sw.js', options = {}) {
+  if (_activeUnsubscribe) {
+    try { _activeUnsubscribe(); } catch {}
+    _activeUnsubscribe = null;
+  }
+
   if (options.logLevel) {
     setClientLogLevel(options.logLevel);
   }
@@ -219,8 +226,12 @@ export async function register(swUrl = '/sw.js', options = {}) {
     if (initialCheckControllerListener) {
       navigator.serviceWorker.removeEventListener?.('controllerchange', initialCheckControllerListener);
     }
+    if (_activeUnsubscribe === unsubscribe) {
+      _activeUnsubscribe = null;
+    }
   };
 
+  _activeUnsubscribe = unsubscribe;
   return { registration, unsubscribe };
 }
 
@@ -231,6 +242,11 @@ export async function register(swUrl = '/sw.js', options = {}) {
  * @returns {Promise<boolean>} Resolves to true if unregistration succeeded
  */
 export async function unregister(scope) {
+  if (_activeUnsubscribe) {
+    try { _activeUnsubscribe(); } catch {}
+    _activeUnsubscribe = null;
+  }
+
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return false;
   }

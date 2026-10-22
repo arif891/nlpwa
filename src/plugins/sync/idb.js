@@ -99,11 +99,16 @@ export async function serializeRequest(request, metadata = {}, options = {}) {
   const hasIdempotency = headers.some(([k]) => k.toLowerCase() === 'idempotency-key' || k.toLowerCase() === 'x-idempotency-key');
   const idempotencyKey = metadata.idempotencyKey || (hasIdempotency ? undefined : (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `nlpwa-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`));
 
+  const credentials = request.credentials || undefined;
+  const mode = (request.mode && request.mode !== 'navigate') ? request.mode : undefined;
+
   return {
     url: request.url,
     method: request.method,
     headers,
     body,
+    credentials,
+    mode,
     idempotencyKey,
     timestamp: Date.now(),
     retryCount: 0,
@@ -132,6 +137,13 @@ export function deserializeRequest(record, options = {}) {
     method: record.method || 'POST',
     headers,
   };
+
+  if (record.credentials) {
+    init.credentials = record.credentials;
+  }
+  if (record.mode && record.mode !== 'navigate') {
+    init.mode = record.mode;
+  }
 
   if (record.body && record.method !== 'GET' && record.method !== 'HEAD') {
     init.body = record.body;

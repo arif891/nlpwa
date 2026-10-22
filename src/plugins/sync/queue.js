@@ -255,93 +255,145 @@ export class SyncQueue {
    * @param {Function} [options.fetchImpl] Fetch implementation (defaults to globalThis.fetch)
    * @param {(item: Object, response: Response) => void} [options.onReplaySuccess]
    * @param {(item: Object, error: Error|Response) => void} [options.onReplayFail]
+   * @param {(item: Object, reason: string) => void} [options.onReplayDiscard]
    * @param {boolean} [options.includeAuthRequired=false] Whether to retry items flagged authRequired
    * @param {HeadersInit} [options.headers] Extra/fresh headers to attach to replayed requests
    * @param {(item: Object) => Promise<HeadersInit>|HeadersInit} [options.getHeaders] Dynamic header provider
-   * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number }>}
+   * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number, replayed: number, remaining: number }>}
    */
-  async replayAll({ fetchImpl = globalThis.fetch, onReplaySuccess, onReplayFail, includeAuthRequired = false, headers, getHeaders } = {}) {
-    const items = await this.getAll({ excludeAuthRequired: !includeAuthRequired });
-    let successCount = 0;
-    let failedCount = 0;
+  async replayAll({ fetchImpl = globalThis.fetch, onReplaySuccess, onReplayFail, onReplayDiscard, includeAuthRequired = false, headers, getHeaders } = {}) {
+    if (!SyncQueue._activeReplays) {
+      SyncQueue._activeReplays = new Set();
+    }
 
-    for (const item of items) {
-      let dynamicHeaders = headers;
-      if (typeof getHeaders === 'function') {
-        dynamicHeaders = await getHeaders(item);
-      }
-      const req = deserializeRequest(item, dynamicHeaders ? { headers: dynamicHeaders } : {});
-      try {
-        const response = await fetchImpl(req);
+    const doReplay = async () => {
+      const items = await this.getAll({ excludeAuthRequired: !includeAuthRequired });
+      let successCount = 0;
+      let failedCount = 0;
 
-        // Check for redirects (e.g. session-expired redirect to login page)
-        const isRedirected = Boolean(
-          response.redirected ||
-          response.type === 'opaqueredirect' ||
-          (response.status >= 300 && response.status < 400)
-        );
-
-        if (isRedirected) {
-          // Session expired or redirected to login: do NOT discard user data!
-          failedCount++;
-          await withStore('readwrite', (store) => {
-            store.put({
-              ...item,
-              authRequired: true,
-              lastStatus: response.status,
-              redirected: true,
-              redirectUrl: response.url || null,
-            });
-          });
-          if (onReplayFail) onReplayFail(item, response);
-          continue;
+      for (const item of items) {
+        let dynamicHeaders = headers;
+        if (typeof getHeaders === 'function') {
+          dynamicHeaders = await getHeaders(item);
         }
+        const req = deserializeRequest(item, dynamicHeaders ? { headers: dynamicHeaders } : {});
+        try {
+          const response = await fetchImpl(req);
 
-        if (response.ok || (response.status >= 200 && response.status < 300)) {
-          // Success: remove from queue
-          await this.remove(item.id);
-          successCount++;
-          if (onReplaySuccess) onReplaySuccess(item, response);
-        } else {
-          // Server error (4xx/5xx): record retry or move to dead-letter store
-          failedCount++;
-          const newRetryCount = (item.retryCount || 0) + 1;
-          const maxRetries = item.maxRetries || this.maxRetries;
+          // Check for redirects (e.g. session-expired redirect to login page)
+          const isRedirected = Boolean(
+            response.redirected ||
+            response.type === 'opaqueredirect' ||
+            (response.status >= 300 && response.status < 400)
+          );
 
-          if (response.status === 401 || response.status === 403) {
-            // Auth error: do NOT discard user data! Flag authRequired so app can prompt re-login
-            await withStore('readwrite', (store) => {
-              store.put({ ...item, authRequired: true, lastStatus: response.status });
-            });
-          } else if (newRetryCount >= maxRetries || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) {
-            // Unrecoverable client error (409 conflict, 422 unprocessable, etc.) or exceeded retries:
-            // Move to dead-letter store so user data is NOT lost and application can inspect/retry it
+          if (isRedirected) {
+            // Session expired or redirected to login: do NOT discard user data!
+            failedCount++;
             await withStore('readwrite', (store) => {
               store.put({
                 ...item,
-                deadLetter: true,
-                deadLetterReason: newRetryCount >= maxRetries ? 'max_retries_exceeded' : `http_${response.status}`,
-                failedAt: Date.now(),
+                authRequired: true,
                 lastStatus: response.status,
+                redirected: true,
+                redirectUrl: response.url || null,
               });
             });
-          } else {
-            await withStore('readwrite', (store) => {
-              store.put({ ...item, retryCount: newRetryCount, lastStatus: response.status });
-            });
+            if (onReplayFail) onReplayFail(item, response);
+            continue;
           }
 
-          if (onReplayFail) onReplayFail(item, response);
+          if (response.ok || (response.status >= 200 && response.status < 300)) {
+            // Success: remove from queue
+            await this.remove(item.id);
+            successCount++;
+            if (onReplaySuccess) onReplaySuccess(item, response);
+          } else {
+            // Server error (4xx/5xx): record retry or move to dead-letter store
+            failedCount++;
+            const newRetryCount = (item.retryCount || 0) + 1;
+            const maxRetries = item.maxRetries || this.maxRetries;
+
+            if (response.status === 401 || response.status === 403) {
+              // Auth error: do NOT discard user data! Flag authRequired so app can prompt re-login
+              await withStore('readwrite', (store) => {
+                store.put({ ...item, authRequired: true, lastStatus: response.status });
+              });
+            } else if (newRetryCount >= maxRetries || (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429)) {
+              // Unrecoverable client error (409 conflict, 422 unprocessable, etc.) or exceeded retries:
+              // Move to dead-letter store so user data is NOT lost and application can inspect/retry it
+              const reason = newRetryCount >= maxRetries ? 'max_retries_exceeded' : `http_${response.status}`;
+              await withStore('readwrite', (store) => {
+                store.put({
+                  ...item,
+                  deadLetter: true,
+                  deadLetterReason: reason,
+                  failedAt: Date.now(),
+                  lastStatus: response.status,
+                });
+              });
+              if (onReplayDiscard) onReplayDiscard(item, reason);
+            } else {
+              await withStore('readwrite', (store) => {
+                store.put({ ...item, retryCount: newRetryCount, lastStatus: response.status });
+              });
+            }
+
+            if (onReplayFail) onReplayFail(item, response);
+          }
+        } catch (err) {
+          // Network error (offline or timeout): do NOT count network outage against maxRetries eviction
+          failedCount++;
+          if (onReplayFail) onReplayFail(item, err);
+          break; // Stop FIFO replay when network is demonstrably down
         }
-      } catch (err) {
-        // Network error (offline or timeout): do NOT count network outage against maxRetries eviction
-        failedCount++;
-        if (onReplayFail) onReplayFail(item, err);
-        break; // Stop FIFO replay when network is demonstrably down
+      }
+
+      const remainingCount = await this.size();
+      return {
+        successCount,
+        failedCount,
+        remainingCount,
+        replayed: successCount,
+        remaining: remainingCount,
+      };
+    };
+
+    if (SyncQueue._activeReplays.has(this.name)) {
+      const remainingCount = await this.size();
+      return { successCount: 0, failedCount: 0, remainingCount, replayed: 0, remaining: remainingCount };
+    }
+
+    const nav = typeof navigator !== 'undefined'
+      ? navigator
+      : typeof self !== 'undefined'
+        ? self.navigator
+        : null;
+
+    if (nav?.locks?.request && typeof nav.locks.request === 'function') {
+      try {
+        return await nav.locks.request(`nlpwa_sync_lock:${this.name}`, { ifAvailable: true }, async (lock) => {
+          if (!lock) {
+            const remainingCount = await this.size();
+            return { successCount: 0, failedCount: 0, remainingCount, replayed: 0, remaining: remainingCount };
+          }
+          SyncQueue._activeReplays.add(this.name);
+          try {
+            return await doReplay();
+          } finally {
+            SyncQueue._activeReplays.delete(this.name);
+          }
+        });
+      } catch {
+        // Fall back to in-memory lock
       }
     }
 
-    const remainingCount = await this.size();
-    return { successCount, failedCount, remainingCount };
+    SyncQueue._activeReplays.add(this.name);
+    try {
+      return await doReplay();
+    } finally {
+      SyncQueue._activeReplays.delete(this.name);
+    }
   }
 }

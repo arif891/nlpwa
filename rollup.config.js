@@ -49,8 +49,10 @@ export default async () => {
   },
 
   // ── Client: IIFE (<script src="/client.js"> → global NLPWAClient) ─────────
+  // Copied by `nlpwa init`. Automatically registers /sw.js by default.
   {
-    input: 'src/client/index.js',
+    input: 'src/client/standalone.js',
+    treeshake: false,
     output: {
       file:    'out/client.js',
       format:  'iife',

@@ -218,6 +218,17 @@ export class BackgroundSyncPlugin {
           error: err?.message || String(err),
         });
       },
+      onReplayDiscard: (item, reason) => {
+        if (options.onReplayDiscard) options.onReplayDiscard(item, reason);
+        this._notifyClients({
+          type: SYNC_MESSAGE_TYPES.SYNC_ITEM_DISCARDED,
+          queue: this.queueName,
+          id: item.id,
+          url: item.url,
+          reason,
+          status: item.lastStatus,
+        });
+      },
     });
   }
 

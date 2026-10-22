@@ -28,6 +28,9 @@ export class SyncClient {
         this._emit('success', event.data);
       } else if (type === 'NLPWA_SYNC_ITEM_FAILED') {
         this._emit('failed', event.data);
+        this._emit('error', event.data);
+      } else if (type === 'NLPWA_SYNC_ITEM_DISCARDED') {
+        this._emit('discard', event.data);
       }
     };
 
@@ -44,7 +47,7 @@ export class SyncClient {
 
   /**
    * Subscribe to sync events.
-   * Events: 'enqueued' | 'success' | 'failed'
+   * Events: 'enqueued' | 'success' | 'failed' | 'error' | 'discard'
    *
    * @param {string} event
    * @param {Function} callback
@@ -109,16 +112,21 @@ export class SyncClient {
    *
    * @param {string} [queueName]
    * @param {{ timeoutMs?: number, headers?: HeadersInit, getHeaders?: Function }} [options]
-   * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number }>}
+   * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number, replayed: number, remaining: number }>}
    */
   async replay(queueName = this.defaultQueue, { timeoutMs = 15000, headers, getHeaders } = {}) {
     try {
-      return await requestFromSW(
+      const res = await requestFromSW(
         SYNC_MESSAGE_TYPES.SYNC_REPLAY,
         { queue: queueName, headers },
         SYNC_MESSAGE_TYPES.SYNC_REPLAY_RESULT,
         timeoutMs
       );
+      if (res && typeof res === 'object') {
+        res.replayed = res.replayed ?? res.successCount ?? 0;
+        res.remaining = res.remaining ?? res.remainingCount ?? 0;
+      }
+      return res;
     } catch {
       // Fallback: Replay directly via local queue if SW is not responsive
       const localQueue = new SyncQueue(queueName);
@@ -126,7 +134,14 @@ export class SyncClient {
         headers,
         getHeaders,
         onReplaySuccess: (item, res) => this._emit('success', { queue: queueName, id: item.id, url: item.url, status: res.status }),
-        onReplayFail: (item, err) => this._emit('failed', { queue: queueName, id: item.id, url: item.url, error: err?.message || err }),
+        onReplayFail: (item, err) => {
+          const payload = { queue: queueName, id: item.id, url: item.url, error: err?.message || err };
+          this._emit('failed', payload);
+          this._emit('error', payload);
+        },
+        onReplayDiscard: (item, reason) => {
+          this._emit('discard', { queue: queueName, id: item.id, url: item.url, reason, status: item.lastStatus });
+        },
       });
     }
   }
@@ -191,13 +206,25 @@ export class SyncClient {
 
   /**
    * Retry a dead-letter request by moving it back to the active queue.
+   * Supports both `retryDeadLetter(id, queueName, options)` and `retryDeadLetter(queueName, id, options)`.
    *
-   * @param {number} id
-   * @param {string} [queueName]
+   * @param {number|string} arg1 ID or queueName
+   * @param {string|number} [arg2] queueName or ID
    * @param {{ timeoutMs?: number }} [options]
    * @returns {Promise<boolean>}
    */
-  async retryDeadLetter(id, queueName = this.defaultQueue, { timeoutMs = 3000 } = {}) {
+  async retryDeadLetter(arg1, arg2, options = {}) {
+    let id = arg1;
+    let queueName = this.defaultQueue;
+
+    if (typeof arg1 === 'string' && typeof arg2 === 'number') {
+      queueName = arg1;
+      id = arg2;
+    } else if (typeof arg2 === 'string') {
+      queueName = arg2;
+    }
+
+    const timeoutMs = options?.timeoutMs ?? 3000;
     try {
       const res = await requestFromSW(
         SYNC_MESSAGE_TYPES.SYNC_RETRY_DEAD_LETTER,
@@ -258,14 +285,39 @@ export class SyncClient {
 
   /**
    * Retry requests that were flagged authRequired after user re-authenticates.
+   * Supports both `retryAuthRequired(queueName, id, options)` and `retryAuthRequired(id, queueName, options)`
+   * or `retryAuthRequired(id, options)`.
    *
-   * @param {string} [queueName]
-   * @param {number} [id]
-   * @param {Object} [options]
-   * @param {HeadersInit} [options.headers] Optional fresh headers (e.g. refreshed Authorization token)
+   * @param {string|number} [arg1] queueName or ID
+   * @param {number|string|Object} [arg2] ID, queueName, or options
+   * @param {Object} [arg3] Options when passing (queueName, id, options) or (id, queueName, options)
    * @returns {Promise<number>}
    */
-  async retryAuthRequired(queueName = this.defaultQueue, id, options = {}) {
+  async retryAuthRequired(arg1, arg2, arg3 = {}) {
+    let queueName = this.defaultQueue;
+    let id;
+    let options = {};
+
+    if (typeof arg1 === 'number') {
+      id = arg1;
+      if (typeof arg2 === 'string') {
+        queueName = arg2;
+        options = arg3 || {};
+      } else if (typeof arg2 === 'object' && arg2 !== null) {
+        options = arg2;
+      }
+    } else if (typeof arg1 === 'string') {
+      queueName = arg1;
+      if (typeof arg2 === 'number') {
+        id = arg2;
+        options = arg3 || {};
+      } else if (typeof arg2 === 'object' && arg2 !== null) {
+        options = arg2;
+      }
+    } else if (typeof arg1 === 'object' && arg1 !== null) {
+      options = arg1;
+    }
+
     const localQueue = new SyncQueue(queueName);
     return localQueue.retryAuthRequired(id, options);
   }

@@ -503,5 +503,81 @@ test('sync queue: retryAuthRequired updates stored record with fresh authorizati
   assert.equal(replayedAuth, 'Bearer refreshed-token-777', 'Replayed request must use the refreshed token attached on retryAuthRequired');
 });
 
+test('sync: preserves credentials and mode across serialization', async () => {
+  const original = new Request('https://example.com/api/orders', {
+    method: 'POST',
+    credentials: 'include',
+    mode: 'cors',
+  });
+
+  const serialized = await serializeRequest(original, { queueName: 'cred-test' });
+  assert.equal(serialized.credentials, 'include');
+  assert.equal(serialized.mode, 'cors');
+
+  const restored = deserializeRequest(serialized);
+  assert.equal(restored.credentials, 'include');
+  assert.equal(restored.mode, 'cors');
+});
+
+test('sync queue: replayAll returns replayed and remaining aliases', async () => {
+  const queue = new SyncQueue('alias-test');
+  await queue.push(new Request('https://example.com/api/test', { method: 'POST' }));
+
+  const result = await queue.replayAll({
+    fetchImpl: async () => new Response('ok', { status: 200 }),
+  });
+
+  assert.equal(result.successCount, 1);
+  assert.equal(result.replayed, 1);
+  assert.equal(result.remaining, 0);
+  assert.equal(result.remainingCount, 0);
+});
+
+test('sync client: emits error and discard events on replay failures', async () => {
+  const client = new SyncClient('event-test');
+  const queue = new SyncQueue('event-test', { maxRetries: 1 });
+  await queue.push(new Request('https://example.com/api/fail-event', { method: 'POST' }));
+
+  let errorEvent = null;
+  let discardEvent = null;
+  client.on('error', (e) => { errorEvent = e; });
+  client.on('discard', (e) => { discardEvent = e; });
+
+  await queue.replayAll({
+    fetchImpl: async () => new Response('Internal Server Error', { status: 500 }),
+    onReplayFail: (item, err) => {
+      client._emit('failed', { queue: 'event-test', id: item.id, url: item.url, error: err });
+      client._emit('error', { queue: 'event-test', id: item.id, url: item.url, error: err });
+    },
+    onReplayDiscard: (item, reason) => {
+      client._emit('discard', { queue: 'event-test', id: item.id, url: item.url, reason });
+    },
+  });
+
+  assert.ok(errorEvent, 'error event fired');
+  assert.ok(discardEvent, 'discard event fired');
+  assert.equal(discardEvent.reason, 'max_retries_exceeded');
+});
+
+test('sync client: retryDeadLetter and retryAuthRequired accept flexible parameter ordering', async () => {
+  const client = new SyncClient('flex-test');
+  const queue = new SyncQueue('flex-test');
+
+  const id = await queue.push(new Request('https://example.com/api/auth-req', { method: 'POST' }));
+  // Mark authRequired
+  await queue.replayAll({ fetchImpl: async () => new Response('Unauthorized', { status: 401 }) });
+
+  // 1. Call retryAuthRequired with (queueName, id, options)
+  const reset1 = await client.retryAuthRequired('flex-test', id, { headers: { 'Authorization': 'Bearer test1' } });
+  assert.equal(reset1, 1);
+
+  // Mark authRequired again
+  await queue.replayAll({ fetchImpl: async () => new Response('Unauthorized', { status: 401 }) });
+
+  // 2. Call retryAuthRequired with (id, queueName, options)
+  const reset2 = await client.retryAuthRequired(id, 'flex-test', { headers: { 'Authorization': 'Bearer test2' } });
+  assert.equal(reset2, 1);
+});
+
 
 

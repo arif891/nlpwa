@@ -12,18 +12,19 @@ Shared Web Crypto utilities for detached Ed25519 signature signing and verificat
 
 ---
 
-## Build-Time Signing (Node.js / CI)
+## Automated Build-Time Signing (CLI / CI)
 
-```javascript
-import { signManifestSync } from 'nlpwa/crypto';
-import fs from 'node:fs';
+When running `nlpwa update`, manifests are signed automatically if a private key is found in `.env.nlpwa` or the `NLPWA_PRIVATE_KEY` environment variable:
 
-const manifest = JSON.parse(fs.readFileSync('dist/api/update/info.json', 'utf8'));
-const privateKeyPem = process.env.NLPWA_SIGNING_PRIVATE_KEY;
+```bash
+# Generate keypair and configure automatically:
+npx nlpwa keys:generate
 
-// Signs manifest and attaches manifest.signature
-const signedManifest = signManifestSync(manifest, privateKeyPem);
-fs.writeFileSync('dist/api/update/info.json', JSON.stringify(signedManifest, null, 2));
+# Or initialize with signing enabled:
+npx nlpwa init --sign
+
+# Update manifests (automatically signs info.json & version.json):
+npx nlpwa update --dir ./dist
 ```
 
 ---
@@ -34,21 +35,24 @@ In `nlpwa.config.js`:
 
 ```javascript
 export default {
-  security: {
-    // Public key in SPKI PEM or base64 format
-    publicKey: `-----BEGIN PUBLIC KEY-----
+  // Public key in SPKI PEM, 64-char Hex, or Base64 format
+  publicKey: `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEA...
 -----END PUBLIC KEY-----`,
-  },
 };
 ```
 
-Or call the verification helper directly:
+When `publicKey` is configured, the Service Worker automatically validates update manifests before staging.
+
+You can also call the verification helper directly in any Web Crypto environment:
 
 ```javascript
 import { verifyManifestSignature } from 'nlpwa/crypto';
 
-const isValid = await verifyManifestSignature(manifest, manifest.signature, publicKey);
+// Supports both 2 arguments (reads manifest.signature) or 3 arguments:
+const isValid = await verifyManifestSignature(manifest, publicKey);
+// Or: await verifyManifestSignature(manifest, manifest.signature, publicKey);
+
 if (!isValid) {
   throw new Error('Manifest signature verification failed! Untrusted CDN response.');
 }

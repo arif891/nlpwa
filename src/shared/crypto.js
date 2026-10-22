@@ -110,12 +110,28 @@ function decodeBase64(b64) {
  * Verify an Ed25519 signature on an update manifest using the Web Crypto API.
  * Compatible with modern browsers, Service Workers, and Node.js 18+.
  *
- * @param {Object} manifest - The manifest object with signature
- * @param {string|Uint8Array|ArrayBuffer} publicKeyInput - Public key (SPKI PEM, Base64, or Hex)
+ * Supports both signatures:
+ * - verifyManifestSignature(manifest, publicKey) (where manifest.signature is present)
+ * - verifyManifestSignature(manifest, signature, publicKey)
+ *
+ * @param {Object} manifest - The manifest object
+ * @param {string|Uint8Array|ArrayBuffer} arg2 - Public key (or signature string if 3 arguments passed)
+ * @param {string|Uint8Array|ArrayBuffer} [arg3] - Public key if signature was passed as second argument
  * @returns {Promise<boolean>} True if signature is cryptographically valid
  */
-export async function verifyManifestSignature(manifest, publicKeyInput) {
-  if (!manifest || !manifest.signature) return false;
+export async function verifyManifestSignature(manifest, arg2, arg3) {
+  let publicKeyInput;
+  let signature;
+
+  if (arg3 !== undefined) {
+    signature = typeof arg2 === 'string' ? arg2 : null;
+    publicKeyInput = arg3;
+  } else {
+    publicKeyInput = arg2;
+    signature = manifest?.signature;
+  }
+
+  if (!manifest || !signature) return false;
   if (!publicKeyInput) return false;
 
   const cryptoSubtle = typeof crypto !== 'undefined' ? crypto.subtle : null;
@@ -143,7 +159,7 @@ export async function verifyManifestSignature(manifest, publicKeyInput) {
 
   const canonicalPayload = getManifestSignPayload(manifest);
   const dataBytes = new TextEncoder().encode(canonicalPayload);
-  const sigBytes = decodeBase64(manifest.signature);
+  const sigBytes = decodeBase64(signature);
 
   return await cryptoSubtle.verify(
     { name: 'Ed25519' },

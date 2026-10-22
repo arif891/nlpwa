@@ -58,3 +58,7 @@ export async function cleanupRuntimeCache(cleanupOptions = {}, { timeoutMs = 100
     timeoutMs
   );
 }
+
+// Ergonomic aliases matching documentation
+export const getStorageEstimate = getCacheInfo;
+export const cleanRuntimeCache = cleanupRuntimeCache;

@@ -86,8 +86,8 @@ Fallback HTML document served when an offline navigation misses the cache:
 { match: '/admin/**', strategy: 'network-first', navigationFallback: '/admin/index.html' }
 ```
 
-### `cacheName` · `string`
-Routes matching requests to a custom CacheStorage bucket instead of `'runtime'`.
+> [!NOTE]
+> Custom CacheStorage bucket names (`runtime`, `offline`, `meta`) are configured globally at the top level in `nlpwa.config.js` via the `caches` property.
 
 ---
 

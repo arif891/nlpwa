@@ -15,14 +15,18 @@ import { nlpwa } from 'nlpwa/client';
 const state = nlpwa.getState();
 console.log(state);
 // {
+//   online: true,
+//   updateStatus: 'idle', // 'idle' | 'checking' | 'staging' | 'ready' | 'applying' | 'commit-deferred' | 'failed'
 //   version: '1.2.0',
-//   status: 'idle', // 'idle' | 'checking' | 'staging' | 'ready' | 'applying'
+//   activeVersion: '1.2.0',
 //   stagedVersion: null,
-//   isLeader: true,
-//   isPinned: true,
-//   isOnline: true,
-//   canInstall: false,
+//   minVersion: null,
+//   updateRequired: false,
+//   isInstallable: false,
 //   isInstalled: false,
+//   isStoragePersistent: null,
+//   badgeCount: null,
+//   channel: null,
 //   stagingProgress: null
 // }
 
@@ -82,16 +86,14 @@ import { nlpwa } from 'nlpwa/client';
 const diag = await nlpwa.diagnostics();
 console.log(diag);
 // {
-//   activeVersion: '1.2.0',
-//   pinnedVersion: '1.2.0',
-//   isPinned: true,
-//   stagedVersion: null,
+//   active: { version: '1.2.0', cache: 'offline@1.2.0', fallbackVersion: null, fallbackCache: null },
+//   staged: null,
+//   pinStatus: { clientId: '...', state: 'PINNED', version: '1.2.0', cache: 'offline@1.2.0' },
 //   fallbackAvailable: true,
 //   blockedVersions: [],
-//   channel: 'stable',
-//   storage: { usageBytes, quotaBytes, percentUsed },
-//   isLeader: true,
-//   dirtyState: false
+//   updateStatus: 'idle',
+//   storage: { quota, usage, percentUsed, remaining, runtimeEntries, runtimeBytes },
+//   client: { isLeader: true, isTabDirty: false, tabConsensus: { hasDirtyTabs: false, dirtyTabs: [] } }
 // }
 ```
 
@@ -100,5 +102,15 @@ console.log(diag);
 Inspects the version pinning state of the current tab:
 
 ```javascript
-const { pinnedVersion, activeVersion, isPinned } = await nlpwa.getPinStatus();
+const pinInfo = await nlpwa.getPinStatus();
+console.log(pinInfo);
+// {
+//   clientId: 'b5678413-4315-468e-9080-3331ad88fe1a',
+//   state: 'PINNED', // 'BOOTING' | 'PINNED' | 'ORPHANED' | 'EXPIRED'
+//   version: '1.2.0',
+//   cache: 'offline@1.2.0',
+//   pinnedAt: 1718000000000,
+//   lastSeenAt: 1718000005000,
+//   graceRemainingMs: null
+// }
 ```

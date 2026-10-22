@@ -33,6 +33,6 @@ register('/sw.js', {
 
 // Reactively subscribe to app state
 nlpwa.subscribe((state) => {
-  console.log(`Current state: ${state.status}, Version: ${state.version}`);
+  console.log(`Current state: ${state.updateStatus}, Version: ${state.version}`);
 });
 ```

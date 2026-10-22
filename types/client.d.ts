@@ -583,12 +583,17 @@ export interface NLPWAClientAPI {
   getVersion: typeof getVersion;
   getStatus: typeof getStatus;
   getCacheInfo: typeof getCacheInfo;
+  getStorageEstimate: typeof getCacheInfo;
   cleanupRuntimeCache: typeof cleanupRuntimeCache;
+  cleanRuntimeCache: typeof cleanupRuntimeCache;
   isUserEditing: typeof isUserEditing;
   isInstalled: typeof isInstalled;
   isInstallable: typeof isInstallable;
+  canInstall: typeof isInstallable;
   onInstallable: typeof onInstallable;
+  onInstallPrompt: typeof onInstallable;
   onAppInstalled: typeof onAppInstalled;
+  onInstalled: typeof onAppInstalled;
   install: typeof promptInstall;
   promptInstall: typeof promptInstall;
   checkUpdate: typeof requestUpdateCheck;
@@ -597,6 +602,7 @@ export interface NLPWAClientAPI {
   setBadge: (count?: number | null) => Promise<boolean>;
   clearBadge: () => Promise<boolean>;
   isBadgingSupported: typeof isBadgingSupported;
+  isBadgeSupported: typeof isBadgingSupported;
   getSharedData: typeof getSharedData;
   onShareTarget: typeof onShareTarget;
   markHealthy: typeof markHealthy;

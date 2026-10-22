@@ -4,15 +4,24 @@ Monitors device storage quotas, manages persistent storage permissions, and prov
 
 ---
 
-## 1. Storage Quotas: `getStorageEstimate()`
+## 1. Storage Quotas: `getCacheInfo()` (or `getStorageEstimate()`)
 
-Queries `navigator.storage.estimate()` to inspect origin disk usage:
+Queries the Service Worker and `navigator.storage.estimate()` to inspect origin disk usage and runtime cache size:
 
 ```javascript
 import { nlpwa } from 'nlpwa/client';
 
-const { usage, quota, percentUsed } = await nlpwa.getStorageEstimate();
-console.log(`Used: ${(usage / 1e6).toFixed(1)} MB of ${(quota / 1e6).toFixed(1)} MB (${percentUsed}%)`);
+const info = await nlpwa.getCacheInfo();
+// {
+//   quota: 107374182400,
+//   usage: 52428800,
+//   percentUsed: 0.05,
+//   remaining: 107321753600,
+//   runtimeEntries: 42,
+//   runtimeBytes: 15728640,
+//   largestEntries: [ ... ]
+// }
+console.log(`Used: ${(info.usage / 1e6).toFixed(1)} MB of ${(info.quota / 1e6).toFixed(1)} MB (${info.percentUsed}%)`);
 ```
 
 ---
@@ -39,22 +48,23 @@ if (!isPersistent) {
 
 ---
 
-## 3. Runtime Cache Cleanup: `cleanRuntimeCache(options)`
+## 3. Runtime Cache Cleanup: `cleanupRuntimeCache(options)` (or `cleanRuntimeCache`)
 
-Triggers an on-demand cleanup of the runtime cache using LRU (least-recently-used) eviction:
+Triggers an on-demand cleanup of the runtime cache using LRU (least-recently-used) or quota-based eviction:
 
 ```javascript
 import { nlpwa } from 'nlpwa/client';
 
 // Simple cleanup enforcing maxEntries
-const result = await nlpwa.cleanRuntimeCache({
+const result = await nlpwa.cleanupRuntimeCache({
   maxEntries: 50,
 });
-console.log(`Evicted ${result.evicted} items, freed ${(result.freedBytes / 1e3).toFixed(1)} KB`);
+console.log(`Evicted ${result.evictedCount} items, freed ${(result.freedBytes / 1e3).toFixed(1)} KB`);
 
 // Scoped cleanup matching specific URL patterns
-await nlpwa.cleanRuntimeCache({
-  pattern: '/api/feed/**',
+await nlpwa.cleanupRuntimeCache({
+  strategy: 'pattern',
+  match: '/api/feed/**',
   maxAgeMs: 24 * 60 * 60 * 1000, // 24 hours
   maxEntries: 20,
 });

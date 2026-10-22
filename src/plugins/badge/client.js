@@ -74,3 +74,8 @@ export class BadgeClient {
 }
 
 export const badgeClient = new BadgeClient();
+
+// Ergonomic aliases matching documentation
+export const setBadge = setAppBadge;
+export const clearBadge = clearAppBadge;
+export const isBadgeSupported = isBadgingSupported;

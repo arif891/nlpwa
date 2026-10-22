@@ -136,8 +136,8 @@ export default {
     info:    '/api/update/info.json',
   },
 
-  // Update verification ('warn' by default; use 'strict' for strict cryptographic rejection)
-  verifyHashes: 'warn',
+  // Hash verification ('warn' by default when unsigned; 'strict' when keys are configured)
+  // verifyHashes: 'warn',
 
   // App shell files to track and offline-cache
   precache: [

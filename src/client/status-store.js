@@ -1,4 +1,4 @@
-import { onInstallable, isInstalled, isInstallable, promptInstall } from './install.js';
+import { onInstallable, isInstalled, isInstallable, promptInstall, onAppInstalled } from './install.js';
 import { isStoragePersistent, requestPersistentStorage } from './storage.js';
 import { isBadgingSupported, setAppBadge, clearAppBadge } from './badge.js';
 import { getSharedData, onShareTarget } from './share-target.js';
@@ -10,6 +10,9 @@ import {
   applyUpdate,
 } from './update-ui.js';
 import {
+  register,
+  unregister,
+  isUserEditing,
   onUpdateApplied,
   onUpdateRequired,
 } from './registration.js';
@@ -17,7 +20,10 @@ import {
   getVersion,
   getStatus,
   requestUpdateCheck,
+  sendToSW,
+  requestFromSW,
 } from './messaging.js';
+import { getCacheInfo, cleanupRuntimeCache } from './cache-manager.js';
 import { getDiagnostics, getPinStatus } from './diagnostics.js';
 import {
   registerDirtyGuard,
@@ -32,6 +38,8 @@ import {
   reportBootFailure,
   rollback,
   getBlockedVersions,
+  onRollbackApplied,
+  watchdog,
 } from './watchdog.js';
 
 /**
@@ -266,23 +274,59 @@ export function getChannel() {
  * Unified NLPWA client singleton interface.
  */
 export const nlpwa = {
+  // Registration & Service Worker
+  register,
+  unregister,
+  isUserEditing,
+
+  // Reactive State Store
   getState,
   subscribe,
-  install: promptInstall,
-  promptInstall,
-  isInstallable,
-  isInstalled,
-  checkUpdate: requestUpdateCheck,
-  applyUpdate,
   subscribeChannel,
   setChannel,
   getChannel,
+
+  // Installation
+  install: promptInstall,
+  promptInstall,
+  isInstallable,
+  canInstall: isInstallable,
+  isInstalled,
+  onInstallable,
+  onInstallPrompt: onInstallable,
+  onAppInstalled,
+  onInstalled: onAppInstalled,
+
+  // Update Lifecycle & UI
+  checkUpdate: requestUpdateCheck,
+  requestUpdateCheck,
+  applyUpdate,
+  onUpdateReady,
+  onNoUpdate,
+  onUpdateRequired,
+  onUpdateFailed,
+  onUpdateApplied,
+  onStagingProgress,
+
+  // Messaging & SW Queries
+  sendToSW,
+  requestFromSW,
+  getVersion,
+  getStatus,
+
+  // Cache & Storage
+  getCacheInfo,
+  getStorageEstimate: getCacheInfo,
+  cleanupRuntimeCache,
+  cleanRuntimeCache: cleanupRuntimeCache,
   requestPersistentStorage: async () => {
     const granted = await requestPersistentStorage();
     setState({ isStoragePersistent: granted });
     return granted;
   },
   isStoragePersistent,
+
+  // App Badging
   setBadge: async (count) => {
     const ok = await setAppBadge(count);
     if (ok) {
@@ -298,21 +342,32 @@ export const nlpwa = {
     return ok;
   },
   isBadgingSupported,
+  isBadgeSupported: isBadgingSupported,
+
+  // Share Target
   getSharedData,
   onShareTarget,
+
+  // Diagnostics & Pinning
   diagnostics: getDiagnostics,
   getDiagnostics,
   getPinStatus,
+
+  // Multi-Tab Consensus
   registerDirtyGuard,
   setDirty,
   isTabDirty,
   checkDirtyTabs,
   isLeader,
   onLeaderChange,
+
+  // Watchdog & Health Rollback
   markHealthy,
   reportBootFailure,
   rollback,
   getBlockedVersions,
+  onRollbackApplied,
+  watchdog,
 };
 
 export const client = nlpwa;

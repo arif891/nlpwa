@@ -158,3 +158,8 @@ export async function promptInstall() {
     return { outcome: 'dismissed', platform: '' };
   }
 }
+
+// Ergonomic aliases matching documentation
+export const canInstall = isInstallable;
+export const onInstallPrompt = onInstallable;
+export const onInstalled = onAppInstalled;

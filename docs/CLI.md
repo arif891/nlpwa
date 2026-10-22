@@ -49,7 +49,7 @@ npx nlpwa --help
 
 Scaffolds the drop-in NLPWA engine, starter configuration, W3C Web App Manifest, and starter PNG/SVG icons into the target directory.
 
-**Works Out of the Box:** The scaffolded starter configuration is tuned for frictionless, resilient defaults—`verifyHashes: 'warn'`, `signingKey: false`, automatic large-file handling (>25MB), navigation-based update applying, deferred persistent storage, and multi-boot probation. No cryptographic key generation or complex infrastructure is required to start developing.
+**Works Out of the Box:** The scaffolded starter configuration is tuned for frictionless, resilient defaults—automatic large-file handling (>25MB), navigation-based update applying, deferred persistent storage, and multi-boot probation. No cryptographic key generation or complex infrastructure is required to start developing.
 
 ```bash
 # Initialize in current directory
@@ -73,7 +73,7 @@ npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 - `assets/image/icon/icon.svg` — Scalable vector icon.
 
 **Init Options:**
-- `--sign` — Generates an Ed25519 keypair, writes `.env.nlpwa` (0600), scaffolds `nlpwa.config.js` with `publicKey` (`verifyHashes: 'strict'`), and injects `publicKey` into `sw.js` in one step.
+- `--sign` — Generates an Ed25519 keypair, writes `.env.nlpwa` (0600), scaffolds `nlpwa.config.js` with `publicKey`, and injects `publicKey` into `sw.js` in one step.
 - `--dir <path>` — Target directory (default: `.`)
 - `--name <name>` — App display name (auto-detected from `package.json` if omitted)
 - `--short-name <short>` — App short name for home screen and shortcuts
@@ -101,7 +101,7 @@ npx nlpwa keys:generate --env .env.local
 ```
 ✓ Generated Ed25519 keypair!
   Private key written to .env.nlpwa (chmod 0600) (NLPWA_PRIVATE_KEY)
-  + Synchronized publicKey and verifyHashes: 'strict' into nlpwa.config.js
+  + Synchronized publicKey into nlpwa.config.js
   + Injected publicKey into sw.js
 ```
 

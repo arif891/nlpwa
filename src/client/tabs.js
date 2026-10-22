@@ -60,6 +60,7 @@ function handleBusMessage(event) {
  * @returns {() => void} unsubscribe function
  */
 export function registerDirtyGuard(guardFn) {
+  getBus();
   if (typeof guardFn === 'function') {
     dirtyGuards.add(guardFn);
   }
@@ -74,6 +75,7 @@ export function registerDirtyGuard(guardFn) {
  * @param {boolean} dirty
  */
 export function setDirty(dirty) {
+  getBus();
   manualDirty = Boolean(dirty);
 }
 
@@ -229,9 +231,10 @@ export function initTabElection() {
   }
 }
 
-// Automatically start tab election in browser environments
+// Automatically start tab election and consensus bus in browser environments
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   initTabElection();
+  getBus();
 }
 
 /**

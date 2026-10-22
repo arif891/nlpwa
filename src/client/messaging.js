@@ -96,7 +96,7 @@ export async function requestFromSW(type, payload = {}, replyType = '', timeoutM
         if (event.data?.error) {
           reject(new Error(event.data.error));
         } else {
-          resolve(event.data?.data ?? event.data);
+          resolve(event.data && 'data' in event.data ? event.data.data : event.data);
         }
       };
 
@@ -117,7 +117,7 @@ export async function requestFromSW(type, payload = {}, replyType = '', timeoutM
         if (event.data?.error) {
           reject(new Error(event.data.error));
         } else {
-          resolve(event.data?.data ?? event.data);
+          resolve(event.data && 'data' in event.data ? event.data.data : event.data);
         }
       }
     };

@@ -24,6 +24,7 @@ It is available as both an ES module (`import { register } from 'nlpwa/client'`)
 - [Persistent Storage: `isStoragePersistent()` & `requestPersistentStorage()`](#persistent-storage-isstoragepersistent--requestpersistentstorage)
 - [OS Badging API](#os-badging-api)
 - [Web Share Target API](#web-share-target-api)
+- [Background Fetch API: `backgroundFetchClient`](#background-fetch-api-backgroundfetchclient)
 
 ---
 
@@ -739,5 +740,99 @@ Inspects the version pinning state of the current tab.
 ```javascript
 const { pinnedVersion, activeVersion, isPinned } = await nlpwa.getPinStatus();
 ```
+
+---
+
+## Background Fetch API: `backgroundFetchClient`
+
+The Background Fetch Client (`nlpwa/bg-fetch/client` or `window.NLPWABgFetchClient.backgroundFetchClient`) manages background downloads and uploads that persist even after the browser tab is closed, accompanied by native OS progress indicators.
+
+```javascript
+import { backgroundFetchClient, getBgFetchIdForUrl, getUrlFromBgFetchId } from 'nlpwa/bg-fetch/client';
+```
+
+### Methods Reference
+
+#### `backgroundFetchClient.isSupported()`
+Returns `true` if `BackgroundFetchManager` is supported by the user's browser.
+
+#### `backgroundFetchClient.fetch(id, requests, options)` / `backgroundFetchClient.fetch(requests, options)`
+Starts a background fetch download or upload task.
+
+- **Overloads**:
+  1. `fetch(id, requests, options)` — Explicit custom ID with one or more URLs.
+  2. `fetch(requests, options)` — Auto-generates an ID (`nlpwa-bg:${encodeURIComponent(url)}` for single URLs, or a timestamped ID for arrays).
+- **Options**:
+  - `title`: Notification title shown by the native OS.
+  - `icons`: Icon list for OS notification.
+  - `downloadTotal`: Expected download size in bytes. If omitted, automatically detects via parallel `HEAD` requests.
+  - `uploadTotal`: Expected upload size in bytes. If omitted, automatically detects from `Blob` / `File` request bodies.
+  - `onProgress`: Live progress callback `{ id, downloaded, downloadTotal, uploaded, uploadTotal, percent }`.
+
+```javascript
+// Single asset download with auto-generated deterministic ID:
+await backgroundFetchClient.fetch('/models/large-model.onnx', {
+  title: 'Downloading Neural Network Model',
+  onProgress: ({ percent, downloaded, downloadTotal }) => {
+    progressBar.value = percent;
+  },
+});
+
+// Multi-file batch download with custom ID:
+await backgroundFetchClient.fetch('album-release-01', [
+  '/audio/track1.mp3',
+  '/audio/track2.mp3',
+  '/audio/cover.jpg',
+], {
+  title: 'Downloading Album',
+  onProgress: ({ percent }) => updateUI(percent),
+});
+```
+
+#### `backgroundFetchClient.getForUrl(url)`
+Looks up an active background fetch task for a given URL using its deterministic escaped URL ID. Returns the `BackgroundFetchRegistration` or `null`.
+
+```javascript
+const activeTask = await backgroundFetchClient.getForUrl('/models/large-model.onnx');
+if (activeTask) {
+  // Resume observing progress from another tab or view
+  backgroundFetchClient.onProgress(activeTask, ({ percent }) => {
+    console.log(`Still downloading: ${percent}%`);
+  });
+}
+```
+
+#### `backgroundFetchClient.onProgress(target, callback)`
+Attaches a live progress listener to a `BackgroundFetchRegistration` or task ID. Returns an `unsubscribe()` function.
+
+```javascript
+const unsubscribe = backgroundFetchClient.onProgress('album-release-01', (p) => {
+  console.log(`${p.percent}% (${p.downloaded}/${p.downloadTotal} bytes)`);
+});
+
+// Stop listening
+unsubscribe();
+```
+
+#### `backgroundFetchClient.get(id)`
+Retrieves an active task by its string ID.
+
+#### `backgroundFetchClient.getIds()`
+Returns an array of all active background fetch task IDs.
+
+#### `backgroundFetchClient.abort(id)`
+Cancels an active background fetch task.
+
+#### `backgroundFetchClient.onSuccess(callback)`
+Registers a listener for `BG_FETCH_SUCCESS` broadcasts sent by the Service Worker when transfers finish:
+```javascript
+backgroundFetchClient.onSuccess(({ id, count, cacheName, storedRequests, uploadResults, isUpload }) => {
+  console.log(`Task ${id} completed with ${count} files stored in ${cacheName}.`);
+});
+```
+
+#### `backgroundFetchClient.onFail(callback)` / `backgroundFetchClient.onAbort(callback)`
+Listeners for task failures and user-initiated aborts.
+
 
 

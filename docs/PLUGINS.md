@@ -362,14 +362,112 @@ await clearBadge(); // Clear counter
 
 ### 3. Background Fetch (`nlpwa/bg-fetch`)
 
-Manages large file downloads (podcasts, videos, asset packs) in the background with native OS download indicators.
+Manages large file downloads (podcasts, videos, ML weights, asset packs) and uploads in the background with native OS download indicators, progress tracking, and resilient offline persistence.
+
+Available as:
+- Service Worker module: `nlpwa/bg-fetch` or `nlpwa/bg-fetch/sw`
+- Client SDK module: `nlpwa/bg-fetch/client`
+- Pre-bundled scripts: `/plugins/bg-fetch.sw.js` and `/plugins/bg-fetch.client.js`
+
+#### Service Worker Setup
 
 ```javascript
 // In sw.js:
+import { initSW } from 'nlpwa/sw';
 import { BackgroundFetchPlugin } from 'nlpwa/bg-fetch';
 
 initSW({
-  plugins: [new BackgroundFetchPlugin()],
+  plugins: [
+    new BackgroundFetchPlugin({
+      // Default cache target for downloaded assets (defaults to 'runtime')
+      cacheName: 'runtime',
+      // URL to open or focus when the OS tray notification is clicked
+      clickUrl: '/downloads',
+      // Optional OS notification titles & icons
+      successTitle: 'Download complete',
+      failTitle: 'Transfer failed',
+    }),
+  ],
+});
+```
+
+#### How the SW Handles Background Fetch Events
+
+1. **Intelligent Cache Target Resolution**:
+   - Manifest/precache assets resolve to the active offline cache (`offline@<version>`).
+   - URLs matching custom route rules in `config.routes` resolve to that route's designated `cacheName`.
+   - All other downloads route to `'runtime'` (or the plugin's `cacheName` option).
+2. **IndexedDB Delegation (>25 MB)**:
+   - File size is detected via the `Content-Length` header (with fallback to `clone().blob().size` for chunked/CORS responses).
+   - If the file exceeds `largeFileThresholdBytes` (default: 25 MB), it is automatically stored in IndexedDB (`nlpwa-large-assets`) while registering in the cache to avoid CacheStorage memory limits.
+3. **Native Upload Support**:
+   - Non-GET requests (e.g. `POST`, `PUT`) bypass `cache.put()` to prevent CacheStorage method exceptions. The server response is parsed and dispatched directly to client windows.
+4. **Native OS Notifications (`BackgroundFetchUpdateUIEvent`)**:
+   - `event.updateUI()` is automatically called on completion and failure to present native OS tray feedback with title, icons, and error reasons.
+5. **OTA Staging Integration**:
+   - During OTA updates, any file larger than `largeFileThresholdBytes` is automatically fetched via Background Fetch using a deterministic escaped URL ID: `nlpwa-bg:${encodeURIComponent(path)}`.
+   - If an existing task is already running for that asset, the staging engine reuses it instead of creating duplicates.
+
+#### Client SDK Usage
+
+```javascript
+import { backgroundFetchClient, getBgFetchIdForUrl } from 'nlpwa/bg-fetch/client';
+
+// 1. Check browser support
+if (backgroundFetchClient.isSupported()) {
+  console.log('Background Fetch is supported!');
+}
+
+// 2. Start a single-file download (auto-generates deterministic URL-based ID)
+const download = await backgroundFetchClient.fetch('/models/large-model.onnx', {
+  title: 'Downloading Neural Network Model',
+  icons: [{ src: '/icons/model.png', sizes: '192x192' }],
+  // Automatically detects downloadTotal via HEAD request if omitted
+  onProgress: ({ percent, downloaded, downloadTotal }) => {
+    console.log(`Progress: ${percent}% (${downloaded}/${downloadTotal} bytes)`);
+  },
+});
+
+// 3. Start a multi-file batch download with a custom ID
+const albumDownload = await backgroundFetchClient.fetch(
+  'album-stellar-voyage',
+  ['/audio/track1.mp3', '/audio/track2.mp3', '/audio/track3.mp3', '/audio/cover.jpg'],
+  {
+    title: 'Downloading "Stellar Voyage"',
+    onProgress: ({ percent }) => updateProgressBar(percent),
+  }
+);
+
+// 4. Look up an active download by URL from any view or open tab
+const activeTask = await backgroundFetchClient.getForUrl('/models/large-model.onnx');
+if (activeTask) {
+  // Subscribe to live progress on the existing task
+  const unsubscribe = backgroundFetchClient.onProgress(activeTask, (progress) => {
+    renderProgressBar(progress.percent);
+  });
+}
+
+// 5. Background Upload
+const upload = await backgroundFetchClient.fetch('diagnostic-logs-upload', [
+  new Request('/api/logs/upload', {
+    method: 'POST',
+    body: logBlob,
+    headers: { 'Content-Type': 'application/json' },
+  }),
+], {
+  title: 'Uploading telemetry logs',
+});
+
+// 6. Listen for global completion / failure broadcasts
+backgroundFetchClient.onSuccess(({ id, count, cacheName, isUpload, uploadResults }) => {
+  console.log(`Task ${id} completed! Stored ${count} files in cache ${cacheName}.`);
+  if (isUpload) {
+    console.log('Server response:', uploadResults);
+  }
+});
+
+backgroundFetchClient.onFail(({ id, failureReason }) => {
+  console.error(`Task ${id} failed: ${failureReason}`);
 });
 ```
 

@@ -116,10 +116,18 @@ const server = createServer(async (req, res) => {
     pathname += 'index.html';
   }
 
-  const filePath = resolve(__dirname, pathname.replace(/^\/+/, ''));
+  const projectRoot = resolve(__dirname, '..');
+  let filePath;
+  if (pathname.startsWith('/out/')) {
+    filePath = resolve(projectRoot, pathname.replace(/^\/+/, ''));
+  } else if (pathname.startsWith('/plugins/')) {
+    filePath = resolve(projectRoot, 'out', pathname.replace(/^\/+/, ''));
+  } else {
+    filePath = resolve(__dirname, pathname.replace(/^\/+/, ''));
+  }
 
   // Prevent directory traversal
-  if (!filePath.startsWith(__dirname)) {
+  if (!filePath.startsWith(projectRoot)) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     return res.end('Forbidden');
   }

@@ -2,6 +2,8 @@ import { SYNC_MESSAGE_TYPES } from './constants.js';
 import { SyncQueue } from './queue.js';
 import { requestFromSW, onSWMessage } from '../../client/messaging.js';
 
+export { SyncQueue, SYNC_MESSAGE_TYPES };
+
 export class SyncClient {
   /**
    * @param {string} [defaultQueue='default']

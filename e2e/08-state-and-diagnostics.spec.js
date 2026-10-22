@@ -9,6 +9,11 @@ test.describe('08 - Reactive State Store & Diagnostics API', () => {
   });
 
   test('getState returns complete state snapshot matching active SW version', async ({ page }) => {
+    // Wait for any in-flight initial checkOnRegister to complete and settle to idle
+    await expect.poll(async () => {
+      return await page.evaluate(() => window.NLPWAClient.nlpwa.getState().updateStatus);
+    }).toBe('idle');
+
     const state = await page.evaluate(() => {
       return window.NLPWAClient.nlpwa.getState();
     });

@@ -263,3 +263,74 @@ async function handleUserLogout() {
 | **Window Auto-Sync Replay** | Supported | ✅ Supported via `autoSyncOnOnline()` | ✅ Supported via `autoSyncOnOnline()` |
 | **Manual Replay (`syncClient.replay()`)** | ✅ Supported | ✅ Supported | ✅ Supported |
 | **Multi-Tab Concurrency Guard** | ✅ Web Locks (`navigator.locks`) | ✅ Web Locks (`navigator.locks`) | ✅ Web Locks (`navigator.locks`) |
+
+---
+
+## Periodic Background Sync (`nlpwa/sync/periodic`)
+
+In addition to one-off mutation replay upon reconnect, `nlpwa/sync` provides **Periodic Background Sync** for recurring background tasks (e.g. cache warming, news feed fetching, or catalog refreshes every 12–24h) with **progressive enhancement**:
+
+```
+                       ┌──────────────────────────────┐
+                       │  periodicSyncClient.register │
+                       │    ('sync-feed', { ... })    │
+                       └──────────────┬───────────────┘
+                                      │
+                 Does browser support 'periodicSync'
+                  AND is PWA installed / granted?
+                                 /          \
+                               /              \
+                             YES               NO
+                             /                  \
+             ┌─────────────────────────┐   ┌───────────────────────────┐
+             │ Register OS-level       │   │ Transparent Fallback:     │
+             │ registration.periodicSync│   │ Tab focus, visibility, &  │
+             │ (Runs when app closed)  │   │ interval timer polling    │
+             └─────────────────────────┘   └───────────────────────────┘
+```
+
+### 1. Client-Side Registration
+
+```javascript
+import { periodicSyncClient } from 'nlpwa/sync/client'; // or 'nlpwa/sync/periodic/client'
+
+await periodicSyncClient.register('sync-feed', {
+  minInterval: 12 * 60 * 60 * 1000, // 12 hours
+  onSync: async () => {
+    // Progressive fallback callback (executed when native periodicSync is not supported)
+    await refreshFeed();
+  },
+});
+```
+
+### 2. Service Worker Handler
+
+```javascript
+import { PeriodicSyncPlugin } from 'nlpwa/sync';
+
+const periodicSync = new PeriodicSyncPlugin({
+  tags: {
+    'sync-feed': async (event) => {
+      const res = await fetch('/api/feed');
+      const cache = await caches.open('feed-cache');
+      await cache.put('/api/feed', res);
+    },
+  },
+});
+
+initSW({
+  plugins: [periodicSync],
+});
+```
+
+### 3. Automated Periodic Queue Draining
+
+`BackgroundSyncPlugin` supports optional `periodicDrain: true` to automatically drain and replay stagnant offline mutation queues in the background:
+
+```javascript
+new BackgroundSyncPlugin({
+  queueName: 'form-mutations',
+  periodicDrain: true, // Replays queue periodically when browser grants background execution
+});
+```
+

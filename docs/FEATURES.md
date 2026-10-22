@@ -308,7 +308,8 @@ NLPWA's Service Worker engine is designed as an ultra-lightweight micro-kernel (
 |---|---|---|---|
 | **Core SW** | `nlpwa/sw` | ~4 KB | Offline routing, caching strategies, atomic OTA updater |
 | **Core Client** | `nlpwa/client` | ~3 KB | Registration, update prompts, reactive state, tab bus |
-| **Background Sync** | `nlpwa/sync` | ~3 KB | Offline POST/PUT queue, automatic replay, dead-letter store |
+| **Background Sync & Periodic Sync** | `nlpwa/sync` | ~3.5 KB | Offline POST/PUT queue, dead-letter store & scheduled tasks |
+| **Web Push** | `nlpwa/push` | ~1.5 KB | Web Push subscriptions, VAPID conversion & action button routing |
 | **Web Share Target** | `nlpwa/share` | ~1.5 KB | OS share sheet listener, FIFO payload queue, size protection |
 | **OS App Badging** | `nlpwa/badge` | ~1 KB | App icon badge counter, auto-clear on push notification click |
 | **Background Fetch** | `nlpwa/bg-fetch` | ~1.5 KB | Large asset background downloads with OS progress indicators |

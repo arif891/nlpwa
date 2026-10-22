@@ -9,7 +9,8 @@ NLPWA features a modular, zero-dependency plugin architecture. You can attach pl
 Detailed documentation for the plugin system and all official plugins is organized in the [`docs/plugins/`](plugins/README.md) directory:
 
 - 🔌 [**Plugin Architecture & Lifecycle Hooks**](plugins/README.md) — How hooks work, request/response interception, and authoring custom plugins.
-- 🔄 [**Background Sync (`nlpwa/sync`)**](plugins/SYNC.md) — Offline mutation queueing with FIFO replay, dead-letter store, and cross-browser fallbacks.
+- 🔄 [**Background Sync & Periodic Sync (`nlpwa/sync`)**](plugins/SYNC.md) — Offline mutation queueing with FIFO replay, dead-letter store, and periodic background tasks with progressive fallbacks.
+- 🔔 [**Web Push (`nlpwa/push`)**](plugins/PUSH.md) — Web Push subscription management, VAPID key conversion, and interactive notification routing.
 - 📥 [**Background Fetch (`nlpwa/bg-fetch`)**](plugins/BG-FETCH.md) — Background large-asset downloads & uploads with OS progress bars, URL detection, and IDB streaming.
 - 📲 [**Web Share Target (`nlpwa/share`)**](plugins/SHARE.md) — Native share sheet integration and offline media hydration.
 - 🏷️ [**OS App Badging (`nlpwa/badge`)**](plugins/BADGE.md) — Application icon counter control and push notification clearance.

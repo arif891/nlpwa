@@ -286,6 +286,71 @@ export default async () => {
     },
     plugins,
   },
+
+  // ── Push Plugin: ES module ────────────────────────────────────────────────
+  {
+    input: 'src/plugins/push/index.js',
+    output: {
+      file:    'out/plugins/push.js',
+      format:  'es',
+      banner:  '/* NLPWA Web Push Plugin (module) — https://github.com/arif891/nlpwa */',
+    },
+    plugins,
+  },
+  {
+    input: 'src/plugins/push/client.js',
+    output: [
+      {
+        file:    'out/plugins/push.client.esm.js',
+        format:  'es',
+        banner:  '/* NLPWA Push Client (module) — https://github.com/arif891/nlpwa */',
+      },
+      {
+        file:    'out/plugins/push.client.js',
+        format:  'iife',
+        name:    'NLPWAPushClient',
+        banner:  '/* NLPWA Push Client (standalone) — https://github.com/arif891/nlpwa */',
+        exports: 'named',
+      },
+    ],
+    plugins,
+  },
+  {
+    input: 'src/plugins/push/sw.js',
+    output: {
+      file:    'out/plugins/push.sw.js',
+      format:  'iife',
+      name:    'NLPWAPushSW',
+      banner:  '/* NLPWA Push SW (standalone) — https://github.com/arif891/nlpwa */',
+      exports: 'named',
+    },
+    plugins,
+  },
+
+  // ── Periodic Sync subpath: ES module & standalone ─────────────────────────
+  {
+    input: 'src/plugins/sync/periodic.js',
+    output: [
+      {
+        file:    'out/plugins/sync.periodic.js',
+        format:  'es',
+        banner:  '/* NLPWA Periodic Sync Plugin (module) — https://github.com/arif891/nlpwa */',
+      },
+      {
+        file:    'out/plugins/sync.periodic.client.esm.js',
+        format:  'es',
+        banner:  '/* NLPWA Periodic Sync Client (module) — https://github.com/arif891/nlpwa */',
+      },
+      {
+        file:    'out/plugins/sync.periodic.client.js',
+        format:  'iife',
+        name:    'NLPWAPeriodicSyncClient',
+        banner:  '/* NLPWA Periodic Sync Client (standalone) — https://github.com/arif891/nlpwa */',
+        exports: 'named',
+      },
+    ],
+    plugins,
+  },
 ];
 };
 

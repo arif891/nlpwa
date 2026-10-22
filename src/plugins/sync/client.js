@@ -355,3 +355,15 @@ export class SyncClient {
 }
 
 export const syncClient = new SyncClient();
+
+export {
+  isPeriodicSyncSupported,
+  getPeriodicSyncPermission,
+  registerPeriodicSync,
+  unregisterPeriodicSync,
+  getPeriodicSyncTags,
+  PeriodicSyncClient,
+  periodicSyncClient,
+  PERIODIC_SYNC_CONSTANTS,
+  PERIODIC_SYNC_STRATEGIES,
+} from './periodic.js';

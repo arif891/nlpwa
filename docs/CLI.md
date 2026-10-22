@@ -124,7 +124,8 @@ npx nlpwa add sync --dir ./public
 ```
 
 **Available Plugins:**
-- `sync` — Background Sync offline mutation queue (`plugins/sync.sw.js`, `plugins/sync.client.js`).
+- `sync` — Background Sync offline mutation queue & periodic sync (`plugins/sync.sw.js`, `plugins/sync.client.js`).
+- `push` — Web Push notification subscription & action routing (`plugins/push.sw.js`, `plugins/push.client.js`).
 - `share` — Web Share Target listener and FIFO queue (`plugins/share.sw.js`, `plugins/share.client.js`).
 - `badge` — OS App Icon Badging API (`plugins/badge.sw.js`, `plugins/badge.client.js`).
 - `bg-fetch` — Background Fetch API wrapper (`plugins/bg-fetch.sw.js`, `plugins/bg-fetch.client.js`).

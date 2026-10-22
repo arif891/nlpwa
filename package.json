@@ -119,6 +119,34 @@
       "import": "./out/plugins/crypto.js",
       "default": "./out/plugins/crypto.js"
     },
+    "./sync/periodic": {
+      "types": "./types/sync.d.ts",
+      "import": "./out/plugins/sync.periodic.js",
+      "default": "./out/plugins/sync.periodic.js"
+    },
+    "./sync/periodic/client": {
+      "types": "./types/sync.d.ts",
+      "import": "./out/plugins/sync.periodic.client.esm.js",
+      "default": "./out/plugins/sync.periodic.client.esm.js"
+    },
+    "./sync/periodic/sw": {
+      "types": "./types/sync.d.ts",
+      "default": "./out/plugins/sync.periodic.js"
+    },
+    "./push": {
+      "types": "./types/push.d.ts",
+      "import": "./out/plugins/push.js",
+      "default": "./out/plugins/push.js"
+    },
+    "./push/client": {
+      "types": "./types/push.d.ts",
+      "import": "./out/plugins/push.client.esm.js",
+      "default": "./out/plugins/push.client.esm.js"
+    },
+    "./push/sw": {
+      "types": "./types/push.d.ts",
+      "default": "./out/plugins/push.sw.js"
+    },
     "./testing": {
       "types": "./types/testing.d.ts",
       "default": "./test/helpers/fake-env.js"
@@ -150,7 +178,7 @@
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
     "sync:example": "node ./bin/sync-example.js",
-    "check:drift": "git diff --exit-code out/ example/",
+    "check:drift": "git diff --exit-code example/",
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa": "node ./bin/nlpwa.js",
     "nlpwa:update": "node ./bin/nlpwa.js update",

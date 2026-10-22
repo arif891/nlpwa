@@ -20,8 +20,15 @@ export class BackgroundSyncPlugin {
     this.syncTag = `nlpwa-sync:${queueName}`;
     this.methods = new Set(queueOptions.methods || ['POST', 'PUT', 'PATCH', 'DELETE']);
     this.allMethods = Boolean(queueOptions.allMethods);
+    this.periodicDrain = Boolean(queueOptions.periodicDrain);
 
     this._bindServiceWorkerEvents();
+  }
+
+  onPeriodicSync(event) {
+    if (this.periodicDrain && (event.tag === `${this.syncTag}:periodic` || event.tag === 'nlpwa-sync:periodic')) {
+      event.waitUntil(this.replay());
+    }
   }
 
   _bindServiceWorkerEvents() {
@@ -244,3 +251,5 @@ export class BackgroundSyncPlugin {
     }
   }
 }
+
+export { PeriodicSyncPlugin } from './periodic.js';

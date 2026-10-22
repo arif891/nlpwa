@@ -288,9 +288,9 @@ test('blocked versions: client block expires after TTL', async () => {
   setupEnv(() => new Response(''));
   resetStoreMemo();
 
-  await blockVersion('9.9.9', 'Temporary ban', { ttlMs: 30 });
+  await blockVersion('9.9.9', 'Temporary ban', { ttlMs: 150 });
   assert.equal(await isVersionBlocked('9.9.9'), true);
 
-  await new Promise((r) => setTimeout(r, 45));
+  await new Promise((r) => setTimeout(r, 220));
   assert.equal(await isVersionBlocked('9.9.9'), false, 'block expired after TTL');
 });

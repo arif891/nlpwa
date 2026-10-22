@@ -47,4 +47,34 @@ export class SyncQueue {
   static clearAll(): Promise<void>;
 }
 
+export class PeriodicSyncPlugin {
+  constructor(options?: {
+    tags?: Record<string, (event: any) => Promise<any> | void>;
+    onSync?: (event: any) => Promise<any> | void;
+  });
+  on(tag: string, handler: (event: any) => Promise<any> | void): this;
+  onPeriodicSync(event: any): void;
+}
+
+export function isPeriodicSyncSupported(): boolean;
+export function getPeriodicSyncPermission(): Promise<string>;
+export function registerPeriodicSync(tag: string, options?: {
+  minInterval?: number;
+  onSync?: () => Promise<void> | void;
+  allowFallback?: boolean;
+  registration?: ServiceWorkerRegistration;
+}): Promise<{ registered: boolean; strategy: 'native' | 'fallback' | 'none'; tag: string; minInterval: number }>;
+export function unregisterPeriodicSync(tag: string, options?: { registration?: ServiceWorkerRegistration }): Promise<boolean>;
+export function getPeriodicSyncTags(options?: { registration?: ServiceWorkerRegistration }): Promise<string[]>;
+
+export class PeriodicSyncClient {
+  isSupported(): boolean;
+  getPermission(): Promise<string>;
+  register(tag: string, options?: any): Promise<any>;
+  unregister(tag: string, options?: any): Promise<boolean>;
+  getTags(options?: any): Promise<string[]>;
+}
+
+export const periodicSyncClient: PeriodicSyncClient;
+
 export { SyncClient, syncClient } from './sync-client';

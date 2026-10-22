@@ -97,6 +97,29 @@ export const AVAILABLE_PLUGINS = {
       '   </script>',
     ],
   },
+  push: {
+    id: 'push',
+    name: 'Web Push Notifications',
+    description: 'Manages Web Push subscriptions, VAPID key conversion, and interactive notification routing',
+    files: [
+      { src: 'plugins/push.sw.js', dest: 'plugins/push.sw.js' },
+      { src: 'plugins/push.client.js', dest: 'plugins/push.client.js' },
+    ],
+    instructions: [
+      '1. In your Service Worker (sw.js):',
+      '   importScripts(\'/plugins/push.sw.js\');',
+      '   const push = new NLPWAPushSW.PushPlugin({ defaultUrl: \'/\' });',
+      '',
+      '2. In your web page (index.html):',
+      '   <script src="/client.js"></script>',
+      '   <script src="/plugins/push.client.js"></script>',
+      '   <script>',
+      '     NLPWAClient.register(\'/sw.js\');',
+      '     const { pushClient } = window.NLPWAPushClient;',
+      '     const sub = await pushClient.subscribe({ vapidPublicKey: \'YOUR_VAPID_PUBLIC_KEY\' });',
+      '   </script>',
+    ],
+  },
 };
 
 export async function cmdAdd(args) {

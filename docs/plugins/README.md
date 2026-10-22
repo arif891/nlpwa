@@ -59,13 +59,17 @@ class CustomPlugin {
     return request;
   }
 
-  // 7. Optional Push / Notification hooks
+  // 7. Optional Push & Background Sync hooks
   async onPush(event, payload) {
     // Handle incoming Web Push
   }
 
   async onNotificationClick(event) {
     // Handle notification interaction
+  }
+
+  async onPeriodicSync(event) {
+    // Handle scheduled background tasks
   }
 }
 ```
@@ -127,7 +131,8 @@ NLPWA provides zero-dependency, tree-shakeable official plugins:
 
 | Plugin | Export Path | Purpose | Documentation |
 |---|---|---|---|
-| **Background Sync** | `nlpwa/sync` | Offline mutation queueing with FIFO replay & dead-letter store | [SYNC.md](SYNC.md) |
+| **Background Sync & Periodic Sync** | `nlpwa/sync`, `nlpwa/sync/periodic` | Offline mutation queueing with FIFO replay, dead-letter store & periodic background tasks | [SYNC.md](SYNC.md) |
+| **Web Push** | `nlpwa/push` | Web Push subscription management, VAPID key conversion & action button routing | [PUSH.md](PUSH.md) |
 | **Background Fetch** | `nlpwa/bg-fetch` | Large file downloads & uploads with OS progress bars | [BG-FETCH.md](BG-FETCH.md) |
 | **Web Share Target** | `nlpwa/share` | Native mobile share sheet receiver with offline file hydration | [SHARE.md](SHARE.md) |
 | **OS App Badging** | `nlpwa/badge` | Desktop/mobile app icon badges & push notification clearing | [BADGE.md](BADGE.md) |

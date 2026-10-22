@@ -13,6 +13,7 @@ import {
 export { isUserEditing };
 
 let _activeUnsubscribe = null;
+let _isRegisteredOrRegistering = false;
 
 /**
  * Register the NLPWA Service Worker and set up update handling.
@@ -22,6 +23,12 @@ let _activeUnsubscribe = null;
  * @returns {Promise<{ registration: ServiceWorkerRegistration, unsubscribe: Function }|null>}
  */
 export async function register(swUrl = '/sw.js', options = {}) {
+  // If auto-registration is attempted but a registration is already active or in progress, do nothing
+  if (options._auto && _isRegisteredOrRegistering) {
+    return null;
+  }
+  _isRegisteredOrRegistering = true;
+
   if (_activeUnsubscribe) {
     try { _activeUnsubscribe(); } catch {}
     _activeUnsubscribe = null;
@@ -46,9 +53,11 @@ export async function register(swUrl = '/sw.js', options = {}) {
     registration = await navigator.serviceWorker.register(swUrl, regOptions);
     logger.log('[NLPWA] SW registered:', registration.scope);
   } catch (err) {
+    _isRegisteredOrRegistering = false;
     logger.error('[NLPWA] SW registration failed:', err);
     return null;
   }
+
 
   function checkReloadDeferral(version, reason) {
     const customDefer = typeof options.shouldDeferReload === 'function'
@@ -228,6 +237,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
     }
     if (_activeUnsubscribe === unsubscribe) {
       _activeUnsubscribe = null;
+      _isRegisteredOrRegistering = false;
     }
   };
 
@@ -242,10 +252,12 @@ export async function register(swUrl = '/sw.js', options = {}) {
  * @returns {Promise<boolean>} Resolves to true if unregistration succeeded
  */
 export async function unregister(scope) {
+  _isRegisteredOrRegistering = false;
   if (_activeUnsubscribe) {
     try { _activeUnsubscribe(); } catch {}
     _activeUnsubscribe = null;
   }
+
 
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return false;

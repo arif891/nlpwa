@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { isUserEditing, register, applyUpdate, unregister, getVersion, getStatus, onStagingProgress } from '../src/client/register.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
+
 
 test('isUserEditing: correctly identifies when user has focused input/editing fields', () => {
   // 1. undefined document
@@ -736,4 +739,131 @@ test('onStagingProgress: receives staging progress events', async () => {
     }
   }
 });
+
+test('register: auto-registration (_auto: true) does not unsubscribe or overwrite manual registration', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  try {
+    const swListeners = new Map();
+    let registerCount = 0;
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          async register(url) {
+            registerCount++;
+            return { scope: '/' };
+          },
+          addEventListener(event, fn) {
+            if (!swListeners.has(event)) swListeners.set(event, []);
+            swListeners.get(event).push(fn);
+          },
+          removeEventListener(event, fn) {
+            const list = swListeners.get(event) || [];
+            swListeners.set(event, list.filter(l => l !== fn));
+          },
+          controller: null,
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    let manualCallbackFired = false;
+    // Step 1: User calls register() manually (e.g. in inline script before DOMContentLoaded)
+    await register('/sw.js', {
+      onUpdateReady: () => {
+        manualCallbackFired = true;
+      },
+    });
+    assert.equal(registerCount, 1);
+
+    // Step 2: Deferred auto-register executes with _auto: true (e.g. upon DOMContentLoaded)
+    const autoResult = await register('/sw.js', { _auto: true });
+    assert.equal(autoResult, null, 'auto-register should return null and no-op');
+    assert.equal(registerCount, 1, 'auto-register should not re-register with SW');
+
+    // Step 3: Trigger UPDATE_READY and ensure manual callback is still intact!
+    const msgListeners = swListeners.get('message') || [];
+    for (const fn of msgListeners) {
+      fn({ data: { type: MESSAGE_TYPES.UPDATE_READY, version: '1.2.0' } });
+    }
+    assert.equal(manualCallbackFired, true, 'manual onUpdateReady was preserved');
+
+    // Step 4: Clean up
+    await unregister();
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+    if (origDocDesc) {
+      Object.defineProperty(globalThis, 'document', origDocDesc);
+    } else {
+      delete globalThis.document;
+    }
+  }
+});
+
+test('client standalone: auto-registers with derived subpath base from script src and does not match vendor-client.js', async () => {
+  const clientBundle = readFileSync(fileURLToPath(new URL('../out/client.js', import.meta.url)), 'utf8');
+
+  const registeredUrls = [];
+  const fakeNavigator = {
+    serviceWorker: {
+      async register(url, options) {
+        registeredUrls.push({ url, options });
+        return { scope: url.replace(/sw\.js$/, '') };
+      },
+      addEventListener() {},
+      removeEventListener() {},
+      controller: null,
+    },
+  };
+
+  const fakeDocument = {
+    readyState: 'complete',
+    currentScript: null, // Simulate deferred path where currentScript is null
+    querySelectorAll(selector) {
+      if (selector === 'script[src]') {
+        return [
+          { getAttribute: (attr) => attr === 'src' ? '/vendor/vendor-client.js' : null },
+          { getAttribute: (attr) => attr === 'src' ? '/my-subpath/client.js' : null, src: 'http://localhost/my-subpath/client.js' },
+        ];
+      }
+      return [];
+    },
+  };
+
+  const fakeWindow = {
+    location: { href: 'http://localhost/my-subpath/', origin: 'http://localhost' },
+    addEventListener() {},
+    removeEventListener() {},
+    document: fakeDocument,
+    navigator: fakeNavigator,
+  };
+
+  const { createContext, runInContext } = await import('node:vm');
+  const context = createContext({
+    window: fakeWindow,
+    document: fakeDocument,
+    navigator: fakeNavigator,
+    self: fakeWindow,
+    URL,
+    CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    console,
+  });
+
+
+  runInContext(clientBundle, context);
+
+  await new Promise(r => setTimeout(r, 50));
+
+  assert.equal(registeredUrls.length, 1);
+  assert.equal(registeredUrls[0].url, '/my-subpath/sw.js', 'derived subpath /my-subpath/sw.js correctly');
+});
+
+
 

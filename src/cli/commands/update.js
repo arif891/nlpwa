@@ -88,7 +88,7 @@ export async function cmdUpdate(args) {
     rawConfig.publicKey = derivedPublicKey;
     if (configPath) {
       syncSourceConfigPublicKey(configPath, derivedPublicKey);
-      console.log(`  ${c.dim}Source  :${c.reset} ${c.yellow}auto-synchronized publicKey into ${configPath}${c.reset}`);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Updated Source Config :${c.reset} ${c.cyan}${configPath}${c.reset} (added publicKey & verifyHashes: 'strict')`);
     }
   }
 
@@ -114,12 +114,13 @@ export async function cmdUpdate(args) {
     const syncedSwFiles = syncPublicKeyToSwFiles(swCandidates, effectivePublicKey);
     for (const swFile of syncedSwFiles) {
       const rel = relative(process.cwd(), swFile).replace(/\\/g, '/');
-      console.log(`  ${c.green}✓${c.reset} Synchronized publicKey into ${rel}`);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Updated Service Worker:${c.reset} ${c.cyan}${rel}${c.reset} (injected self.__NLPWA_PUBLIC_KEY)`);
     }
     if (syncedSwFiles.length === 0) {
       console.warn(`  ${c.yellow}! Warning: Manifest signing is active (publicKey configured), but no sw.js was found in ${targetDir} or workspace root to configure with publicKey.${c.reset}`);
     }
   }
+
 
   // 1. Collect tracked files and expand precache globs
   const startMs = Date.now();

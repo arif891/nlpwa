@@ -54,6 +54,14 @@ test('share plugin: ShareTargetPlugin intercepts share requests and stores data'
   assert.equal(isShareTargetRequest(req, { shareTarget: { action: '/share-post' } }), true);
   assert.equal(isShareTargetRequest(new Request('http://localhost:3000/other'), { shareTarget: { action: '/share-post' } }), false);
 
+  // Plugin array detection via explicit flag (immune to minified constructor.name)
+  assert.equal(isShareTargetRequest(req, { plugins: [plugin] }), true);
+  assert.equal(plugin.isShareTargetPlugin, true, 'ShareTargetPlugin must have isShareTargetPlugin flag');
+
+  // Must NOT falsely match an arbitrary third-party plugin having an action option
+  const arbitraryPlugin = { options: { action: '/share-post' } };
+  assert.equal(isShareTargetRequest(req, { plugins: [arbitraryPlugin] }), false, 'Must not falsely match unrelated plugin with action option');
+
   // Mock cache
   const stored = new Map();
   const mockCache = {

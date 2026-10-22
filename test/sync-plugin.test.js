@@ -417,5 +417,91 @@ test('sync plugin: standalone fetch listener catches failed mutations when not h
   assert.equal(await plugin.queue.size(), 1, 'Mutation queued in standalone mode');
 });
 
+test('sync queue: stripAuthHeaders option strips Authorization headers from IndexedDB', async () => {
+  const queue = new SyncQueue('strip-auth-q', { stripAuthHeaders: true });
+  const req = new Request('https://example.com/api/sensitive', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer secret-token-12345',
+      'Proxy-Authorization': 'Basic dXNlcjpwYXNz',
+      'X-Custom-Header': 'keep-me',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ item: 'data' }),
+  });
+
+  const id = await queue.push(req);
+  const items = await queue.getAll();
+  const stored = items.find((i) => i.id === id);
+
+  assert.ok(stored, 'Item must be stored in IDB');
+  const storedHeaders = new Headers(stored.headers);
+  assert.equal(storedHeaders.has('authorization'), false, 'Authorization header must be stripped');
+  assert.equal(storedHeaders.has('proxy-authorization'), false, 'Proxy-Authorization header must be stripped');
+  assert.equal(storedHeaders.get('x-custom-header'), 'keep-me', 'Other headers must be preserved');
+  assert.equal(storedHeaders.get('content-type'), 'application/json', 'Content-Type must be preserved');
+});
+
+test('sync queue: replayAll can inject/re-attach fresh credentials at replay time', async () => {
+  const queue = new SyncQueue('reauth-replay-q', { stripAuthHeaders: true });
+  const req = new Request('https://example.com/api/resource', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer old-expired-token',
+    },
+  });
+
+  await queue.push(req);
+
+  let capturedAuth = null;
+  const result = await queue.replayAll({
+    headers: {
+      'Authorization': 'Bearer fresh-valid-token-999',
+    },
+    fetchImpl: async (r) => {
+      capturedAuth = r.headers.get('authorization');
+      return new Response('ok', { status: 200 });
+    },
+  });
+
+  assert.equal(result.successCount, 1);
+  assert.equal(capturedAuth, 'Bearer fresh-valid-token-999', 'Fresh authorization header must be injected at replay time');
+});
+
+test('sync queue: retryAuthRequired updates stored record with fresh authorization headers', async () => {
+  const queue = new SyncQueue('update-auth-q');
+  const req = new Request('https://example.com/api/action', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer expired-token' },
+  });
+
+  const id = await queue.push(req);
+
+  // Replay fails with 401
+  await queue.replayAll({
+    fetchImpl: async () => new Response('Unauthorized', { status: 401 }),
+  });
+
+  const authItems = await queue.getAuthRequired();
+  assert.equal(authItems.length, 1);
+  assert.equal(authItems[0].authRequired, true);
+
+  // User logs in and passes fresh token to retryAuthRequired
+  await queue.retryAuthRequired(id, {
+    headers: { 'Authorization': 'Bearer refreshed-token-777' },
+  });
+
+  let replayedAuth = null;
+  const result = await queue.replayAll({
+    fetchImpl: async (r) => {
+      replayedAuth = r.headers.get('authorization');
+      return new Response('ok', { status: 200 });
+    },
+  });
+
+  assert.equal(result.successCount, 1);
+  assert.equal(replayedAuth, 'Bearer refreshed-token-777', 'Replayed request must use the refreshed token attached on retryAuthRequired');
+});
+
 
 

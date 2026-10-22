@@ -15,6 +15,7 @@ export class BackgroundSyncPlugin {
     const queueOptions = typeof options === 'object' ? options : {};
 
     this.queueName = queueName;
+    this.stripAuthHeaders = Boolean(queueOptions.stripAuthHeaders);
     this.queue = new SyncQueue(queueName, queueOptions);
     this.syncTag = `nlpwa-sync:${queueName}`;
     this.methods = new Set(queueOptions.methods || ['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -58,7 +59,8 @@ export class BackgroundSyncPlugin {
         };
 
         if (type === SYNC_MESSAGE_TYPES.SYNC_REPLAY) {
-          const promise = this.replay()
+          const replayOpts = event.data?.headers ? { headers: event.data.headers } : {};
+          const promise = this.replay(replayOpts)
             .then((result) => reply(SYNC_MESSAGE_TYPES.SYNC_REPLAY_RESULT, result))
             .catch((err) => reply(SYNC_MESSAGE_TYPES.SYNC_REPLAY_RESULT, null, err));
 
@@ -190,12 +192,15 @@ export class BackgroundSyncPlugin {
 
   /**
    * Replay all queued items in this queue.
+   * @param {Object} [options]
    * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number }>}
    */
-  async replay() {
+  async replay(options = {}) {
     return this.queue.replayAll({
       fetchImpl: (req) => fetch(req),
+      ...options,
       onReplaySuccess: (item, response) => {
+        if (options.onReplaySuccess) options.onReplaySuccess(item, response);
         this._notifyClients({
           type: 'NLPWA_SYNC_ITEM_SUCCESS',
           queue: this.queueName,

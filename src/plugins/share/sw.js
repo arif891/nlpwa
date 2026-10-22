@@ -21,7 +21,7 @@ export function isShareTargetRequest(request, config = {}) {
   let shareConfig = config.shareTarget || config.share_target;
   if (!shareConfig && Array.isArray(config.plugins)) {
     const plugin = config.plugins.find(
-      (p) => p && (p instanceof ShareTargetPlugin || p.isShareTargetPlugin || p.constructor?.name === 'ShareTargetPlugin' || p.options?.action)
+      (p) => p && (p.isShareTargetPlugin || p.name === 'ShareTargetPlugin' || p instanceof ShareTargetPlugin)
     );
     if (plugin) {
       shareConfig = plugin.options || {};
@@ -266,6 +266,8 @@ export async function getLatestSharedData() {
  */
 export class ShareTargetPlugin {
   constructor(options = {}) {
+    this.name = 'ShareTargetPlugin';
+    this.isShareTargetPlugin = true;
     this.options = options;
   }
 

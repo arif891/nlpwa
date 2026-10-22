@@ -32,7 +32,7 @@ export function handleFetch(event) {
         let shareConfig = conf.shareTarget || conf.share_target;
         if (!shareConfig && Array.isArray(conf.plugins)) {
           const plugin = conf.plugins.find(
-            (p) => p && (p.isShareTargetPlugin || p.constructor?.name === 'ShareTargetPlugin' || p.options?.action)
+            (p) => p && (p.isShareTargetPlugin || p.name === 'ShareTargetPlugin')
           );
           if (plugin) {
             shareConfig = plugin.options || {};

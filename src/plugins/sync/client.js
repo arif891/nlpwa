@@ -108,14 +108,14 @@ export class SyncClient {
    * Trigger replay of a queue.
    *
    * @param {string} [queueName]
-   * @param {{ timeoutMs?: number }} [options]
+   * @param {{ timeoutMs?: number, headers?: HeadersInit, getHeaders?: Function }} [options]
    * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number }>}
    */
-  async replay(queueName = this.defaultQueue, { timeoutMs = 15000 } = {}) {
+  async replay(queueName = this.defaultQueue, { timeoutMs = 15000, headers, getHeaders } = {}) {
     try {
       return await requestFromSW(
         SYNC_MESSAGE_TYPES.SYNC_REPLAY,
-        { queue: queueName },
+        { queue: queueName, headers },
         SYNC_MESSAGE_TYPES.SYNC_REPLAY_RESULT,
         timeoutMs
       );
@@ -123,6 +123,8 @@ export class SyncClient {
       // Fallback: Replay directly via local queue if SW is not responsive
       const localQueue = new SyncQueue(queueName);
       return await localQueue.replayAll({
+        headers,
+        getHeaders,
         onReplaySuccess: (item, res) => this._emit('success', { queue: queueName, id: item.id, url: item.url, status: res.status }),
         onReplayFail: (item, err) => this._emit('failed', { queue: queueName, id: item.id, url: item.url, error: err?.message || err }),
       });
@@ -259,11 +261,13 @@ export class SyncClient {
    *
    * @param {string} [queueName]
    * @param {number} [id]
+   * @param {Object} [options]
+   * @param {HeadersInit} [options.headers] Optional fresh headers (e.g. refreshed Authorization token)
    * @returns {Promise<number>}
    */
-  async retryAuthRequired(queueName = this.defaultQueue, id) {
+  async retryAuthRequired(queueName = this.defaultQueue, id, options = {}) {
     const localQueue = new SyncQueue(queueName);
-    return localQueue.retryAuthRequired(id);
+    return localQueue.retryAuthRequired(id, options);
   }
 
   /**

@@ -70,12 +70,21 @@ export async function withStore(mode, callback) {
  *
  * @param {Request} request
  * @param {Object} [metadata]
+ * @param {Object} [options]
+ * @param {boolean} [options.stripAuthHeaders=false] Strip Authorization and Proxy-Authorization headers
  * @returns {Promise<Object>}
  */
-export async function serializeRequest(request, metadata = {}) {
+export async function serializeRequest(request, metadata = {}, options = {}) {
+  const stripAuth = options.stripAuthHeaders ?? metadata.stripAuthHeaders ?? false;
   const headers = [];
   if (request.headers && typeof request.headers.forEach === 'function') {
-    request.headers.forEach((val, key) => headers.push([key, val]));
+    request.headers.forEach((val, key) => {
+      const lower = key.toLowerCase();
+      if (stripAuth && (lower === 'authorization' || lower === 'proxy-authorization')) {
+        return;
+      }
+      headers.push([key, val]);
+    });
   }
 
   let body = null;
@@ -106,12 +115,18 @@ export async function serializeRequest(request, metadata = {}) {
  * Deserialize a stored record back into a Fetch Request.
  *
  * @param {Object} record
+ * @param {Object} [options]
+ * @param {HeadersInit} [options.headers] Override or dynamic headers to merge/re-attach at replay time
  * @returns {Request}
  */
-export function deserializeRequest(record) {
+export function deserializeRequest(record, options = {}) {
   const headers = new Headers(record.headers || []);
   if (record.idempotencyKey && !headers.has('idempotency-key') && !headers.has('x-idempotency-key')) {
     headers.set('X-Idempotency-Key', record.idempotencyKey);
+  }
+  if (options.headers) {
+    const extraHeaders = new Headers(options.headers);
+    extraHeaders.forEach((val, key) => headers.set(key, val));
   }
   const init = {
     method: record.method || 'POST',

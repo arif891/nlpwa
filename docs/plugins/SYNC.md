@@ -138,12 +138,48 @@ await syncClient.clearDeadLetter('form-mutations');
 
 ---
 
-## Security Best Practices & Clear-On-Logout
+## Security Considerations: Credentials, Token Expiry & Re-attachment
 
 > [!WARNING]
-> **Plaintext Storage Notice:** Queued offline requests—including request bodies and request headers such as `Authorization: Bearer <token>` or session cookies—are persisted in browser IndexedDB (`sync_requests`) for up to `maxRetentionMs` (default 24 hours).
-> 
-> On shared devices or multi-user terminals, you **must** clear the offline mutation queue when the user logs out:
+> **Plaintext Storage Notice & Token Expiration:** By default, queued offline requests—including request bodies and request headers such as `Authorization: Bearer <token>` or session headers—are persisted in browser IndexedDB (`sync_requests`) for up to `maxRetentionMs` (default 24 hours).
+>
+> This introduces two specific considerations:
+> 1. **Token Expiration / Invalidation:** Bearer tokens frequently expire before the 24-hour retention window ends. When replayed with an expired token, the server returns 401/403 or redirects to login. NLPWA detects this and sets `authRequired: true`, holding the item safely without discarding the user's offline work.
+> 2. **Shared Terminals & Credential Persistence:** On shared devices, storing Authorization headers in IndexedDB exposes tokens to local extraction.
+
+### Mitigation Strategies
+
+#### 1. Strip Auth Headers at Rest (`stripAuthHeaders: true`)
+If you prefer not to store credentials in IndexedDB, configure `stripAuthHeaders: true` on your `BackgroundSyncPlugin` or `SyncQueue`. This strips `Authorization` and `Proxy-Authorization` headers before persisting records to IndexedDB:
+
+```javascript
+new BackgroundSyncPlugin({
+  queueName: 'form-mutations',
+  stripAuthHeaders: true, // Strips Authorization headers from IDB storage
+})
+```
+
+#### 2. Re-attach Fresh Credentials at Replay Time
+When replaying requests (either on reconnect or after user re-authentication), pass fresh headers via `replay()` or `retryAuthRequired()`:
+
+```javascript
+// Replay with refreshed token
+await syncClient.replay('form-mutations', {
+  headers: {
+    'Authorization': `Bearer ${freshAuthToken}`,
+  },
+});
+
+// Or re-attach new credentials to authRequired items after login:
+await syncClient.retryAuthRequired('form-mutations', item.id, {
+  headers: {
+    'Authorization': `Bearer ${freshAuthToken}`,
+  },
+});
+```
+
+#### 3. Purge Queues on User Logout (`clearOnLogout()`)
+On shared devices or multi-user applications, always clear the offline mutation queue when the user logs out:
 
 ```javascript
 // In your application's logout / sign-out handler:

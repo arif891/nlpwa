@@ -11,6 +11,7 @@ export class SyncQueue {
     this.name = name;
     this.maxRetentionMs = options.maxRetentionMs ?? 24 * 60 * 60 * 1000;
     this.maxRetries = options.maxRetries ?? 5;
+    this.stripAuthHeaders = Boolean(options.stripAuthHeaders);
   }
 
   /**
@@ -24,6 +25,7 @@ export class SyncQueue {
       queueName: this.name,
       maxRetries: this.maxRetries,
       maxRetentionMs: this.maxRetentionMs,
+      stripAuthHeaders: this.stripAuthHeaders,
       ...extraMeta,
     });
 
@@ -147,9 +149,12 @@ export class SyncQueue {
   /**
    * Reset the authRequired flag on an item or all items so they can be replayed after login.
    * @param {number} [id] If omitted, resets all authRequired items in this queue.
+   * @param {Object} [options]
+   * @param {HeadersInit} [options.headers] Optional fresh headers to attach (e.g. renewed Authorization token)
    * @returns {Promise<number>} Number of reset items
    */
-  async retryAuthRequired(id) {
+  async retryAuthRequired(id, options = {}) {
+    const newHeaders = options?.headers ? new Headers(options.headers) : null;
     return withStore('readwrite', (store) => {
       return new Promise((resolve, reject) => {
         const index = store.index('queueName');
@@ -159,8 +164,16 @@ export class SyncQueue {
           let count = 0;
           for (const item of items) {
             if (item.authRequired && (id === undefined || item.id === id)) {
+              let updatedHeaders = item.headers;
+              if (newHeaders) {
+                const h = new Headers(item.headers || []);
+                newHeaders.forEach((v, k) => h.set(k, v));
+                updatedHeaders = [];
+                h.forEach((v, k) => updatedHeaders.push([k, v]));
+              }
               store.put({
                 ...item,
+                headers: updatedHeaders,
                 authRequired: false,
                 retryCount: 0,
               });
@@ -243,15 +256,21 @@ export class SyncQueue {
    * @param {(item: Object, response: Response) => void} [options.onReplaySuccess]
    * @param {(item: Object, error: Error|Response) => void} [options.onReplayFail]
    * @param {boolean} [options.includeAuthRequired=false] Whether to retry items flagged authRequired
+   * @param {HeadersInit} [options.headers] Extra/fresh headers to attach to replayed requests
+   * @param {(item: Object) => Promise<HeadersInit>|HeadersInit} [options.getHeaders] Dynamic header provider
    * @returns {Promise<{ successCount: number, failedCount: number, remainingCount: number }>}
    */
-  async replayAll({ fetchImpl = globalThis.fetch, onReplaySuccess, onReplayFail, includeAuthRequired = false } = {}) {
+  async replayAll({ fetchImpl = globalThis.fetch, onReplaySuccess, onReplayFail, includeAuthRequired = false, headers, getHeaders } = {}) {
     const items = await this.getAll({ excludeAuthRequired: !includeAuthRequired });
     let successCount = 0;
     let failedCount = 0;
 
     for (const item of items) {
-      const req = deserializeRequest(item);
+      let dynamicHeaders = headers;
+      if (typeof getHeaders === 'function') {
+        dynamicHeaders = await getHeaders(item);
+      }
+      const req = deserializeRequest(item, dynamicHeaders ? { headers: dynamicHeaders } : {});
       try {
         const response = await fetchImpl(req);
 

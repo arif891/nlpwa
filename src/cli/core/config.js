@@ -96,3 +96,107 @@ export function syncSourceConfigVersion(configPath, newVersion) {
     // Ignore write failure in read-only environment
   }
 }
+
+/**
+ * Update publicKey in nlpwa.config.js, nlpwa.config.mjs, or nlpwa.config.json.
+ *
+ * @param {string} configPath
+ * @param {string} publicKey
+ */
+export function syncSourceConfigPublicKey(configPath, publicKey) {
+  if (!configPath || !existsSync(configPath) || !publicKey) return;
+
+  try {
+    const content = readFileSync(configPath, 'utf8');
+    if (configPath.endsWith('.json')) {
+      const parsed = JSON.parse(content);
+      parsed.publicKey = publicKey;
+      parsed.verifyHashes = 'strict';
+      writeFileSync(configPath, JSON.stringify(parsed, null, 2), 'utf8');
+    } else {
+      let updated = content;
+      if (/['"]?publicKey['"]?\s*:\s*['"][^'"]*['"]/m.test(updated)) {
+        updated = updated.replace(
+          /(['"]?publicKey['"]?\s*:\s*['"])([^'"]+)(['"])/m,
+          `$1${publicKey}$3`
+        );
+      } else {
+        // Insert right after export default { or module.exports = {
+        updated = updated.replace(
+          /(export\s+default\s*\{|module\.exports\s*=\s*\{)/m,
+          `$1\n  publicKey: '${publicKey}',\n  verifyHashes: 'strict',`
+        );
+      }
+
+      // Also ensure verifyHashes is set to 'strict' if already present
+      if (/['"]?verifyHashes['"]?\s*:\s*['"][^'"]*['"]/m.test(updated)) {
+        updated = updated.replace(
+          /(['"]?verifyHashes['"]?\s*:\s*['"])([^'"]+)(['"])/m,
+          `$1strict$3`
+        );
+      }
+
+      if (updated !== content) {
+        writeFileSync(configPath, updated, 'utf8');
+      }
+    }
+  } catch {
+    // Ignore write failure in read-only environment
+  }
+}
+
+/**
+ * Injects or updates `self.__NLPWA_PUBLIC_KEY = '...'` in a service worker file.
+ *
+ * @param {string} swPath
+ * @param {string} publicKey
+ * @returns {boolean} True if successfully injected or updated
+ */
+export function injectPublicKeyToSwFile(swPath, publicKey) {
+  if (!swPath || !existsSync(swPath) || !publicKey) return false;
+
+  try {
+    const content = readFileSync(swPath, 'utf8');
+    const keyAssignment = `self.__NLPWA_PUBLIC_KEY = '${publicKey}';\n`;
+    const regex = /^self\.__NLPWA_PUBLIC_KEY\s*=\s*['"][^'"]*['"];?\r?\n?/m;
+
+    let updated;
+    if (regex.test(content)) {
+      updated = content.replace(regex, keyAssignment);
+    } else {
+      updated = keyAssignment + content;
+    }
+
+    if (updated !== content) {
+      writeFileSync(swPath, updated, 'utf8');
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Synchronize public key to an array of service worker candidate paths.
+ *
+ * @param {string[]} candidates
+ * @param {string} publicKey
+ * @returns {string[]} List of modified sw file paths
+ */
+export function syncPublicKeyToSwFiles(candidates, publicKey) {
+  if (!Array.isArray(candidates) || !publicKey) return [];
+  const modified = [];
+  const seen = new Set();
+
+  for (const swPath of candidates) {
+    if (!swPath || seen.has(swPath)) continue;
+    seen.add(swPath);
+    if (existsSync(swPath)) {
+      const ok = injectPublicKeyToSwFile(swPath, publicKey);
+      if (ok) modified.push(swPath);
+    }
+  }
+
+  return modified;
+}
+

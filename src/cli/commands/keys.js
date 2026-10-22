@@ -1,7 +1,12 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, readFileSync, appendFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, relative } from 'node:path';
 import { c, printBanner } from '../ui/terminal.js';
+import {
+  findConfigFile,
+  syncSourceConfigPublicKey,
+  syncPublicKeyToSwFiles,
+} from '../core/config.js';
 
 export async function cmdGenerateKeys(args) {
   printBanner();
@@ -27,7 +32,7 @@ export async function cmdGenerateKeys(args) {
   console.log(`  ${c.cyan}NLPWA_PRIVATE_KEY="${privateKeyBase64}"${c.reset}`);
   console.log(`  ${c.dim}(NLPWA_SIGNING_KEY is also accepted as an alias)${c.reset}\n`);
 
-  console.log(`${c.bold}  Public Key${c.reset} ${c.green}(Public — add to nlpwa.config.js):${c.reset}`);
+  console.log(`${c.bold}  Public Key${c.reset} ${c.green}(Public — embedded in nlpwa.config.js and sw.js):${c.reset}`);
   console.log(`  ${c.cyan}publicKey: '${rawPublicBase64}',${c.reset}\n`);
 
   console.log(`  ${c.dim}Alternative formats:${c.reset}`);
@@ -62,10 +67,65 @@ export async function cmdGenerateKeys(args) {
     }
   }
 
+  const shouldSyncConfig =
+    args.syncConfig !== false &&
+    args['sync-config'] !== false &&
+    args.writeConfig !== false &&
+    args['write-config'] !== false &&
+    args.writeEnv !== false &&
+    args['write-env'] !== false &&
+    !args.noWriteConfig &&
+    !args['no-write-config'] &&
+    !args.noSyncConfig &&
+    !args['no-sync-config'] &&
+    args.config !== false;
+
+  // Auto-sync publicKey to nlpwa.config.js if config file exists
+  let configSynced = false;
+  if (shouldSyncConfig) {
+    try {
+      const configPath = findConfigFile(args.config);
+      if (configPath) {
+        syncSourceConfigPublicKey(configPath, rawPublicBase64);
+        console.log(`  ${c.green}+ Synchronized publicKey into ${configPath}${c.reset}`);
+        configSynced = true;
+      }
+    } catch {}
+  }
+
+  const shouldSyncSw =
+    args.syncSw !== false &&
+    args['sync-sw'] !== false &&
+    args.writeEnv !== false &&
+    args['write-env'] !== false &&
+    !args.noSyncSw &&
+    !args['no-sync-sw'];
+
+  // Auto-sync publicKey into existing sw.js files
+  const targetDir = resolve(args.dir ?? (existsSync('./dist') ? './dist' : '.'));
+  const swCandidates = [
+    resolve(targetDir, 'sw.js'),
+    resolve(process.cwd(), 'sw.js'),
+    resolve(process.cwd(), 'public', 'sw.js'),
+  ];
+  const modifiedSw = shouldSyncSw ? syncPublicKeyToSwFiles(swCandidates, rawPublicBase64) : [];
+  for (const swFile of modifiedSw) {
+    const rel = relative(process.cwd(), swFile).replace(/\\/g, '/');
+    console.log(`  ${c.green}+ Injected publicKey into ${rel}${c.reset}`);
+  }
+  if (configSynced || modifiedSw.length > 0) {
+    console.log('');
+  }
+
+
   console.log(`${c.bold}  Next steps:${c.reset}`);
-  console.log(`  1. Save ${c.cyan}NLPWA_PRIVATE_KEY${c.reset} to your local .env.nlpwa or CI/CD secret manager.`);
-  console.log(`  2. Add ${c.cyan}publicKey: '${rawPublicBase64}'${c.reset} to your nlpwa.config.js.`);
-  console.log(`  3. Run ${c.cyan}nlpwa update${c.reset} or build — your manifests will be signed automatically.\n`);
+  console.log(`  1. Keep ${c.cyan}NLPWA_PRIVATE_KEY${c.reset} in local .env.nlpwa (already protected in .gitignore) or CI/CD secrets.`);
+  if (!configSynced) {
+    console.log(`  2. Add ${c.cyan}publicKey: '${rawPublicBase64}'${c.reset} to your nlpwa.config.js.`);
+    console.log(`  3. Run ${c.cyan}nlpwa update${c.reset} — manifests and sw.js will be synced and signed automatically.\n`);
+  } else {
+    console.log(`  2. Run ${c.cyan}nlpwa update${c.reset} — manifests will be signed with Ed25519 and verified by sw.js.\n`);
+  }
 
   return {
     privateKeyBase64,
@@ -75,3 +135,4 @@ export async function cmdGenerateKeys(args) {
     spkiPem,
   };
 }
+

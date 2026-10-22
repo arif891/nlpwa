@@ -55,6 +55,9 @@ Scaffolds the drop-in NLPWA engine, starter configuration, W3C Web App Manifest,
 # Initialize in current directory
 npx nlpwa init
 
+# Initialize with cryptographic Ed25519 manifest signing enabled out-of-the-box
+npx nlpwa init --sign
+
 # Target a public or dist directory with custom metadata
 npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 ```
@@ -63,12 +66,14 @@ npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 - `sw.js` — Standalone, pre-bundled Service Worker engine.
 - `client.js` — Standalone, pre-bundled client runtime SDK (defining `window.NLPWAClient`).
 - `nlpwa.config.js` — Starter configuration pre-populated with shell precache and route rules.
+- `.env.nlpwa` — (When initialized with `--sign`) Private signing key with secure `0600` permissions.
 - `assets/other/manifest.webmanifest` — W3C Web App Manifest with `standalone` display mode, maskable icons, and OS launch handler.
 - `assets/image/icon/icon-192.png` — Standard 192x192 PNG app icon (pure Node.js encoded, zero dependencies).
 - `assets/image/icon/icon-512.png` — High-resolution 512x512 PNG app icon.
 - `assets/image/icon/icon.svg` — Scalable vector icon.
 
 **Init Options:**
+- `--sign` — Generates an Ed25519 keypair, writes `.env.nlpwa` (0600), scaffolds `nlpwa.config.js` with `publicKey` (`verifyHashes: 'strict'`), and injects `publicKey` into `sw.js` in one step.
 - `--dir <path>` — Target directory (default: `.`)
 - `--name <name>` — App display name (auto-detected from `package.json` if omitted)
 - `--short-name <short>` — App short name for home screen and shortcuts
@@ -80,7 +85,7 @@ npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 
 ### `nlpwa keys:generate`
 
-**Optional Progressive Security:** For high-assurance deployments where manifest tampering protection against compromised CDNs is desired, `nlpwa keys:generate` generates an Ed25519 keypair for signing update manifests (`info.json` and `version.json`). The private key is securely stored in a dedicated `.env.nlpwa` file with restricted `0600` permissions (preventing collisions with your app's main `.env` and preventing front-end bundler leakage), and the public key is printed for inclusion in `nlpwa.config.js`.
+**Optional Progressive Security:** For high-assurance deployments where manifest tampering protection against compromised CDNs is desired, `nlpwa keys:generate` generates an Ed25519 keypair for signing update manifests (`info.json` and `version.json`). The private key is securely stored in a dedicated `.env.nlpwa` file with restricted `0600` permissions (preventing collisions with your app's main `.env` and preventing front-end bundler leakage). It also automatically synchronizes `publicKey` into `nlpwa.config.js` and injects `publicKey` into `sw.js` without requiring manual pasting.
 
 ```bash
 npx nlpwa keys:generate
@@ -96,10 +101,10 @@ npx nlpwa keys:generate --env .env.local
 ```
 ✓ Generated Ed25519 keypair!
   Private key written to .env.nlpwa (chmod 0600) (NLPWA_PRIVATE_KEY)
-  
-Add this public key to your nlpwa.config.js:
-  publicKey: 'MCowBQYDK2VwAyEA...'
+  + Synchronized publicKey and verifyHashes: 'strict' into nlpwa.config.js
+  + Injected publicKey into sw.js
 ```
+
 
 ---
 

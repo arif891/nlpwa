@@ -29,10 +29,15 @@ function normalizeRoutes(routes) {
  * @returns {typeof DEFAULTS}
  */
 export function initConfig(userConfig = {}) {
-  const verifyHashes = userConfig.verifyHashes ?? (userConfig.publicKey ? 'strict' : DEFAULTS.verifyHashes);
+  const globalPubKey = typeof self !== 'undefined' && self.__NLPWA_PUBLIC_KEY
+    ? self.__NLPWA_PUBLIC_KEY
+    : undefined;
+  const effectivePublicKey = userConfig.publicKey || globalPubKey;
+  const verifyHashes = userConfig.verifyHashes ?? (effectivePublicKey ? 'strict' : DEFAULTS.verifyHashes);
   const merged = {
     ...DEFAULTS,
     ...userConfig,
+    ...(effectivePublicKey ? { publicKey: effectivePublicKey } : {}),
     verifyHashes,
     routes: normalizeRoutes(userConfig.routes ?? DEFAULTS.routes),
     // Deep merge nested objects

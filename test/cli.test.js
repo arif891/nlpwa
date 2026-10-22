@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
 import { sha256Hex, hashMatches } from '../src/shared/hash.js';
+
 
 const CLI = fileURLToPath(new URL('../bin/nlpwa.js', import.meta.url));
 
@@ -349,6 +351,125 @@ test('canonicalizeConfig: strips plugins property so plugin class instances do n
 
   assert.deepEqual(canonicalizeConfig(config1), canonicalizeConfig(config2));
 });
+
+test('cli init: --sign flag generates Ed25519 keys, writes .env.nlpwa, configures nlpwa.config.js, and injects sw.js', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-init-sign-'));
+  const res = spawnSync(process.execPath, [CLI, 'init', '--dir', root, '--sign'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+
+  // 1. .env.nlpwa is created with private key
+  assert.ok(existsSync(join(root, '.env.nlpwa')), '.env.nlpwa exists');
+  const envContent = readFileSync(join(root, '.env.nlpwa'), 'utf8');
+  assert.match(envContent, /NLPWA_PRIVATE_KEY="[A-Za-z0-9+/=]+"/);
+
+  // 2. nlpwa.config.js contains publicKey and verifyHashes: 'strict'
+  const configContent = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.match(configContent, /publicKey:\s*'[A-Za-z0-9+/=]{44}'/);
+  assert.match(configContent, /verifyHashes:\s*'strict'/);
+
+  // 3. sw.js has self.__NLPWA_PUBLIC_KEY injected
+  const swContent = readFileSync(join(root, 'sw.js'), 'utf8');
+  assert.match(swContent, /^self\.__NLPWA_PUBLIC_KEY\s*=\s*'[A-Za-z0-9+/=]{44}';/m);
+
+  // Extract public key from config and sw.js and verify they match
+  const pubFromConfig = configContent.match(/publicKey:\s*'([^']+)'/)[1];
+  const pubFromSw = swContent.match(/self\.__NLPWA_PUBLIC_KEY\s*=\s*'([^']+)'/)[1];
+  assert.equal(pubFromConfig, pubFromSw, 'publicKey in config matches sw.js');
+});
+
+test('cli update: injects publicKey from config into target sw.js and signs manifests', () => {
+  const root = makeProject();
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const privB64 = privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+  const pubB64 = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64');
+
+  writeFileSync(join(root, '.env.nlpwa'), `NLPWA_PRIVATE_KEY="${privB64}"\n`);
+  writeFileSync(join(root, 'dist/sw.js'), '// original sw content\n');
+  writeFileSync(
+    join(root, 'nlpwa.config.js'),
+    `export default { version: '1.0.0', publicKey: '${pubB64}', precache: ['/index.html'] };\n`,
+  );
+
+  const res = runUpdate(root);
+  assert.equal(res.status, 0, res.stderr);
+
+  // Check that sw.js in dist got publicKey injected
+  const swContent = readFileSync(join(root, 'dist/sw.js'), 'utf8');
+  assert.match(swContent, new RegExp(`self\\.__NLPWA_PUBLIC_KEY = '${pubB64.replace(/[+*]/g, '\\$&')}';`));
+
+  // Check that manifests are signed
+  const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
+  const info = JSON.parse(readFileSync(join(root, 'dist/api/update/info.json'), 'utf8'));
+  assert.ok(version.signature, 'version.json is signed');
+  assert.ok(info.signature, 'info.json is signed');
+});
+
+test('cli update: auto-derives publicKey from .env.nlpwa when missing in config and syncs config and sw.js', () => {
+  const root = makeProject();
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const privB64 = privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+  const pubB64 = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64');
+
+  writeFileSync(join(root, '.env.nlpwa'), `NLPWA_PRIVATE_KEY="${privB64}"\n`);
+  writeFileSync(join(root, 'dist/sw.js'), '// dist sw\n');
+
+  // Config without publicKey
+  writeFileSync(
+    join(root, 'nlpwa.config.js'),
+    `export default {\n  version: '1.0.0',\n  precache: ['/index.html']\n};\n`,
+  );
+
+  const res = runUpdate(root);
+  assert.equal(res.status, 0, res.stderr);
+
+  // Config should now have auto-derived publicKey synced
+  const updatedConfig = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.ok(updatedConfig.includes(`publicKey: '${pubB64}'`));
+
+  // sw.js should have publicKey injected
+  const updatedSw = readFileSync(join(root, 'dist/sw.js'), 'utf8');
+  assert.ok(updatedSw.includes(`self.__NLPWA_PUBLIC_KEY = '${pubB64}';`));
+
+  // Manifests should be signed
+  const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
+  assert.ok(version.signature);
+});
+
+test('cli update: warns when publicKey is configured but signing key is missing', () => {
+  const root = makeProject();
+  writeFileSync(
+    join(root, 'nlpwa.config.js'),
+    `export default { version: '1.0.0', publicKey: 'abc123dummykey', precache: ['/index.html'] };\n`,
+  );
+
+  const res = runUpdate(root);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stderr, /Warning: publicKey is configured, but no signing key/);
+  assert.match(res.stderr, /Generated manifests are unsigned/);
+
+  // Manifests must not have signature
+  const version = JSON.parse(readFileSync(join(root, 'dist/api/update/version.json'), 'utf8'));
+  assert.equal(version.signature, undefined);
+});
+
+test('cli keys:generate: automatically synchronizes publicKey into existing nlpwa.config.js and sw.js', () => {
+  const root = makeProject();
+  writeFileSync(join(root, 'sw.js'), '// root sw\n');
+  const res = spawnSync(
+    process.execPath,
+    [CLI, 'keys:generate', '--config', join(root, 'nlpwa.config.js'), '--dir', root],
+    { cwd: root, encoding: 'utf8' },
+  );
+  assert.equal(res.status, 0, res.stderr);
+
+  const configContent = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.match(configContent, /publicKey:\s*'[A-Za-z0-9+/=]{44}'/);
+  assert.match(configContent, /verifyHashes:\s*'strict'/);
+
+  const swContent = readFileSync(join(root, 'sw.js'), 'utf8');
+  assert.match(swContent, /^self\.__NLPWA_PUBLIC_KEY\s*=\s*'[A-Za-z0-9+/=]{44}';/m);
+});
+
 
 
 

@@ -1,5 +1,5 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, relative } from 'node:path';
 import { c, printBanner } from '../ui/terminal.js';
 import { incrementPatch } from '../../shared/version.js';
 import { resolveUpdateEndpoints } from '../../shared/url.js';
@@ -13,9 +13,11 @@ import {
   findConfigFile,
   loadConfig,
   syncSourceConfigVersion,
+  syncSourceConfigPublicKey,
+  syncPublicKeyToSwFiles,
   resolvePackageVersion,
 } from '../core/config.js';
-import { signManifestSync } from '../core/signing.js';
+import { signManifestSync, derivePublicKey } from '../core/signing.js';
 
 function tryLoadLocalEnv() {
   const envCandidates = ['.env.nlpwa', '.env.local', '.env'];
@@ -57,6 +59,68 @@ export async function cmdUpdate(args) {
   const targetDir = resolve(args.dir ?? (existsSync('./dist') ? './dist' : '.'));
   mkdirSync(targetDir, { recursive: true });
 
+  printBanner();
+  console.log(`${c.bold}nlpwa update${c.reset}\n`);
+  if (configPath) {
+    console.log(`  ${c.dim}Config  :${c.reset} ${c.cyan}${configPath}${c.reset}`);
+  }
+  console.log(`  ${c.dim}Target  :${c.reset} ${c.cyan}${targetDir}${c.reset}`);
+
+  // Extract signing key from environment, arguments, or config
+  const extractedSigningKey =
+    process.env.NLPWA_SIGNING_KEY ||
+    process.env.NLPWA_PRIVATE_KEY ||
+    args.signingKey ||
+    args.privateKey ||
+    args['signing-key'] ||
+    args['private-key'] ||
+    rawConfig.signingKey;
+
+  let derivedPublicKey = '';
+  if (extractedSigningKey) {
+    try {
+      derivedPublicKey = derivePublicKey(extractedSigningKey);
+    } catch {}
+  }
+
+  // If signing key is present but config lacks publicKey, auto-derive and sync it
+  if (extractedSigningKey && derivedPublicKey && !rawConfig.publicKey) {
+    rawConfig.publicKey = derivedPublicKey;
+    if (configPath) {
+      syncSourceConfigPublicKey(configPath, derivedPublicKey);
+      console.log(`  ${c.dim}Source  :${c.reset} ${c.yellow}auto-synchronized publicKey into ${configPath}${c.reset}`);
+    }
+  }
+
+  // Key consistency and integrity checks & warnings
+  if (extractedSigningKey && rawConfig.publicKey && derivedPublicKey && rawConfig.publicKey !== derivedPublicKey) {
+    console.warn(`  ${c.yellow}! Warning: publicKey in ${configPath || 'config'} does not match the private signing key in .env.nlpwa!${c.reset}`);
+  }
+
+  if (rawConfig.publicKey && !extractedSigningKey) {
+    console.warn(`  ${c.yellow}! Warning: publicKey is configured, but no signing key (NLPWA_PRIVATE_KEY) was found in environment or .env.nlpwa.${c.reset}`);
+    console.warn(`  ${c.yellow}  Generated manifests are unsigned. The service worker requires signed manifests and will reject updates!${c.reset}`);
+  }
+
+  const effectivePublicKey = rawConfig.publicKey || derivedPublicKey;
+
+  // Synchronize effective publicKey into service worker file(s)
+  if (effectivePublicKey) {
+    const swCandidates = [
+      resolve(targetDir, 'sw.js'),
+      resolve(process.cwd(), 'sw.js'),
+      resolve(process.cwd(), 'public', 'sw.js'),
+    ];
+    const syncedSwFiles = syncPublicKeyToSwFiles(swCandidates, effectivePublicKey);
+    for (const swFile of syncedSwFiles) {
+      const rel = relative(process.cwd(), swFile).replace(/\\/g, '/');
+      console.log(`  ${c.green}✓${c.reset} Synchronized publicKey into ${rel}`);
+    }
+    if (syncedSwFiles.length === 0) {
+      console.warn(`  ${c.yellow}! Warning: Manifest signing is active (publicKey configured), but no sw.js was found in ${targetDir} or workspace root to configure with publicKey.${c.reset}`);
+    }
+  }
+
   // 1. Collect tracked files and expand precache globs
   const startMs = Date.now();
   const { files, missing, expandedPrecache } = collectTrackedFiles(rawConfig, targetDir);
@@ -78,12 +142,6 @@ export async function cmdUpdate(args) {
     versionNote = 'manifest-hash derived';
   }
 
-  printBanner();
-  console.log(`${c.bold}nlpwa update${c.reset}\n`);
-  if (configPath) {
-    console.log(`  ${c.dim}Config  :${c.reset} ${c.cyan}${configPath}${c.reset}`);
-  }
-  console.log(`  ${c.dim}Target  :${c.reset} ${c.cyan}${targetDir}${c.reset}`);
   console.log(`  ${c.dim}Version :${c.reset} ${c.green}${c.bold}v${newVersion}${c.reset} (${versionNote})\n`);
 
   // Update source config file ONLY if explicitly requested via --sync-source
@@ -96,16 +154,6 @@ export async function cmdUpdate(args) {
   const defaultVersionEndpoint = isClean ? '/api/update/version' : '/api/update/version.json';
   const defaultInfoEndpoint = isClean ? '/api/update/info' : '/api/update/info.json';
 
-  // Extract signing key from environment, arguments, or config
-  const extractedSigningKey =
-    process.env.NLPWA_SIGNING_KEY ||
-    process.env.NLPWA_PRIVATE_KEY ||
-    args.signingKey ||
-    args.privateKey ||
-    args['signing-key'] ||
-    args['private-key'] ||
-    rawConfig.signingKey;
-
   // Prepare safe runtime config object (strip private keys, plugins, and non-serializable hooks)
   const {
     signingKey: _extractedKey,
@@ -114,6 +162,7 @@ export async function cmdUpdate(args) {
     onNotificationClick: _onNotificationClick,
     ...safeConfig
   } = rawConfig;
+
 
   const sanitizedRoutes = (rawConfig.routes || []).map((route) => {
     const {

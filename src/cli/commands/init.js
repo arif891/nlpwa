@@ -1,10 +1,13 @@
-import { writeFileSync, existsSync, mkdirSync, copyFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, existsSync, mkdirSync, copyFileSync, readFileSync, appendFileSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateKeyPairSync } from 'node:crypto';
 import { c, printBanner } from '../ui/terminal.js';
 import { createPngIcon, createSvgIcon, createManifest } from '../core/icons.js';
+import { syncSourceConfigPublicKey, injectPublicKeyToSwFile } from '../core/config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
 
 function resolveAppName(targetDir, explicitName) {
   if (explicitName) return explicitName;
@@ -111,6 +114,43 @@ export async function cmdInit(args) {
   // ── Starter nlpwa.config.js ────────────────────────────────────────────────
   const nlpwaConfigJsPath = resolve(targetDir, 'nlpwa.config.js');
 
+  // ── Ed25519 Signing Setup (--sign) ──────────────────────────────────────────
+  const shouldSign = Boolean(args.sign || args['sign']);
+  let generatedPubKey = null;
+
+  if (shouldSign) {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+    const rawPublicDer = spkiDer.subarray(-32);
+    generatedPubKey = rawPublicDer.toString('base64');
+    const privateDer = privateKey.export({ type: 'pkcs8', format: 'der' });
+    const privateKeyBase64 = privateDer.toString('base64');
+
+    const envPath = resolve(targetDir, '.env.nlpwa');
+    const envLine = `# NLPWA Ed25519 Manifest Signing Key\nNLPWA_PRIVATE_KEY="${privateKeyBase64}"\n`;
+    try {
+      if (existsSync(envPath)) {
+        const content = readFileSync(envPath, 'utf8');
+        if (!content.includes('NLPWA_PRIVATE_KEY') && !content.includes('NLPWA_SIGNING_KEY')) {
+          appendFileSync(envPath, `\n${envLine}`, { encoding: 'utf8', mode: 0o600 });
+          console.log(`  ${c.green}+${c.reset} ${c.bold}Appended:${c.reset} private key to .env.nlpwa`);
+        }
+      } else {
+        writeFileSync(envPath, envLine, { encoding: 'utf8', mode: 0o600 });
+        console.log(`  ${c.green}+${c.reset} ${c.bold}Generated:${c.reset} .env.nlpwa with private key (mode: 0600)`);
+      }
+    } catch (err) {
+      console.warn(`  ${c.yellow}! Could not write .env.nlpwa:${c.reset} ${err.message}`);
+    }
+
+    // Inject into copied sw.js
+    const swPath = resolve(targetDir, 'sw.js');
+    if (existsSync(swPath)) {
+      injectPublicKeyToSwFile(swPath, generatedPubKey);
+      console.log(`  ${c.green}+${c.reset} ${c.bold}Injected:${c.reset} publicKey into sw.js`);
+    }
+  }
+
   if (!existsSync(nlpwaConfigJsPath)) {
     const precacheList = [
       "'/'",
@@ -127,14 +167,17 @@ export async function cmdInit(args) {
       );
     }
 
+    const signingConfigFields = generatedPubKey
+      ? `  publicKey: '${generatedPubKey}',\n  verifyHashes: 'strict',\n`
+      : `  verifyHashes: 'warn',\n`;
+
     const starterConfigJs = `/**
  * NLPWA Configuration
  * https://github.com/arif891/nlpwa
  */
 export default {
   version: '1.0.0',
-  verifyHashes: 'warn',
-  precache: [
+${signingConfigFields}  precache: [
     ${precacheList.join(',\n    ')},
   ],
   routes: [
@@ -145,6 +188,9 @@ export default {
 `;
     writeFileSync(nlpwaConfigJsPath, starterConfigJs, 'utf8');
     console.log(`  ${c.green}+${c.reset} ${c.bold}Scaffolded starter config:${c.reset} nlpwa.config.js`);
+  } else if (generatedPubKey) {
+    syncSourceConfigPublicKey(nlpwaConfigJsPath, generatedPubKey);
+    console.log(`  ${c.green}+${c.reset} ${c.bold}Synchronized:${c.reset} publicKey into nlpwa.config.js`);
   }
 
   // Ensure .env.nlpwa is protected in .gitignore
@@ -180,8 +226,6 @@ ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
      ${c.dim}(client.js automatically registers /sw.js by default)${c.reset}
 
   2. Configure routes & offline precache in ${c.bold}nlpwa.config.js${c.reset}
-
-  3. When deploying updates, run:
-     ${c.cyan}npx nlpwa update${c.reset}
-`);
+${generatedPubKey ? `\n  3. Ed25519 signing enabled: .env.nlpwa is protected. Run:\n     ${c.cyan}npx nlpwa update${c.reset}\n` : `\n  3. When deploying updates, run:\n     ${c.cyan}npx nlpwa update${c.reset}\n`}`);
 }
+

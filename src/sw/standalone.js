@@ -15,6 +15,10 @@
  */
 import { initSW } from './index.js';
 
+const globalPubKey = typeof self !== 'undefined' && self.__NLPWA_PUBLIC_KEY
+  ? self.__NLPWA_PUBLIC_KEY
+  : undefined;
+
 initSW({
   version: '1',
   configPath: '/api/update/config.json',
@@ -22,4 +26,6 @@ initSW({
     version: '/api/update/version.json',
     info: '/api/update/info.json',
   },
+  ...(globalPubKey ? { publicKey: globalPubKey, verifyHashes: 'strict' } : {}),
 });
+

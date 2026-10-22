@@ -48,6 +48,7 @@ ${c.bold}OPTIONS (init)${c.reset}
   --short-name <short> Short name for app launcher (default: first word of name)
   --theme-color <hex>  Theme color for browser header & splash screen (default: #0ea5e9)
   --bg-color <hex>     Background color for app launcher splash screen (default: #0f172a)
+  --sign               Generate Ed25519 keypair, save .env.nlpwa, and configure publicKey in config & sw.js
   --no-manifest        Skip generating manifest.webmanifest and PNG/SVG icons
 
 ${c.bold}OPTIONS (update / build)${c.reset}

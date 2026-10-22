@@ -17,6 +17,34 @@ let _isRegisteredOrRegistering = false;
 let _inFlightRegisterPromise = null;
 
 /**
+ * Resolve the default service worker URL based on script location and data attributes.
+ *
+ * @param {HTMLScriptElement} [script]
+ * @returns {string}
+ */
+export function resolveDefaultSwUrl(script) {
+  const customSw = script?.getAttribute?.('data-sw');
+  if (customSw) {
+    return customSw;
+  }
+  if (script?.src && typeof window !== 'undefined' && window.location) {
+    try {
+      const scriptUrl = new URL(script.src, window.location.href);
+      if (scriptUrl.origin === window.location.origin) {
+        // If client.js sits in an asset subdirectory (e.g. /static/js/, /assets/, /dist/),
+        // sw.js cannot control outer scopes from there without special headers, so default to /sw.js
+        const pathSegments = scriptUrl.pathname.split('/').filter(Boolean);
+        const isAssetSubdir = pathSegments.some(seg => /^(?:assets|static|js|dist|build|vendor|public)$/i.test(seg));
+        if (!isAssetSubdir) {
+          return new URL('sw.js', scriptUrl).pathname;
+        }
+      }
+    } catch {}
+  }
+  return '/sw.js';
+}
+
+/**
  * Register the NLPWA Service Worker and set up update handling.
  *
  * @param {string} [swUrl='/sw.js'] path to the bundled sw.js

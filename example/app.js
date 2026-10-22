@@ -121,6 +121,11 @@ async function initNLPWA() {
     return;
   }
 
+  if (window.NLPWA_NO_AUTO_REGISTER) {
+    log('INIT', 'Automatic and manual Service Worker registration suppressed by NLPWA_NO_AUTO_REGISTER.');
+    return;
+  }
+
   log('INIT', 'Registering NLPWA Service Worker...');
 
   try {

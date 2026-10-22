@@ -15,7 +15,7 @@
  *   window.NLPWA_NO_AUTO_REGISTER = true;
  */
 export * from './index.js';
-import { register } from './registration.js';
+import { register, resolveDefaultSwUrl } from './registration.js';
 import { logger } from './logger.js';
 
 // Synchronously capture document.currentScript at module evaluation time
@@ -32,28 +32,6 @@ function findClientScript() {
     }
   }
   return null;
-}
-
-export function resolveDefaultSwUrl(script) {
-  const customSw = script?.getAttribute?.('data-sw');
-  if (customSw) {
-    return customSw;
-  }
-  if (script?.src && typeof window !== 'undefined' && window.location) {
-    try {
-      const scriptUrl = new URL(script.src, window.location.href);
-      if (scriptUrl.origin === window.location.origin) {
-        // If client.js sits in an asset subdirectory (e.g. /static/js/, /assets/, /dist/),
-        // sw.js cannot control outer scopes from there without special headers, so default to /sw.js
-        const pathSegments = scriptUrl.pathname.split('/').filter(Boolean);
-        const isAssetSubdir = pathSegments.some(seg => /^(?:assets|static|js|dist|build|vendor|public)$/i.test(seg));
-        if (!isAssetSubdir) {
-          return new URL('sw.js', scriptUrl).pathname;
-        }
-      }
-    } catch {}
-  }
-  return '/sw.js';
 }
 
 function autoRegister() {

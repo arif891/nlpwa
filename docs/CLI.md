@@ -80,7 +80,7 @@ npx nlpwa init --dir ./public --name "My Awesome App" --theme-color "#6366f1"
 
 ### `nlpwa keys:generate`
 
-**Optional Progressive Security:** For high-assurance, financial, or enterprise apps where manifest tampering protection against compromised CDNs is desired, `nlpwa keys:generate` generates an Ed25519 keypair for signing update manifests (`info.json` and `version.json`). The private key is securely stored in a dedicated `.env.nlpwa` file with restricted `0600` permissions (preventing collisions with your app's main `.env` and preventing front-end bundler leakage), and the public key is printed for inclusion in `nlpwa.config.js`.
+**Optional Progressive Security:** For high-assurance deployments where manifest tampering protection against compromised CDNs is desired, `nlpwa keys:generate` generates an Ed25519 keypair for signing update manifests (`info.json` and `version.json`). The private key is securely stored in a dedicated `.env.nlpwa` file with restricted `0600` permissions (preventing collisions with your app's main `.env` and preventing front-end bundler leakage), and the public key is printed for inclusion in `nlpwa.config.js`.
 
 ```bash
 npx nlpwa keys:generate

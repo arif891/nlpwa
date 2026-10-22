@@ -1,6 +1,6 @@
 # NLPWA — Features & Capabilities Reference
 
-NLPWA (Native-like Progressive Web App) is an enterprise-grade Service Worker framework designed to eliminate the fragility, version drift, and deployment hazards that plague traditional PWAs. 
+NLPWA (Native-like Progressive Web App) is a resilient, production-ready Service Worker framework designed to eliminate the fragility, version drift, and deployment hazards that plague traditional PWAs. 
 
 This document provides a comprehensive guide to NLPWA's architecture, reliability guarantees, security model, and developer tooling.
 
@@ -38,7 +38,7 @@ You should never need to generate cryptographic keys, configure complex security
 - **Zero Telemetry by Default:** Telemetry is strictly off unless explicitly opted into via `{ url: '/api/report' }`.
 
 ### 2. Optional Progressive Security (Dial Up When Needed)
-For high-assurance, financial, healthcare, or enterprise deployments, security can be progressively dialed up to maximum rigor:
+For high-assurance deployments with strict integrity requirements, security can be progressively dialed up to maximum rigor:
 - **Detached Ed25519 Signatures:** Sign manifests at build time; Service Worker verifies signatures via Web Crypto before staging files, locking out compromised CDNs.
 - **Strict Hash Verification (`verifyHashes: 'strict'`):** Abort staging immediately if any byte diverges from the build manifest.
 - **Forced Version Floors (`minVersion`):** Unpin and auto-upgrade any client running an outdated version below your minimum security requirements.
@@ -347,7 +347,7 @@ const { count } = await syncClient.getPending('my-queue');
 
 ## 10. Native OS Integrations
 
-In addition to enterprise update guarantees, NLPWA provides seamless wrappers for native browser APIs:
+In addition to update integrity guarantees, NLPWA provides seamless wrappers for native browser APIs:
 
 - **PWA Installation Manager:** Automatically captures and defers `beforeinstallprompt`, preserving the prompt across navigations and exposing `nlpwa.install()`.
 - **Persistent Storage:** Protect offline caches from browser eviction under storage pressure via `nlpwa.requestPersistentStorage()`.

@@ -150,7 +150,7 @@
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
     "sync:example": "node ./bin/sync-example.js",
-    "check:drift": "git diff --exit-code example/",
+    "check:drift": "git diff --exit-code out/ example/",
     "prepublishOnly": "npm run build:prod && npm test",
     "nlpwa": "node ./bin/nlpwa.js",
     "nlpwa:update": "node ./bin/nlpwa.js update",

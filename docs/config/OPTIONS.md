@@ -96,7 +96,7 @@ watchdog: {
 
 ---
 
-## Enterprise Release Controls
+## Advanced Release & Security Controls
 
 ### `publicKey` · `string` · default: `null`
 Ed25519 public key. When set, update manifests must include a valid detached cryptographic signature verified via Web Crypto before staging begins.

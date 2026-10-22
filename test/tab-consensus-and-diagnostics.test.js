@@ -135,6 +135,8 @@ test('SW message GET_PIN_STATUS and GET_DIAGNOSTICS', async () => {
 
 test('tab consensus bus: registers dirty guards and detects unsaved state', async () => {
   closeTabBus();
+  const origBC = globalThis.BroadcastChannel;
+  const origWinDesc = Object.getOwnPropertyDescriptor(globalThis, 'window');
   globalThis.window = { location: {} };
 
   // Mock BroadcastChannel in Node environment
@@ -172,50 +174,66 @@ test('tab consensus bus: registers dirty guards and detects unsaved state', asyn
 
   globalThis.BroadcastChannel = MockBroadcastChannel;
 
-  assert.equal(isTabDirty(), false);
+  let tab2 = null;
+  try {
+    assert.equal(isTabDirty(), false);
 
-  // Set manual dirty flag
-  setDirty(true);
-  assert.equal(isTabDirty(), true);
-  setDirty(false);
-  assert.equal(isTabDirty(), false);
+    // Set manual dirty flag
+    setDirty(true);
+    assert.equal(isTabDirty(), true);
+    setDirty(false);
+    assert.equal(isTabDirty(), false);
 
-  // Register custom dirty guard
-  let formDirty = true;
-  const unregister = registerDirtyGuard(() => formDirty);
-  assert.equal(isTabDirty(), true);
+    // Register custom dirty guard
+    let formDirty = true;
+    const unregister = registerDirtyGuard(() => formDirty);
+    assert.equal(isTabDirty(), true);
 
-  formDirty = false;
-  assert.equal(isTabDirty(), false);
+    formDirty = false;
+    assert.equal(isTabDirty(), false);
 
-  unregister();
-  assert.equal(isTabDirty(), false);
+    unregister();
+    assert.equal(isTabDirty(), false);
 
-  // Test multi-tab consensus check with a simulated second tab
-  const tab2 = new MockBroadcastChannel('nlpwa-tab-bus');
-  tab2.addEventListener('message', (event) => {
-    if (event.data?.type === 'TAB_QUERY_DIRTY') {
-      tab2.postMessage({
-        type: 'TAB_DIRTY_STATUS',
-        queryId: event.data.queryId,
-        tabId: 'simulated-tab-2',
-        isDirty: true,
-        title: 'Checkout Form',
-      });
+    // Test multi-tab consensus check with a simulated second tab
+    tab2 = new MockBroadcastChannel('nlpwa-tab-bus');
+    tab2.addEventListener('message', (event) => {
+      if (event.data?.type === 'TAB_QUERY_DIRTY') {
+        tab2.postMessage({
+          type: 'TAB_DIRTY_STATUS',
+          queryId: event.data.queryId,
+          tabId: 'simulated-tab-2',
+          isDirty: true,
+          title: 'Checkout Form',
+        });
+      }
+    });
+
+    const check = await checkDirtyTabs(50);
+    assert.equal(check.hasDirtyTabs, true);
+    assert.ok(check.dirtyTabs.some((t) => t.tabId === 'simulated-tab-2'));
+  } finally {
+    if (tab2) tab2.close();
+    closeTabBus();
+    if (origBC) {
+      globalThis.BroadcastChannel = origBC;
+    } else {
+      delete globalThis.BroadcastChannel;
     }
-  });
-
-  const check = await checkDirtyTabs(50);
-  assert.equal(check.hasDirtyTabs, true);
-  assert.ok(check.dirtyTabs.some((t) => t.tabId === 'simulated-tab-2'));
-
-  tab2.close();
-  closeTabBus();
-  delete globalThis.window;
+    if (origWinDesc) {
+      Object.defineProperty(globalThis, 'window', origWinDesc);
+    } else {
+      delete globalThis.window;
+    }
+  }
 });
 
 test('applyUpdate: blocks reload when tabs are dirty unless forced', async () => {
   closeTabBus();
+
+  const origWinDesc = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origChan = globalThis.MessageChannel;
 
   let reloadCalled = false;
   globalThis.window = {
@@ -226,64 +244,80 @@ test('applyUpdate: blocks reload when tabs are dirty unless forced', async () =>
     },
   };
 
-  // Mock dirty tab
-  setDirty(true);
+  try {
+    // Mock dirty tab
+    setDirty(true);
 
-  // Attempt applyUpdate with details: true
-  const resBlocked = await applyUpdate({ reload: true, force: false, checkTabs: true, details: true });
-  assert.equal(resBlocked.applied, false);
-  assert.equal(resBlocked.blockedByDirty, true);
-  assert.equal(reloadCalled, false, 'Should not reload when blocked by dirty tab');
+    // Attempt applyUpdate with details: true
+    const resBlocked = await applyUpdate({ reload: true, force: false, checkTabs: true, details: true });
+    assert.equal(resBlocked.applied, false);
+    assert.equal(resBlocked.blockedByDirty, true);
+    assert.equal(reloadCalled, false, 'Should not reload when blocked by dirty tab');
 
-  // Attempt applyUpdate with force: true
-  // Mock SW response for APPLY_UPDATE
-  class MockPort {
-    constructor() { this.onmessage = null; }
-    postMessage(msg) {
-      if (this._partner?.onmessage) {
-        this._partner.onmessage({ data: msg });
+    // Attempt applyUpdate with force: true
+    // Mock SW response for APPLY_UPDATE
+    class MockPort {
+      constructor() { this.onmessage = null; }
+      postMessage(msg) {
+        if (this._partner?.onmessage) {
+          this._partner.onmessage({ data: msg });
+        }
+      }
+      close() {}
+    }
+    class MockChannel {
+      constructor() {
+        this.port1 = new MockPort();
+        this.port2 = new MockPort();
+        this.port1._partner = this.port2;
+        this.port2._partner = this.port1;
       }
     }
-    close() {}
-  }
-  class MockChannel {
-    constructor() {
-      this.port1 = new MockPort();
-      this.port2 = new MockPort();
-      this.port1._partner = this.port2;
-      this.port2._partner = this.port1;
-    }
-  }
-  globalThis.MessageChannel = MockChannel;
+    globalThis.MessageChannel = MockChannel;
 
-  const mockSW = {
-    postMessage(msg, ports) {
-      if (ports?.[0]) {
-        ports[0].postMessage({
-          type: MESSAGE_TYPES.APPLY_UPDATE_RESULT,
-          requestId: msg.requestId,
-          data: { applied: true },
-        });
-      }
-    },
-  };
-
-  Object.defineProperty(globalThis, 'navigator', {
-    value: {
-      serviceWorker: {
-        controller: mockSW,
-        ready: Promise.resolve({ active: mockSW }),
+    const mockSW = {
+      postMessage(msg, ports) {
+        if (ports?.[0]) {
+          ports[0].postMessage({
+            type: MESSAGE_TYPES.APPLY_UPDATE_RESULT,
+            requestId: msg.requestId,
+            data: { applied: true },
+          });
+        }
       },
-    },
-    configurable: true,
-    writable: true,
-  });
+    };
 
-  const resForced = await applyUpdate({ reload: true, force: true, details: true });
-  assert.equal(resForced.applied, true);
-  assert.equal(reloadCalled, true, 'Should reload when forced');
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockSW,
+          ready: Promise.resolve({ active: mockSW }),
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
 
-  setDirty(false);
-  closeTabBus();
-  delete globalThis.window;
+    const resForced = await applyUpdate({ reload: true, force: true, details: true });
+    assert.equal(resForced.applied, true);
+    assert.equal(reloadCalled, true, 'Should reload when forced');
+  } finally {
+    setDirty(false);
+    closeTabBus();
+    if (origWinDesc) {
+      Object.defineProperty(globalThis, 'window', origWinDesc);
+    } else {
+      delete globalThis.window;
+    }
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+    if (origChan) {
+      globalThis.MessageChannel = origChan;
+    } else {
+      delete globalThis.MessageChannel;
+    }
+  }
 });

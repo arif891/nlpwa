@@ -1,7 +1,7 @@
 # NLPWA — Architecture
 ## Overview
 
-NLPWA is an enterprise-grade Service Worker framework with a decoupled architecture designed around two principles: **works out of the box** with zero-friction, resilient defaults, and provides **optional progressive security** that can be dialed up to cryptographic rigor when needed.
+NLPWA is a resilient Service Worker framework with a decoupled architecture designed around two principles: **works out of the box** with zero-friction, resilient defaults, and provides **optional progressive security** that can be dialed up to cryptographic rigor when needed.
 
 | Context | File | Role |
 |---|---|---|
@@ -15,24 +15,16 @@ Runtime configuration is completely decoupled from `sw.js` and loaded dynamicall
 
 ---
 
-## 🚀 Works Out of the Box, Security When You Need It
+## Architectural Design Principles
 
-NLPWA guarantees smooth, immediate productivity out of the box without compromising long-term enterprise security:
+NLPWA's technical architecture is built on three core pillars:
 
-### 1. Works Out of the Box (Zero Friction & Resilient by Default)
-- **Frictionless Scaffolding:** `npx nlpwa init` immediately gives you an offline-ready PWA. No Ed25519 key generation or crypto certificates required.
-- **Resilient Hash Verification (`verifyHashes: 'warn'`):** Dynamic CDN compression, edge minification, or script injections won't break update staging with false-alarm hash failures. Warnings are logged and updates are safely applied.
-- **Background Staging & Navigation Apply (`applyMode: 'navigation'`):** Delta updates stage silently in the background and commit on the next full HTML navigation. Active user sessions are never interrupted mid-flight, and dirty form inputs are protected.
-- **Automatic Large Asset Offloading (>25MB):** Heavy assets (>25MB) automatically delegate to the browser's Background Fetch API and chunk-stream into IndexedDB (`nlpwa-large-assets`), protecting `CacheStorage` from mobile OOM crashes.
-- **Multi-Boot Probation with Error Filtering:** Updates enter probation upon commit. Rollback requires 2 consecutive first-party failures, completely ignoring browser extension errors (`chrome-extension://`) and cross-origin tracking noise (GTM, ads, Sentry).
-- **Polite Persistence & Telemetry:** Storage persistence is prompted on `appinstalled` or user gesture, not on initial load. Telemetry is 100% opt-in.
-
-### 2. Optional Progressive Security (Dial Up When Needed)
-- **Ed25519 Cryptographic Manifest Signing:** Provide `signingKey` in CI and `publicKey` in config. The Service Worker validates detached signatures via Web Crypto before staging files, completely locking out compromised CDNs.
-- **Strict SHA-256 Digest Verification (`verifyHashes: 'strict'`):** Abort staging immediately if a single byte differs from the manifest.
-- **Minimum Supported Version Floor (`minVersion`):** Automatically evict and upgrade clients running outdated code below your security baseline.
-- **Remote Emergency Kill-Switch (`blockedVersions`):** Instantly revoke vulnerable releases origin-wide.
-- **Phased Cohorts & Release Channels (`rolloutPercent`, `channel`):** Safely canary updates to 10% or 25% of users before wider rollout.
+1. **Decoupled Worker Engine & Application Lifecycle:**
+   The Service Worker engine (`sw.js`) installs once and remains active indefinitely. Application releases arrive Over-The-Air (OTA) as data-driven JSON manifests (`version.json` and `info.json`), eliminating browser worker re-installation churn, cache wiping, and uncoordinated reloads.
+2. **Deterministic Client Isolation (Client Version Pinning):**
+   Active windows and tabs are isolated by `clientId` to their active offline cache. Even as delta updates stage in the background or activate globally, existing tabs continue serving from their boot version until navigation, preventing chunk-loading 404s and mixed-version runtime state.
+3. **Progressive Reliability & Verification:**
+   Out of the box, updates stage with resilient hash verification (`verifyHashes: 'warn'`), graceful background staging, automatic large-file offloading (>25MB), and multi-boot probation with noise filtering. For high-assurance environments, cryptographic Ed25519 manifest signing and strict SHA-256 byte verification can be enabled on-demand without architectural changes. See [docs/FEATURES.md](FEATURES.md) for complete feature details.
 
 ---
 
@@ -115,15 +107,21 @@ src/
 │       └── index.js                checkForUpdate() orchestration
 │
 ├── client/                         ← Runs in main browser thread (built to out/client.js / client.esm.js)
-│   ├── index.js                    Clean public API entry point
+│   ├── index.js                    Clean public API entry point & nlpwa facade
 │   ├── registration.js             register(swUrl, options), unregister(scope), onUpdateApplied()
+│   ├── tabs.js                     Tab bus (BroadcastChannel), leader election, dirty tab consensus
+│   ├── install.js                  PWA install manager: promptInstall(), isInstallable(), isInstalled()
+│   ├── status-store.js             Unified reactive state store: subscribe(), getState(), getStatus()
+│   ├── diagnostics.js              Runtime telemetry & diagnostics: getDiagnostics()
+│   ├── storage.js                  requestPersistentStorage(), isStoragePersistent()
 │   ├── watchdog.js                 Boot watchdog with first-party error filter (ignores extensions & ads)
-│   ├── form-guard.js               isUserEditing() — detects active form inputs to protect unsaved work
+│   ├── form-guard.js               registerDirtyGuard(), isUserEditing(), isTabDirty()
 │   ├── polling.js                  setupFocusPolling(), setupIntervalPolling(), setupPeriodicSync()
 │   ├── messaging.js                sendToSW(), onSWMessage(), getVersion(), getStatus(), requestFromSW()
 │   ├── cache-manager.js            getCacheInfo(), cleanupRuntimeCache() — quota & cache management
 │   ├── telemetry.js                Client-side error & rollback reporting hook
 │   ├── update-ui.js                onUpdateReady(), onStagingProgress(), applyUpdate()
+│   ├── debug.js                    Dev-mode inspection helpers & event tracing
 │   └── logger.js                   Client logger with configurable log levels
 │
 ├── cli/                            ← Modular CLI engine (executed via bin/nlpwa.js)
@@ -141,12 +139,29 @@ src/
 │       └── terminal.js             ANSI color formatting, printBanner(), printHelp()
 │
 ├── plugins/                        ← Official modular plugins
-│   └── sync/                       Background Sync & Offline Mutation (IndexedDB + cross-browser fallback)
-│       ├── idb.js                  Zero-dependency IndexedDB wrapper & request serializer
-│       ├── queue.js                SyncQueue — FIFO replay queue with retention pruning & retries
-│       ├── sw.js                   BackgroundSyncPlugin — SW fetchDidFail & sync event listeners
-│       ├── client.js               SyncClient — window API & autoSyncOnOnline fallback
-│       ├── constants.js            Typed message constants
+│   ├── sync/                       Background Sync & Offline Mutation (IndexedDB + cross-browser fallback)
+│   │   ├── idb.js                  Zero-dependency IndexedDB wrapper & request serializer
+│   │   ├── queue.js                SyncQueue — FIFO replay queue with retention pruning & retries
+│   │   ├── sw.js                   BackgroundSyncPlugin — SW fetchDidFail & sync event listeners
+│   │   ├── client.js               SyncClient — window API & autoSyncOnOnline fallback
+│   │   ├── constants.js            Typed message constants
+│   │   └── index.js                Barrel re-export
+│   ├── bg-fetch/                   Background Fetch & Large Asset (>25MB) Offloader
+│   │   ├── sw.js                   BackgroundFetchPlugin — SW backgroundfetch* event listeners & IDB streaming
+│   │   ├── client.js               BackgroundFetchClient — window API, progress events & delegation
+│   │   └── index.js                Barrel re-export
+│   ├── share/                      Web Share Target Handler
+│   │   ├── sw.js                   ShareTargetPlugin — intercepts POST share submissions into safe FIFO queue
+│   │   ├── client.js               ShareTargetClient — onShareTarget(), getSharedData()
+│   │   └── index.js                Barrel re-export
+│   ├── badge/                      App Badging API Wrapper
+│   │   ├── sw.js                   Badging SW message listeners
+│   │   ├── client.js               setAppBadge(), clearAppBadge(), isBadgingSupported()
+│   │   └── index.js                Barrel re-export
+│   └── crypto/                     Cryptographic Manifest Verification & Signing
+│       ├── keys.js                 Ed25519 keypair generation (Web Crypto / Node crypto)
+│       ├── sign.js                 Detached manifest signature generator
+│       ├── verify.js               In-browser Ed25519 signature validator (crypto.subtle.verify)
 │       └── index.js                Barrel re-export
 │
 ├── bin/

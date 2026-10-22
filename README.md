@@ -3,17 +3,17 @@
 A lightweight, zero-runtime-dependency Service Worker framework that makes Progressive Web Apps feel truly native. It delivers atomic over-the-air (OTA) delta updates, per-tab client version pinning, cryptographic manifest signing, automated health-gated rollbacks, and modular plugins — all from drop-in files or npm package exports.
 
 > [!NOTE]
-> **Prototype Stage:** NLPWA is currently in prototype development and under active evolution. For a complete deep dive into all capabilities, see the [**FEATURES.md**](FEATURES.md) reference guide. Feedback, issues, and contributions are very welcome!
+> **Prototype Stage:** NLPWA is currently in prototype development and under active evolution. For a complete deep dive into all capabilities, see the [**FEATURES.md**](docs/FEATURES.md) reference guide. Feedback, issues, and contributions are very welcome!
 
 ---
 
 ## The Core Problem: Why Most PWAs Feel Fragile
 
-In traditional Service Worker setups (like Workbox), every app update requires re-compiling the Service Worker script itself. When a user opens an app while an update is rolling out, one of two bad things happens:
-1. **Version Drift / Broken Tabs:** The new Service Worker calls `skipWaiting()`, abruptly swapping cached assets out from underneath active tabs. The user clicks a route or dynamically imports a chunk, and gets a `404 ChunkLoadError` or loads mixed-version code.
-2. **Infinite Waiting Workers:** The user is trapped on an obsolete version until *all* open tabs are closed simultaneously.
+In traditional Service Worker setups, managing application updates presents a difficult dilemma:
+1. **Infinite Waiting Workers (Default Behavior):** By default, tools like Workbox do not call `skipWaiting()`. When an update installs, the new service worker sits waiting in the background until *all* open tabs and windows running the app are completely closed. Users can stay trapped on an obsolete version indefinitely.
+2. **Version Drift / Broken Tabs (with `skipWaiting`):** If developers enable `skipWaiting` to bypass the waiting worker, the new service worker activates immediately and swaps cached assets out from underneath active tabs. When an existing tab navigates or dynamically imports a chunk, it requests older bundle hashes that no longer exist in the newly activated cache, triggering fatal `404 ChunkLoadError` crashes or loading mixed-version state.
 
-**NLPWA eliminates this completely through Atomic OTA Updates, Client Version Pinning, and Health-Gated Deploys.**
+**NLPWA eliminates both problems through Decoupled OTA Deltas, Client Version Pinning, and Health-Gated Deploys.**
 
 ---
 
@@ -33,7 +33,7 @@ In traditional Service Worker setups (like Workbox), every app update requires r
 
 ## 🚀 Works Out of the Box, Security When You Need It
 
-NLPWA is designed to **just work out of the box** without friction, while providing a **progressive security dial** for mission-critical enterprise environments.
+NLPWA is designed to **just work out of the box** without friction, while providing a **progressive security dial** for high-assurance production environments.
 
 ### 1. Resilient & Frictionless by Default (Works Out of the Box)
 - **Zero-Friction Init:** Run `npx nlpwa init` and you immediately have a working PWA with offline caching and atomic OTA updates. No keys to generate or certs to manage.
@@ -44,7 +44,7 @@ NLPWA is designed to **just work out of the box** without friction, while provid
 - **Respectful Storage & Telemetry:** Storage persistence is deferred to `appinstalled` or explicit user gestures rather than unprompted permission dialogs on page load. Telemetry is strictly off by default.
 
 ### 2. Optional Progressive Security (Dial Up When Needed)
-For high-assurance, financial, or enterprise deployments, security can be dialed up on-demand:
+For high-assurance deployments with strict integrity requirements, security can be dialed up on-demand:
 - **Ed25519 Cryptographic Manifest Signing:** Provide `signingKey` in CI and `publicKey` in config. The Service Worker validates detached signatures via Web Crypto before staging files, completely locking out compromised CDNs.
 - **Strict SHA-256 Digest Verification (`verifyHashes: 'strict'`):** Abort staging immediately if a single byte differs from the manifest.
 - **Minimum Supported Version Floor (`minVersion`):** Automatically evict and upgrade clients running outdated code below your security baseline.
@@ -55,20 +55,33 @@ For high-assurance, financial, or enterprise deployments, security can be dialed
 
 ## NLPWA vs. Workbox
 
-| Capability | Workbox | NLPWA |
-|:---|:---:|:---:|
-| **Update Architecture** | Re-installs entire Service Worker per release | Decoupled SW engine + background OTA delta protocol |
-| **Open Tab Isolation** | ❌ None (`skipWaiting` breaks active tabs) | ✅ **Client Version Pinning** isolates each tab to its boot version |
-| **Atomic Staging** | ❌ Live in-place cache mutation | ✅ **Isolated staging cache** with zero mixed-version states |
-| **Asset Download Strategy** | Re-downloads revised precache assets | Downloads only diffs; copies unchanged files locally (0 bytes) |
-| **Integrity & Signatures** | Custom revision string comparison | **In-transit SHA-256** checks + **Ed25519 signed manifests** |
-| **Deploy Safety & Rollback** | ❌ None | ✅ **Automatic boot watchdog rollback** + `nlpwa-fallback` cache |
-| **Phased Rollouts** | ❌ None | ✅ **`rolloutPercent`** cohorts + remote **`blockedVersions`** kill-switch |
-| **Multi-Tab Consensus** | ❌ Manual messaging | ✅ **Tab bus**, leader election, and dirty form reload guards |
-| **Breaking Version Guard** | ❌ Requires custom messaging logic | ✅ Built-in **`minVersion`** auto-evicts outdated clients |
-| **Deploy Workflow** | Must re-compile / re-inject `sw.js` every build | `sw.js` stays static; CLI emits lightweight JSON update manifests |
-| **Dependencies** | Dozens of packages (`workbox-*`) | **Zero runtime dependencies** (drop-in pre-bundled files or npm exports) |
-| **Modular Plugins** | Monolithic plugin hooks | Official plugins: `sync`, `share`, `badge`, `bg-fetch`, `crypto` |
+| Dimension / Capability | Workbox | NLPWA |
+|---|---|---|
+| **Architectural Model** | **Modular Toolkit.** A collection of libraries (`workbox-*`) for assembling custom service workers. | **Integrated App Framework.** A pre-bundled engine, runtime SDK, and build tool designed specifically for atomic OTA app releases. |
+| **SW Lifecycle vs. App Updates** | **Bound to SW Lifecycle.** Precache changes require re-compiling `sw.js`, triggering full worker update cycles (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active; application updates arrive Over-The-Air via lightweight JSON manifests (`version.json` / `info.json`). |
+| **Open Tab Isolation** | ⚠️ **No per-tab isolation.** By default, workers wait until all tabs close. If `skipWaiting` is enabled, open tabs suffer version drift and lazy-chunk 404s. | ✅ **Built-in Client Version Pinning.** Every open tab is isolated by `clientId` to its active boot cache; existing tabs never experience mixed-version states mid-session. |
+| **Delta Downloads** | **Revision-based precache.** Modified assets are downloaded during worker installation; unchanged files are retained in the precache store. | **Local hash diffing.** Unchanged files are copied locally from the active cache (zero network bytes); changed files are staged and verified in an isolated cache. |
+| **Atomic Staging** | ❌ **Live in-place mutation.** Precache entries are populated directly into the new worker's cache during `install`. | ✅ **Isolated delta staging cache.** Updates commit atomically via metadata pointer only when 100% of files are downloaded and verified. |
+| **Integrity & Signatures** | URL revision string comparison / optional Subresource Integrity (SRI) on precache entries. | In-transit SHA-256 digest verification + optional build-time **Ed25519 cryptographic manifest signing**. |
+| **Deploy Safety & Rollback** | ❌ **No built-in rollback.** Bad deployments require manual app handling or rolling forward a new release. | ✅ Built-in **automatic boot watchdog rollback** to previous known-good version (`nlpwa-fallback`). |
+| **Phased Rollouts & Kill-Switch** | ❌ Requires custom proxy routing or manual worker logic. | ✅ Built-in **`rolloutPercent`** cohorts, release channels (`stable`/`beta`), and remote **`blockedVersions`** kill-switch. |
+| **Multi-Tab Consensus** | ❌ Requires custom window `postMessage` coordination. | ✅ Built-in **BroadcastChannel tab bus**, leader election, and dirty form reload guards (`registerDirtyGuard`). |
+| **Breaking Version Guard** | ❌ Requires custom messaging or server-side version negotiation. | ✅ Built-in **`minVersion`** enforcement that unpins outdated tabs and auto-prompts/forces reload. |
+| **Deploy Workflow** | Must re-compile / re-inject `sw.js` every build. | `sw.js` stays static; CLI emits lightweight JSON update manifests. |
+| **Dependencies** | Modular npm packages (`workbox-*`). | **Zero runtime dependencies** (drop-in pre-bundled files or npm subpath exports). |
+| **Modular Plugins** | Monolithic plugin hooks runner. | Official plugins: `sync`, `share`, `badge`, `bg-fetch`, `crypto`. |
+
+### When to Choose Workbox
+Workbox remains the standard choice for:
+- Bespoke service worker pipelines with custom stream transformations or complex multi-worker topologies.
+- Existing integrations with Webpack (`workbox-webpack-plugin`) or Next.js PWA plugins (`next-pwa` / `@ducanh2912/next-pwa`).
+- Specialized requirements like Google Analytics offline queueing (`workbox-google-analytics`).
+
+### When to Choose NLPWA
+NLPWA is ideal when you want:
+- Native-like Over-The-Air (OTA) updates where app releases don't cause Service Worker reinstall churn.
+- Guaranteed multi-tab asset consistency with zero risk of mid-session chunk-loading 404s.
+- Turnkey batteries: background sync queue with dead-letter recovery, form-edit reload protection, storage quota cleanup, and CLI tooling out of the box.
 
 ---
 
@@ -289,33 +302,6 @@ Tab 1 navigates → Pinned to offline@v2           Switched instantly with zero 
 
 ---
 
-## How NLPWA Compares with Workbox
-
-[Workbox](https://developer.chrome.com/docs/workbox) is Google's modular, low-level toolkit for service worker caching and routing. NLPWA approaches PWAs from a different angle — as an integrated, application-centric framework designed specifically around native-like Over-The-Air (OTA) updates:
-
-| Dimension | Workbox | NLPWA |
-|---|---|---|
-| **Architectural Model** | **Modular Toolkit.** A collection of libraries (`workbox-routing`, `workbox-precaching`, `workbox-strategies`) for assembling custom service workers. | **Integrated App Framework.** A pre-bundled engine, runtime SDK, and build tool designed specifically for atomic Over-The-Air app releases. |
-| **App Updates & Lifecycle** | **Worker Lifecycle Bound.** Updating precached files changes `sw.js` bytes, triggering the browser's worker update cycle (`install` → `waiting` → `activate`). | **Decoupled Engine & App.** The SW engine remains active; application updates arrive Over-The-Air via lightweight JSON manifests (`version.json` / `info.json`). |
-| **Multi-Tab Consistency** | **Coordinated via `skipWaiting()`.** Managing multi-tab version coherence requires manual window communication or user prompt coordination. | **Built-in Client Pinning.** Every open tab is isolated by `clientId` to its active cache. Existing tabs never switch assets mid-session. |
-| **Delta Downloads** | **Revision-based Precache.** Downloads modified assets during worker installation; unchanged files are retained in the precache store. | **Local Hash Diffing.** Unchanged files are copied locally from the active cache (zero network bytes); changed files are staged and SHA-256 verified in an isolated cache. |
-| **Integrity & Safety** | **Optional SRI.** Supports Subresource Integrity (`integrity` option) when configured during build. | **Built-in Manifest Verification.** Automatically verifies staged assets against SHA-256 hashes to block soft-404s, captive portals, and truncated downloads. |
-| **API Deprecation Safety** | **Custom Logic.** Requires developer-implemented version guards or server-side version negotiation. | **`minVersion` Guard.** Built-in minimum supported version enforcement that unpins outdated tabs and prompts/forces reloads. |
-
-### When to Choose Workbox
-Workbox remains the standard choice for:
-- Bespoke service worker pipelines with custom stream transformations or complex multi-worker topologies.
-- Existing integrations with Webpack (`workbox-webpack-plugin`) or Next.js PWA plugins (`next-pwa` / `@ducanh2912/next-pwa`).
-- Specialized requirements like Google Analytics offline queueing (`workbox-google-analytics`).
-
-### When to Choose NLPWA
-NLPWA is ideal when you want:
-- Native-like Over-The-Air (OTA) updates where app releases don't cause Service Worker reinstall churn.
-- Guaranteed multi-tab asset consistency with zero risk of mid-session chunk-loading 404s.
-- Turnkey batteries: background sync queue with dead-letter recovery, form-edit reload protection, storage quota cleanup, and CLI tooling out of the box.
-
----
-
 ## Integrity: Operational Verification vs. Cryptographic Signatures
 
 During update staging, each downloaded file is verified against its SHA-256 digest before being admitted into the staging cache. It is useful to distinguish the two security and reliability boundaries:
@@ -383,7 +369,7 @@ Explore the complete documentation:
 | Document | Topic & Details |
 |---|---|
 | 📚 [**Documentation Portal**](docs/README.md) | Central documentation directory and complete topic index |
-| 🌟 [**Features & Capabilities**](FEATURES.md) | **Definitive reference:** Atomic OTA updates, client pinning, Ed25519 signing, rollback watchdog, staging budgets, and modular plugins |
+| 🌟 [**Features & Capabilities**](docs/FEATURES.md) | **Definitive reference:** Atomic OTA updates, client pinning, Ed25519 signing, rollback watchdog, staging budgets, and modular plugins |
 | 📐 [**Architecture Guide**](docs/ARCHITECTURE.md) | System design, internal module map, client version pinning, and update state machine |
 | ⚙️ [**Configuration Reference**](docs/config/README.md) | Full schema reference for `nlpwa.config.js`, global options, and routing rules |
 | 💻 [**Client SDK & Runtime API**](docs/client/README.md) | `NLPWAClient` methods, options, DOM events, multi-tab coherence, state, and storage |
@@ -419,10 +405,11 @@ npm run test:e2e
 - `out/client.js` — Client IIFE (`window.NLPWAClient`)
 - `out/client.esm.js` — Client ES module (`import { register } from 'nlpwa/client'`)
 - `out/api/update/config.json` — Runtime configuration starter
-- `out/plugins/sync.js` — Background Sync plugin ES module (`import { initSync } from 'nlpwa/sync'`)
-- `out/plugins/sync.client.esm.js` — Background Sync Client ES module (`import { initSyncClient } from 'nlpwa/sync/client'`)
-- `out/plugins/sync.sw.js` — Standalone Background Sync SW plugin
-- `out/plugins/sync.client.js` — Standalone Background Sync Client SDK
+- `out/plugins/sync.js`, `sync.sw.js`, `sync.client.esm.js`, `sync.client.js` — Background Sync plugin
+- `out/plugins/bg-fetch.js`, `bg-fetch.sw.js`, `bg-fetch.client.esm.js`, `bg-fetch.client.js` — Background Fetch plugin (>25MB streaming)
+- `out/plugins/share.js`, `share.sw.js`, `share.client.esm.js`, `share.client.js` — Web Share Target plugin
+- `out/plugins/badge.js`, `badge.sw.js`, `badge.client.esm.js`, `badge.client.js` — App Badging API plugin
+- `out/plugins/crypto.js` — Ed25519 signing & verification module
 - `out/rollup-plugin.js` — Rollup/Vite plugin (`import nlpwa from 'nlpwa/vite'`)
 - `out/webpack-plugin.js` — Webpack/Next.js/Rspack plugin (`import { NlpwaWebpackPlugin } from 'nlpwa/webpack'`)
 

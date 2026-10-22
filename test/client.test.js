@@ -267,6 +267,7 @@ test('register: shouldDeferReload predicate defers autoReload and offers prompt 
 test('applyUpdate: aborts reload when SW replies applied: false', async () => {
   const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const origWinDesc = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const origChan = globalThis.MessageChannel;
 
   try {
     let reloadCalled = false;
@@ -324,7 +325,7 @@ test('applyUpdate: aborts reload when SW replies applied: false', async () => {
       writable: true,
     });
 
-    const result = await applyUpdate({ reload: true });
+    const result = await applyUpdate({ reload: true, checkTabs: false });
     assert.equal(result, false, 'applyUpdate returns false when applied is false');
     assert.equal(reloadCalled, false, 'window.location.reload must not be called when applied is false');
   } finally {
@@ -338,7 +339,11 @@ test('applyUpdate: aborts reload when SW replies applied: false', async () => {
     } else {
       delete globalThis.window;
     }
-    delete globalThis.MessageChannel;
+    if (origChan) {
+      globalThis.MessageChannel = origChan;
+    } else {
+      delete globalThis.MessageChannel;
+    }
   }
 });
 

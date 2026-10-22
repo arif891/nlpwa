@@ -19,9 +19,6 @@ function getBus() {
   if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
     try {
       bus = new BroadcastChannel(TAB_BUS_NAME);
-      if (typeof bus.unref === 'function') {
-        bus.unref();
-      }
       bus.addEventListener('message', handleBusMessage);
     } catch (err) {
       logger.debug('[NLPWA] BroadcastChannel unavailable:', err?.message || err);
@@ -153,9 +150,6 @@ export async function checkDirtyTabs(timeoutMs = 150) {
       channel.removeEventListener('message', onMessage);
       resolve();
     }, timeoutMs);
-    if (timer && typeof timer.unref === 'function') {
-      timer.unref();
-    }
   });
 
   return {

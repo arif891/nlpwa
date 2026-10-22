@@ -77,25 +77,56 @@ export class BackgroundFetchClient {
 
   /**
    * Start a new background fetch download or upload task.
+   * Supports:
+   *   1. fetch(id, requests, options) -> custom ID with single or multiple URLs
+   *   2. fetch(requests, options)     -> auto-generated ID (uses escaped URL for single URL)
+   *
    * If downloadTotal or uploadTotal are omitted, automatically attempts to
    * inspect HEAD Content-Length or Request body size where possible.
    *
-   * @param {string} id Unique identifier for this task
-   * @param {string[]|Request[]} requests URLs or Request objects to download
+   * @param {string|string[]|Request|Request[]} idOrRequests Unique task identifier or array of requests
+   * @param {string[]|Request[]|Object} [requestsOrOptions] URLs to fetch or options object if ID omitted
    * @param {{
    *   title?: string,
    *   icons?: Array<{ src: string, sizes?: string, type?: string }>,
    *   downloadTotal?: number,
    *   uploadTotal?: number,
-   *   autoDetermineTotals?: boolean
-   * }} [options]
+   *   autoDetermineTotals?: boolean,
+   *   onProgress?: (progress: { id: string, downloaded: number, downloadTotal: number, uploaded: number, uploadTotal: number, percent: number|null }) => void
+   * }} [maybeOptions]
    * @returns {Promise<Object>} BackgroundFetchRegistration
    */
-  async fetch(id, requests, options = {}) {
+  async fetch(idOrRequests, requestsOrOptions, maybeOptions = {}) {
     this._initListeners();
     const reg = await this.getRegistration();
     if (!reg || !reg.backgroundFetch) {
       throw new Error('Background Fetch API is not supported or SW is not registered.');
+    }
+
+    let id;
+    let requests;
+    let options;
+
+    if (
+      Array.isArray(idOrRequests) ||
+      (typeof idOrRequests === 'object' && idOrRequests !== null && 'url' in idOrRequests) ||
+      (typeof idOrRequests === 'string' && (requestsOrOptions === undefined || (typeof requestsOrOptions === 'object' && !Array.isArray(requestsOrOptions) && !('url' in requestsOrOptions))))
+    ) {
+      // Called as fetch(requests, options)
+      requests = idOrRequests;
+      options = requestsOrOptions || {};
+      const reqList = Array.isArray(requests) ? requests : [requests];
+      if (reqList.length === 1) {
+        const singleUrl = typeof reqList[0] === 'string' ? reqList[0] : reqList[0]?.url;
+        id = singleUrl ? getBgFetchIdForUrl(singleUrl) : `nlpwa-bg:${Date.now()}`;
+      } else {
+        id = `nlpwa-bg:${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      }
+    } else {
+      // Called as fetch(id, requests, options)
+      id = idOrRequests;
+      requests = requestsOrOptions;
+      options = maybeOptions;
     }
 
     let finalOptions = { ...options };
@@ -145,7 +176,7 @@ export class BackgroundFetchClient {
       }
     }
 
-    const bgRegistration = await reg.backgroundFetch.fetch(id, requests, finalOptions);
+    const bgRegistration = await reg.backgroundFetch.fetch(id, reqList, finalOptions);
     if (typeof options.onProgress === 'function') {
       this.onProgress(bgRegistration, options.onProgress);
     }

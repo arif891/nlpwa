@@ -297,6 +297,43 @@ test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists record
   });
   unsub();
 
+  // Test client.fetch with custom ID and multiple URLs
+  let bgFetchMockCalls = [];
+  globalThis.navigator = {
+    serviceWorker: {
+      ready: Promise.resolve({
+        backgroundFetch: {
+          async fetch(id, requests, opts) {
+            bgFetchMockCalls.push({ id, requests, opts });
+            return { id, ...opts };
+          },
+        },
+      }),
+    },
+  };
+
+  // 1. Custom ID with multiple URLs
+  await backgroundFetchClient.fetch('album-01', ['/audio/track1.mp3', '/audio/track2.mp3'], {
+    title: 'Downloading Album',
+    downloadTotal: 10000,
+  });
+  assert.equal(bgFetchMockCalls.length, 1);
+  assert.equal(bgFetchMockCalls[0].id, 'album-01');
+  assert.deepEqual(bgFetchMockCalls[0].requests, ['/audio/track1.mp3', '/audio/track2.mp3']);
+  assert.equal(bgFetchMockCalls[0].opts.title, 'Downloading Album');
+
+  // 2. Omitted ID with single URL -> generates deterministic escaped URL ID
+  await backgroundFetchClient.fetch('/models/large-model.onnx', { downloadTotal: 50000 });
+  assert.equal(bgFetchMockCalls.length, 2);
+  assert.equal(bgFetchMockCalls[1].id, 'nlpwa-bg:%2Fmodels%2Flarge-model.onnx');
+  assert.deepEqual(bgFetchMockCalls[1].requests, ['/models/large-model.onnx']);
+
+  // 3. Omitted ID with multiple URLs -> generates nlpwa-bg: timestamp ID
+  await backgroundFetchClient.fetch(['/f1.bin', '/f2.bin'], { downloadTotal: 2000 });
+  assert.equal(bgFetchMockCalls.length, 3);
+  assert.ok(bgFetchMockCalls[2].id.startsWith('nlpwa-bg:'));
+  assert.deepEqual(bgFetchMockCalls[2].requests, ['/f1.bin', '/f2.bin']);
+
   assert.ok(backgroundFetchClient instanceof BackgroundFetchClient);
 });
 

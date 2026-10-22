@@ -590,6 +590,63 @@ test('register: periodicSync: false suppresses periodicSync registration', async
   }
 });
 
+test('register: periodicSync warning is silenced on default config and only warns when explicitly set', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origWarn = console.warn;
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.join(' '));
+
+  try {
+    const mockController = { postMessage() {} };
+    let registeredMinInterval = null;
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          controller: mockController,
+          ready: Promise.resolve({ active: mockController }),
+          async register() {
+            return {
+              scope: '/',
+              periodicSync: {
+                async register(tag, opts) {
+                  registeredMinInterval = opts.minInterval;
+                },
+              },
+            };
+          },
+          addEventListener() {},
+          removeEventListener() {},
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    // 1. Default config (periodicSync not explicitly set) -> Warning must be SILENCED
+    const h1 = await register('/sw.js', { checkOnRegister: false });
+    assert.equal(registeredMinInterval, 86400000, 'defaults to 24h interval');
+    const hasWarning1 = warnings.some(w => w.includes('Periodic Background Sync minInterval'));
+    assert.equal(hasWarning1, false, 'warning is silenced on default config');
+    h1?.unsubscribe();
+
+    // 2. Explicit periodicSync: true with interval < 24h -> Warning MUST be logged
+    warnings.length = 0;
+    const h2 = await register('/sw.js', { periodicSync: true, pollIntervalMs: 3600000, checkOnRegister: false });
+    assert.equal(registeredMinInterval, 3600000);
+    const hasWarning2 = warnings.some(w => w.includes('Periodic Background Sync minInterval'));
+    assert.equal(hasWarning2, true, 'warning is logged when user explicitly sets periodicSync < 24h');
+    h2?.unsubscribe();
+  } finally {
+    console.warn = origWarn;
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
+});
+
 test('unregister: unregisters service worker when available', async () => {
   let unregistered = false;
   const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');

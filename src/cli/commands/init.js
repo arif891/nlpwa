@@ -169,7 +169,7 @@ export async function cmdInit(args) {
 
     const signingConfigFields = generatedPubKey
       ? `  publicKey: '${generatedPubKey}',\n  verifyHashes: 'strict',\n`
-      : `  verifyHashes: 'warn',\n`;
+      : '';
 
     const starterConfigJs = `/**
  * NLPWA Configuration

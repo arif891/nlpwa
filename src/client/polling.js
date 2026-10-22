@@ -48,14 +48,19 @@ export function setupIntervalPolling({ options, onCheck }) {
 export function setupPeriodicSync({ registration, options, logger }) {
   const enablePeriodicSync = options.periodicSync !== false;
   const pollIntervalMs = options.pollIntervalMs ?? 60 * 60 * 1000;
+  const isExplicitPeriodicSync = Boolean(options.periodicSync);
+  const minInterval = (typeof options.periodicSync === 'object' && options.periodicSync?.minInterval)
+    ? options.periodicSync.minInterval
+    : (isExplicitPeriodicSync ? pollIntervalMs : Math.max(pollIntervalMs, 86400000));
 
   if (enablePeriodicSync && 'periodicSync' in registration) {
     try {
-      if (pollIntervalMs < 86400000) {
+      // Only warn if the user has explicitly set periodicSync and the interval is below 24h
+      if (isExplicitPeriodicSync && minInterval < 86400000) {
         logger.warn('[NLPWA] Periodic Background Sync minInterval is set below 24h. Most browsers enforce a minimum interval of 12-24 hours for periodicSync.');
       }
       registration.periodicSync.register('nlpwa-update-check', {
-        minInterval: pollIntervalMs,
+        minInterval,
       }).catch(() => {});
     } catch {
       // Periodic sync permission is granted by browser only for installed PWAs; ignore failure

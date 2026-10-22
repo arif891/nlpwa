@@ -552,6 +552,33 @@ test('cli update: preserves developer explicit verifyHashes: warn when signing k
   assert.ok(!configContent.includes("verifyHashes: 'strict'"), 'did not overwrite warn with strict');
 });
 
+test('cli init: does not include verifyHashes in scaffolded config, and keys:generate injects strict', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-init-'));
+  const resInit = spawnSync(
+    process.execPath,
+    [CLI, 'init', '--dir', root],
+    { cwd: root, encoding: 'utf8' }
+  );
+  assert.equal(resInit.status, 0, resInit.stderr);
+
+  const initConfig = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.ok(!initConfig.includes('verifyHashes'), 'scaffolded starter config does not set verifyHashes');
+
+  // Now run keys:generate on this project
+  const resKeys = spawnSync(
+    process.execPath,
+    [CLI, 'keys:generate', '--config', join(root, 'nlpwa.config.js'), '--dir', root],
+    { cwd: root, encoding: 'utf8' }
+  );
+  assert.equal(resKeys.status, 0, resKeys.stderr);
+
+  const keyConfig = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.match(keyConfig, /publicKey:\s*'[A-Za-z0-9+/=]{44}'/);
+  assert.match(keyConfig, /verifyHashes:\s*'strict'/, 'keys:generate injects strict when verifyHashes was absent');
+  assert.ok(!keyConfig.includes("verifyHashes: 'warn'"), 'does not contain contradictory warn');
+});
+
+
 
 
 

@@ -149,8 +149,21 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
       }
     }
 
-    const primaryCacheName = usedCacheNames.values().next().value || options.cacheName || BG_FETCH_CACHE_NAME;
-    logger.log(`[NLPWA] Background fetch "${bgFetch.id}" succeeded: ${storedRequests.length} cached, ${uploadResults.length} uploaded.`);
+    // Update native OS notification via BackgroundFetchUpdateUIEvent
+    if (typeof event.updateUI === 'function') {
+      try {
+        const isUploadOnly = uploadResults.length > 0 && storedRequests.length === 0;
+        const defaultTitle = isUploadOnly ? 'Upload complete' : 'Download complete';
+        await event.updateUI({
+          title: options.title || options.successTitle || defaultTitle,
+          icons: options.icons || options.successIcons,
+        });
+      } catch (uiErr) {
+        logger.debug('[NLPWA] updateUI error on success:', uiErr?.message || uiErr);
+      }
+    }
+
+    const primaryCacheName = usedCacheNames.values().next().value || BG_FETCH_CACHE_NAME;
 
     // Notify clients
     if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
@@ -177,10 +190,22 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
  * Handle failed background fetch.
  *
  * @param {BackgroundFetchEvent} event
+ * @param {Object} [options]
  */
-export async function handleBackgroundFetchFail(event) {
+export async function handleBackgroundFetchFail(event, options = {}) {
   const bgFetch = event.registration;
   logger.warn(`[NLPWA] Background fetch "${bgFetch.id}" failed: ${bgFetch.failureReason}`);
+
+  // Update native OS notification via BackgroundFetchUpdateUIEvent
+  if (typeof event.updateUI === 'function') {
+    try {
+      await event.updateUI({
+        title: options.failTitle || 'Transfer failed',
+      });
+    } catch (uiErr) {
+      logger.debug('[NLPWA] updateUI error on fail:', uiErr?.message || uiErr);
+    }
+  }
 
   if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -247,7 +272,7 @@ export function setupBackgroundFetchListeners(options = {}) {
   });
 
   self.addEventListener('backgroundfetchfail', (event) => {
-    event.waitUntil(handleBackgroundFetchFail(event));
+    event.waitUntil(handleBackgroundFetchFail(event, options));
   });
 
   self.addEventListener('backgroundfetchabort', (event) => {

@@ -14,4 +14,9 @@ export {
   isBackgroundFetchSupported,
 } from './client.js';
 
-export { BG_FETCH_MESSAGE_TYPES } from './constants.js';
+export {
+  BG_FETCH_MESSAGE_TYPES,
+  BG_FETCH_ID_PREFIX,
+  getBgFetchIdForUrl,
+  getUrlFromBgFetchId,
+} from './constants.js';

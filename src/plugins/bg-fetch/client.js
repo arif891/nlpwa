@@ -1,4 +1,11 @@
-import { BG_FETCH_MESSAGE_TYPES } from './constants.js';
+import {
+  BG_FETCH_MESSAGE_TYPES,
+  BG_FETCH_ID_PREFIX,
+  getBgFetchIdForUrl,
+  getUrlFromBgFetchId,
+} from './constants.js';
+
+export { getBgFetchIdForUrl, getUrlFromBgFetchId };
 
 /**
  * Check if the browser supports the Background Fetch API.
@@ -138,7 +145,11 @@ export class BackgroundFetchClient {
       }
     }
 
-    return reg.backgroundFetch.fetch(id, requests, finalOptions);
+    const bgRegistration = await reg.backgroundFetch.fetch(id, requests, finalOptions);
+    if (typeof options.onProgress === 'function') {
+      this.onProgress(bgRegistration, options.onProgress);
+    }
+    return bgRegistration;
   }
 
   /**
@@ -151,6 +162,83 @@ export class BackgroundFetchClient {
     const reg = await this.getRegistration();
     if (!reg || !reg.backgroundFetch) return null;
     return reg.backgroundFetch.get(id);
+  }
+
+  /**
+   * Retrieve an active background fetch task for a given URL (using its deterministic ID).
+   *
+   * @param {string} url
+   * @returns {Promise<Object|null>}
+   */
+  async getForUrl(url) {
+    return this.get(getBgFetchIdForUrl(url));
+  }
+
+  /**
+   * Track live download/upload progress for an active BackgroundFetchRegistration or task ID/URL.
+   *
+   * @param {string|Object} target Task ID, URL, or BackgroundFetchRegistration object
+   * @param {(progress: {
+   *   id: string,
+   *   downloaded: number,
+   *   downloadTotal: number,
+   *   uploaded: number,
+   *   uploadTotal: number,
+   *   percent: number|null
+   * }) => void} callback
+   * @returns {Promise<() => void>} unsubscribe function
+   */
+  async onProgress(target, callback) {
+    if (typeof callback !== 'function') return () => {};
+
+    let registration = null;
+    if (typeof target === 'object' && target !== null && typeof target.addEventListener === 'function') {
+      registration = target;
+    } else if (typeof target === 'string') {
+      registration = await this.get(target);
+      if (!registration && !target.startsWith(BG_FETCH_ID_PREFIX)) {
+        registration = await this.getForUrl(target);
+      }
+    }
+
+    if (!registration) {
+      return () => {};
+    }
+
+    const handler = () => {
+      const downloaded = registration.downloaded || 0;
+      const downloadTotal = registration.downloadTotal || 0;
+      const uploaded = registration.uploaded || 0;
+      const uploadTotal = registration.uploadTotal || 0;
+
+      let percent = null;
+      if (downloadTotal > 0) {
+        percent = Math.round((downloaded / downloadTotal) * 100);
+      } else if (uploadTotal > 0) {
+        percent = Math.round((uploaded / uploadTotal) * 100);
+      }
+
+      try {
+        callback({
+          id: registration.id,
+          downloaded,
+          downloadTotal,
+          uploaded,
+          uploadTotal,
+          percent,
+        });
+      } catch {}
+    };
+
+    registration.addEventListener?.('progress', handler);
+    // Fire immediately with current state
+    handler();
+
+    return () => {
+      try {
+        registration.removeEventListener?.('progress', handler);
+      } catch {}
+    };
   }
 
   /**

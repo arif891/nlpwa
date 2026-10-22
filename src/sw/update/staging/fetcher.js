@@ -32,11 +32,14 @@ export async function fetchVerified({
   // If file is large (>25MB) and backgroundFetch is supported, delegate to Background Fetch
   if (isLarge && typeof self !== 'undefined' && self.registration?.backgroundFetch) {
     try {
-      const bgId = `nlpwa-bg-${Date.now()}`;
-      const bgRegistration = await self.registration.backgroundFetch.fetch(bgId, [path], {
-        title: `Updating asset ${path}`,
-        downloadTotal: fileSize,
-      });
+      const bgId = `nlpwa-bg:${encodeURIComponent(path)}`;
+      let bgRegistration = await self.registration.backgroundFetch.get(bgId);
+      if (!bgRegistration) {
+        bgRegistration = await self.registration.backgroundFetch.fetch(bgId, [path], {
+          title: `Updating asset ${path}`,
+          downloadTotal: fileSize,
+        });
+      }
       const record = await bgRegistration.match(path);
       if (record) {
         const bgRes = await record.responseReady;

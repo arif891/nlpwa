@@ -33,6 +33,8 @@ import {
   BackgroundFetchClient,
   backgroundFetchClient,
   BG_FETCH_CACHE_NAME,
+  getBgFetchIdForUrl,
+  getUrlFromBgFetchId,
 } from '../src/plugins/bg-fetch/index.js';
 
 // Crypto plugin
@@ -230,21 +232,32 @@ test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists record
     },
   };
 
+  let updateUICalledWith = null;
+  uploadEvent.updateUI = async (ui) => {
+    updateUICalledWith = ui;
+  };
+
   await handleBackgroundFetchSuccess(uploadEvent);
   assert.equal(broadcasted.length, 3);
   assert.equal(broadcasted[2].id, 'upload-logs');
   assert.equal(broadcasted[2].isUpload, true);
   assert.deepEqual(broadcasted[2].uploadResults[0].response, { uploaded: true, id: 'log-123' });
+  assert.equal(updateUICalledWith?.title, 'Upload complete');
 
-  // Test fail event
+  // Test fail event with updateUI
+  let failUICalledWith = null;
   await handleBackgroundFetchFail({
     registration: {
       id: 'download-fail-task',
       failureReason: 'quota-exceeded',
     },
+    updateUI: async (ui) => {
+      failUICalledWith = ui;
+    },
   });
   assert.equal(broadcasted.length, 4);
   assert.equal(broadcasted[3].failureReason, 'quota-exceeded');
+  assert.equal(failUICalledWith?.title, 'Transfer failed');
 
   // Test abort event
   await handleBackgroundFetchAbort({
@@ -252,6 +265,37 @@ test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists record
   });
   assert.equal(broadcasted.length, 5);
   assert.equal(broadcasted[4].id, 'download-abort-task');
+
+  // Test deterministic ID helpers
+  const expectedId = 'nlpwa-bg:%2Fassets%2Fweights.bin';
+  assert.equal(getBgFetchIdForUrl('/assets/weights.bin'), expectedId);
+  assert.equal(getUrlFromBgFetchId(expectedId), '/assets/weights.bin');
+  assert.equal(getUrlFromBgFetchId('custom-id'), null);
+
+  // Test client progress tracking
+  let progressReport = null;
+  const mockReg = {
+    id: 'test-progress-reg',
+    downloaded: 50,
+    downloadTotal: 100,
+    uploaded: 0,
+    uploadTotal: 0,
+    addEventListener(event, fn) {
+      this._fn = fn;
+    },
+  };
+  const unsub = await backgroundFetchClient.onProgress(mockReg, (p) => {
+    progressReport = p;
+  });
+  assert.deepEqual(progressReport, {
+    id: 'test-progress-reg',
+    downloaded: 50,
+    downloadTotal: 100,
+    uploaded: 0,
+    uploadTotal: 0,
+    percent: 50,
+  });
+  unsub();
 
   assert.ok(backgroundFetchClient instanceof BackgroundFetchClient);
 });

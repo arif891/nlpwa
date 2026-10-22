@@ -167,12 +167,52 @@ test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists record
     },
   };
 
-  await handleBackgroundFetchSuccess(event, { cacheName: BG_FETCH_CACHE_NAME });
+  await handleBackgroundFetchSuccess(event);
 
   assert.equal(cachedRecords.has('http://localhost:3000/models/weights.bin'), true);
   assert.equal(broadcasted.length, 1);
   assert.equal(broadcasted[0].id, 'download-ai-weights');
   assert.equal(broadcasted[0].count, 1);
+  assert.equal(broadcasted[0].cacheName, 'runtime');
+
+  // Test route-aware targeting: custom cacheName in routes
+  const customCaches = new Map();
+  globalThis.caches = {
+    open: async (name) => {
+      if (!customCaches.has(name)) {
+        customCaches.set(name, new Map());
+      }
+      const store = customCaches.get(name);
+      return {
+        async put(request, response) {
+          const url = typeof request === 'string' ? request : request.url;
+          store.set(url, response);
+        },
+      };
+    },
+  };
+
+  const routeEvent = {
+    registration: {
+      id: 'download-video',
+      matchAll: async () => [
+        {
+          request: new Request('http://localhost:3000/media/intro.mp4'),
+          responseReady: Promise.resolve(new Response('video mp4 data', { status: 200 })),
+        },
+      ],
+    },
+  };
+
+  const mockConfig = {
+    routes: [
+      { match: '/media/**', strategy: 'cache-first', cacheName: 'videos-cache' },
+    ],
+  };
+
+  await handleBackgroundFetchSuccess(routeEvent, { config: mockConfig });
+  assert.equal(customCaches.has('videos-cache'), true);
+  assert.equal(customCaches.get('videos-cache').has('http://localhost:3000/media/intro.mp4'), true);
 
   // Test fail event
   await handleBackgroundFetchFail({
@@ -181,15 +221,15 @@ test('bg-fetch plugin: BackgroundFetchPlugin handles success and persists record
       failureReason: 'quota-exceeded',
     },
   });
-  assert.equal(broadcasted.length, 2);
-  assert.equal(broadcasted[1].failureReason, 'quota-exceeded');
+  assert.equal(broadcasted.length, 3);
+  assert.equal(broadcasted[2].failureReason, 'quota-exceeded');
 
   // Test abort event
   await handleBackgroundFetchAbort({
     registration: { id: 'download-abort-task' },
   });
-  assert.equal(broadcasted.length, 3);
-  assert.equal(broadcasted[2].id, 'download-abort-task');
+  assert.equal(broadcasted.length, 4);
+  assert.equal(broadcasted[3].id, 'download-abort-task');
 
   assert.ok(backgroundFetchClient instanceof BackgroundFetchClient);
 });

@@ -14,6 +14,7 @@ export { isUserEditing };
 
 let _activeUnsubscribe = null;
 let _isRegisteredOrRegistering = false;
+let _inFlightRegisterPromise = null;
 
 /**
  * Register the NLPWA Service Worker and set up update handling.
@@ -27,36 +28,50 @@ export async function register(swUrl = '/sw.js', options = {}) {
   if (options._auto && _isRegisteredOrRegistering) {
     return null;
   }
-  _isRegisteredOrRegistering = true;
 
-  if (_activeUnsubscribe) {
-    try { _activeUnsubscribe(); } catch {}
-    _activeUnsubscribe = null;
+  // If another register() call is in progress, wait for it to complete
+  // so any created listeners can be cleaned up cleanly without leaking
+  if (_inFlightRegisterPromise) {
+    try { await _inFlightRegisterPromise; } catch {}
+    if (options._auto && _isRegisteredOrRegistering) {
+      return null;
+    }
   }
 
-  if (options.logLevel) {
-    setClientLogLevel(options.logLevel);
-  }
+  const executeRegister = async () => {
+    _isRegisteredOrRegistering = true;
 
-  if (!('serviceWorker' in navigator)) {
-    logger.warn('[NLPWA] Service Workers are not supported in this browser.');
-    return null;
-  }
+    if (_activeUnsubscribe) {
+      try { _activeUnsubscribe(); } catch {}
+      _activeUnsubscribe = null;
+    }
 
-  const regOptions = {};
-  if (options.type) regOptions.type = options.type;
-  if (options.scope) regOptions.scope = options.scope;
-  if (options.updateViaCache) regOptions.updateViaCache = options.updateViaCache;
+    if (options.logLevel) {
+      setClientLogLevel(options.logLevel);
+    }
 
-  let registration;
-  try {
-    registration = await navigator.serviceWorker.register(swUrl, regOptions);
-    logger.log('[NLPWA] SW registered:', registration.scope);
-  } catch (err) {
-    _isRegisteredOrRegistering = false;
-    logger.error('[NLPWA] SW registration failed:', err);
-    return null;
-  }
+    if (!('serviceWorker' in navigator)) {
+      logger.warn('[NLPWA] Service Workers are not supported in this browser.');
+      return null;
+    }
+
+    const regOptions = {};
+    if (options.type) regOptions.type = options.type;
+    if (options.scope) regOptions.scope = options.scope;
+    if (options.updateViaCache) regOptions.updateViaCache = options.updateViaCache;
+
+    let registration;
+    try {
+      registration = await navigator.serviceWorker.register(swUrl, regOptions);
+      logger.log('[NLPWA] SW registered:', registration.scope);
+    } catch (err) {
+      _isRegisteredOrRegistering = false;
+      if (!options._silentFail) {
+        logger.error('[NLPWA] SW registration failed:', err);
+      }
+      return null;
+    }
+
 
 
   function checkReloadDeferral(version, reason) {
@@ -241,8 +256,16 @@ export async function register(swUrl = '/sw.js', options = {}) {
     }
   };
 
-  _activeUnsubscribe = unsubscribe;
-  return { registration, unsubscribe };
+    _activeUnsubscribe = unsubscribe;
+    return { registration, unsubscribe };
+  };
+
+  _inFlightRegisterPromise = executeRegister();
+  try {
+    return await _inFlightRegisterPromise;
+  } finally {
+    _inFlightRegisterPromise = null;
+  }
 }
 
 /**
@@ -253,10 +276,14 @@ export async function register(swUrl = '/sw.js', options = {}) {
  */
 export async function unregister(scope) {
   _isRegisteredOrRegistering = false;
+  if (_inFlightRegisterPromise) {
+    try { await _inFlightRegisterPromise; } catch {}
+  }
   if (_activeUnsubscribe) {
     try { _activeUnsubscribe(); } catch {}
     _activeUnsubscribe = null;
   }
+
 
 
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {

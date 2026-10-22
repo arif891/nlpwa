@@ -53,6 +53,29 @@ register('/sw.js', {
 
 ---
 
+## Standalone Auto-Registration (`/client.js`)
+
+When using the pre-bundled `/client.js` in a browser `<script src="/client.js"></script>` tag, the SDK automatically registers the Service Worker on load with zero setup.
+
+### Placement & Custom Paths (`data-sw`)
+
+By default, auto-registration derives the Service Worker URL from the `client.js` location (sitting beside it) or falls back to `/sw.js` at the origin root. If your script is bundled or placed in an asset subdirectory (such as `/static/js/client.js` or `/assets/client.js`), the auto-registration defaults directly to `/sw.js`.
+
+To explicitly configure the Service Worker path, custom scope, or disable auto-registration:
+
+```html
+<!-- Explicit custom Service Worker path -->
+<script src="/static/js/client.js" data-sw="/sw.js"></script>
+
+<!-- Custom scope -->
+<script src="/client.js" data-scope="/my-app/"></script>
+
+<!-- Disable auto-registration (e.g. for purely manual register() calls) -->
+<script src="/client.js" data-auto-register="false"></script>
+```
+
+---
+
 ## Applying Updates: `applyUpdate(options)`
 
 Instructs the Service Worker to commit a fully staged update into the active offline cache.

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { isUserEditing, register, applyUpdate, unregister, getVersion, getStatus, onStagingProgress } from '../src/client/register.js';
+import { resolveDefaultSwUrl } from '../src/client/standalone.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
 
 
@@ -864,6 +865,177 @@ test('client standalone: auto-registers with derived subpath base from script sr
   assert.equal(registeredUrls.length, 1);
   assert.equal(registeredUrls[0].url, '/my-subpath/sw.js', 'derived subpath /my-subpath/sw.js correctly');
 });
+
+test('client standalone: resolveDefaultSwUrl handles asset subdirectories, custom subpaths, and data-sw', () => {
+  const origWindow = globalThis.window;
+  try {
+    globalThis.window = { location: { href: 'https://example.com/', origin: 'https://example.com' } };
+
+    // Asset subdirectories fall back to /sw.js
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/assets/client.js' }), '/sw.js');
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/static/js/client.js' }), '/sw.js');
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/dist/client.js' }), '/sw.js');
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/build/client.js' }), '/sw.js');
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/vendor/client.js' }), '/sw.js');
+
+    // App subpath derives sw.js in the same subpath
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/my-app/client.js' }), '/my-app/sw.js');
+
+    // Root client.js derives root /sw.js
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/client.js' }), '/sw.js');
+
+    // Explicit data-sw overrides everything
+    assert.equal(resolveDefaultSwUrl({
+      src: 'https://example.com/static/js/client.js',
+      getAttribute: (name) => name === 'data-sw' ? '/custom/sw.js' : null,
+    }), '/custom/sw.js');
+  } finally {
+    globalThis.window = origWindow;
+  }
+});
+
+test('client standalone: auto-registers with fallback to /sw.js when derived subpath registration fails', async () => {
+  const clientBundle = readFileSync(fileURLToPath(new URL('../out/client.js', import.meta.url)), 'utf8');
+
+  const registeredUrls = [];
+  const fakeNavigator = {
+    serviceWorker: {
+      async register(url, options) {
+        registeredUrls.push({ url, options });
+        if (url === '/custom-app/sw.js') {
+          throw new Error('404 Not Found');
+        }
+        return { scope: '/' };
+      },
+      addEventListener() {},
+      removeEventListener() {},
+      controller: null,
+    },
+  };
+
+  const fakeDocument = {
+    readyState: 'complete',
+    currentScript: null,
+    querySelectorAll(selector) {
+      if (selector === 'script[src]') {
+        return [
+          { getAttribute: (attr) => attr === 'src' ? '/custom-app/client.js' : null, src: 'http://localhost/custom-app/client.js' },
+        ];
+      }
+      return [];
+    },
+  };
+
+  const fakeWindow = {
+    location: { href: 'http://localhost/custom-app/', origin: 'http://localhost' },
+    addEventListener() {},
+    removeEventListener() {},
+    document: fakeDocument,
+    navigator: fakeNavigator,
+  };
+
+  const { createContext, runInContext } = await import('node:vm');
+  const context = createContext({
+    window: fakeWindow,
+    document: fakeDocument,
+    navigator: fakeNavigator,
+    self: fakeWindow,
+    URL,
+    CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    console,
+  });
+
+  runInContext(clientBundle, context);
+
+  await new Promise(r => setTimeout(r, 60));
+
+  assert.equal(registeredUrls.length, 2);
+  assert.equal(registeredUrls[0].url, '/custom-app/sw.js', 'first tried derived path');
+  assert.equal(registeredUrls[1].url, '/sw.js', 'fell back to root /sw.js');
+});
+
+test('register: concurrent manual register calls serialize and do not leak listeners', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const origDocDesc = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+  try {
+    const swListeners = new Map();
+    let registerDelay = 25;
+
+    Object.defineProperty(globalThis, 'document', {
+      value: {
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent() {},
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          async register(url) {
+            await new Promise(r => setTimeout(r, registerDelay));
+            return { scope: '/' };
+          },
+          addEventListener(event, fn) {
+            if (!swListeners.has(event)) swListeners.set(event, []);
+            swListeners.get(event).push(fn);
+          },
+          removeEventListener(event, fn) {
+            const list = swListeners.get(event) || [];
+            swListeners.set(event, list.filter(l => l !== fn));
+          },
+          controller: null,
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const call1Results = [];
+    const call2Results = [];
+
+    // Initiate call 1 and call 2 concurrently (before call 1 finishes awaiting register)
+    const p1 = register('/sw.js', {
+      onUpdateReady: (detail) => call1Results.push(detail.version),
+    });
+    const p2 = register('/sw.js', {
+      onUpdateReady: (detail) => call2Results.push(detail.version),
+    });
+
+    const [res1, res2] = await Promise.all([p1, p2]);
+    assert.ok(res1);
+    assert.ok(res2);
+
+    // Simulate an UPDATE_READY message broadcast from SW
+    const messageListeners = swListeners.get('message') || [];
+    for (const listener of messageListeners) {
+      listener({ data: { type: MESSAGE_TYPES.UPDATE_READY, version: '2.0.0' } });
+    }
+
+    // Call 1's listeners should have been unsubscribed when call 2 executed; call 2 should receive the event
+    assert.equal(call1Results.length, 0, 'call1 listeners were unsubscribed without leaking');
+    assert.deepEqual(call2Results, ['2.0.0'], 'call2 received update-ready event');
+
+    // Clean up
+    await unregister();
+    assert.equal((swListeners.get('message') || []).length, 0, 'all listeners removed after unregister');
+  } finally {
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+    if (origDocDesc) {
+      Object.defineProperty(globalThis, 'document', origDocDesc);
+    } else {
+      delete globalThis.document;
+    }
+  }
+});
+
 
 
 

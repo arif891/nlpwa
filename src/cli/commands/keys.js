@@ -86,12 +86,18 @@ export async function cmdGenerateKeys(args) {
     try {
       const configPath = findConfigFile(args.config);
       if (configPath) {
-        syncSourceConfigPublicKey(configPath, rawPublicBase64);
-        console.log(`  ${c.green}+ Synchronized publicKey into ${configPath}${c.reset}`);
-        configSynced = true;
+        const updated = syncSourceConfigPublicKey(configPath, rawPublicBase64);
+        if (updated) {
+          console.log(`  ${c.green}+ Synchronized publicKey into ${configPath}${c.reset}`);
+          configSynced = true;
+        } else {
+          console.warn(`  ${c.yellow}! Notice: Could not automatically inject publicKey into ${configPath}.${c.reset}`);
+          console.warn(`  ${c.yellow}  Please add to your config manually: ${c.cyan}publicKey: '${rawPublicBase64}'${c.reset}\n`);
+        }
       }
     } catch {}
   }
+
 
   const shouldSyncSw =
     args.syncSw !== false &&

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import { sha256Hex, hashMatches } from '../src/shared/hash.js';
+import { syncSourceConfigPublicKey } from '../src/cli/core/config.js';
 
 
 const CLI = fileURLToPath(new URL('../bin/nlpwa.js', import.meta.url));
@@ -469,6 +470,88 @@ test('cli keys:generate: automatically synchronizes publicKey into existing nlpw
   const swContent = readFileSync(join(root, 'sw.js'), 'utf8');
   assert.match(swContent, /^self\.__NLPWA_PUBLIC_KEY\s*=\s*'[A-Za-z0-9+/=]{44}';/m);
 });
+
+test('syncSourceConfigPublicKey: handles variable exports, preserves explicit verifyHashes, and returns boolean', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-sync-'));
+  const testKey = '0123456789abcdef0123456789abcdef0123456789a=';
+
+  // 1. Variable export config: const config = { ... }; export default config;
+  const varConfigPath = join(root, 'var.config.js');
+  writeFileSync(
+    varConfigPath,
+    `const config = {\n  version: '1.0.0',\n};\nexport default config;\n`,
+    'utf8'
+  );
+  const updatedVar = syncSourceConfigPublicKey(varConfigPath, testKey);
+  assert.equal(updatedVar, true, 'returns true when variable object config is updated');
+  const varContent = readFileSync(varConfigPath, 'utf8');
+  assert.ok(varContent.includes(`publicKey: '${testKey}'`));
+  assert.ok(varContent.includes(`verifyHashes: 'strict'`));
+
+  // 2. Preserves explicit verifyHashes: 'warn'
+  const warnConfigPath = join(root, 'warn.config.js');
+  writeFileSync(
+    warnConfigPath,
+    `export default {\n  version: '1.0.0',\n  verifyHashes: 'warn',\n};\n`,
+    'utf8'
+  );
+  const updatedWarn = syncSourceConfigPublicKey(warnConfigPath, testKey);
+  assert.equal(updatedWarn, true, 'returns true when config is updated');
+  const warnContent = readFileSync(warnConfigPath, 'utf8');
+  assert.ok(warnContent.includes(`publicKey: '${testKey}'`));
+  assert.ok(warnContent.includes(`verifyHashes: 'warn'`), 'explicit verifyHashes: warn was preserved');
+  assert.ok(!warnContent.includes(`verifyHashes: 'strict'`), 'did not overwrite with strict');
+
+  // 3. Unrecognized structure returns false
+  const funcConfigPath = join(root, 'func.config.js');
+  writeFileSync(
+    funcConfigPath,
+    `export default function createConfig() { return { version: '1.0.0' }; }\n`,
+    'utf8'
+  );
+  const updatedFunc = syncSourceConfigPublicKey(funcConfigPath, testKey);
+  assert.equal(updatedFunc, false, 'returns false when no matching insertion point is found');
+  const funcContent = readFileSync(funcConfigPath, 'utf8');
+  assert.ok(!funcContent.includes('publicKey'), 'file was left untouched');
+});
+
+test('cli update: warns with manual snippet when source config cannot be auto-injected', () => {
+  const root = makeProject();
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const privB64 = privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+  const pubB64 = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64');
+
+  writeFileSync(join(root, '.env.nlpwa'), `NLPWA_PRIVATE_KEY="${privB64}"\n`);
+  writeFileSync(
+    join(root, 'nlpwa.config.js'),
+    `export default function defineConfig() {\n  return { version: '1.0.0', precache: ['/index.html'] };\n}\n`,
+  );
+
+  const res = runUpdate(root);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stderr, /Notice: Could not automatically inject publicKey/);
+  assert.match(res.stderr, /Please add to your config manually: publicKey:/);
+});
+
+test('cli update: preserves developer explicit verifyHashes: warn when signing key is present', () => {
+  const root = makeProject();
+  const { privateKey } = generateKeyPairSync('ed25519');
+  const privB64 = privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+
+  writeFileSync(join(root, '.env.nlpwa'), `NLPWA_PRIVATE_KEY="${privB64}"\n`);
+  writeFileSync(
+    join(root, 'nlpwa.config.js'),
+    `export default {\n  version: '1.0.0',\n  verifyHashes: 'warn',\n  precache: ['/index.html']\n};\n`,
+  );
+
+  const res = runUpdate(root);
+  assert.equal(res.status, 0, res.stderr);
+
+  const configContent = readFileSync(join(root, 'nlpwa.config.js'), 'utf8');
+  assert.match(configContent, /verifyHashes:\s*'warn'/);
+  assert.ok(!configContent.includes("verifyHashes: 'strict'"), 'did not overwrite warn with strict');
+});
+
 
 
 

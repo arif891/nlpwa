@@ -26,6 +26,7 @@ The Client SDK documentation is organized into modular guides:
 <!-- In index.html before closing </body> -->
 <script src="/client.js"></script>
 <script>
+  // Optional: Listen for lifecycle events or customize callbacks
   NLPWAClient.register('/sw.js', {
     onUpdateReady: ({ version }) => {
       document.getElementById('update-banner').hidden = false;
@@ -38,6 +39,18 @@ The Client SDK documentation is organized into modular guides:
   <button onclick="NLPWAClient.applyUpdate()">Update Now</button>
 </div>
 ```
+
+> **Note on Service Worker Placement (`data-sw`):**
+> When using the drop-in `/client.js` bundle, it automatically registers `sw.js` with zero boilerplate.
+> By default, auto-registration derives the Service Worker path beside `client.js` or falls back to `/sw.js` at root.
+> If `client.js` is placed in an asset subdirectory (such as `/static/js/client.js` or `/assets/client.js`), or if your Service Worker is hosted at a custom path, specify it explicitly via `data-sw`:
+> ```html
+> <script src="/static/js/client.js" data-sw="/sw.js"></script>
+> ```
+> To disable auto-registration entirely (e.g. if you prefer manual registration):
+> ```html
+> <script src="/client.js" data-auto-register="false"></script>
+> ```
 
 ### ES Module / Bundler (Vite, Rollup, Webpack)
 

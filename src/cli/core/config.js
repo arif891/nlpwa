@@ -102,48 +102,52 @@ export function syncSourceConfigVersion(configPath, newVersion) {
  *
  * @param {string} configPath
  * @param {string} publicKey
+ * @returns {boolean} True if successfully written, false otherwise
  */
 export function syncSourceConfigPublicKey(configPath, publicKey) {
-  if (!configPath || !existsSync(configPath) || !publicKey) return;
+  if (!configPath || !existsSync(configPath) || !publicKey) return false;
 
   try {
     const content = readFileSync(configPath, 'utf8');
     if (configPath.endsWith('.json')) {
       const parsed = JSON.parse(content);
       parsed.publicKey = publicKey;
-      parsed.verifyHashes = 'strict';
+      if (parsed.verifyHashes === undefined) {
+        parsed.verifyHashes = 'strict';
+      }
       writeFileSync(configPath, JSON.stringify(parsed, null, 2), 'utf8');
+      return true;
+    }
+
+    let updated = content;
+    if (/['"]?publicKey['"]?\s*:\s*['"][^'"]*['"]/m.test(updated)) {
+      updated = updated.replace(
+        /(['"]?publicKey['"]?\s*:\s*['"])([^'"]+)(['"])/m,
+        `$1${publicKey}$3`
+      );
     } else {
-      let updated = content;
-      if (/['"]?publicKey['"]?\s*:\s*['"][^'"]*['"]/m.test(updated)) {
-        updated = updated.replace(
-          /(['"]?publicKey['"]?\s*:\s*['"])([^'"]+)(['"])/m,
-          `$1${publicKey}$3`
-        );
-      } else {
-        // Insert right after export default { or module.exports = {
-        updated = updated.replace(
-          /(export\s+default\s*\{|module\.exports\s*=\s*\{)/m,
-          `$1\n  publicKey: '${publicKey}',\n  verifyHashes: 'strict',`
-        );
-      }
-
-      // Also ensure verifyHashes is set to 'strict' if already present
-      if (/['"]?verifyHashes['"]?\s*:\s*['"][^'"]*['"]/m.test(updated)) {
-        updated = updated.replace(
-          /(['"]?verifyHashes['"]?\s*:\s*['"])([^'"]+)(['"])/m,
-          `$1strict$3`
-        );
-      }
-
-      if (updated !== content) {
-        writeFileSync(configPath, updated, 'utf8');
+      // Support export default {, module.exports = {, or const/let/var config = {
+      const insertRegex = /(export\s+default\s*\{|module\.exports\s*=\s*\{|(?:const|let|var)\s+\w+\s*=\s*\{)/m;
+      if (insertRegex.test(updated)) {
+        // Only set verifyHashes: 'strict' if not already configured by developer
+        const hasVerifyHashes = /['"]?verifyHashes['"]?\s*:/m.test(updated);
+        const fieldsToAdd = hasVerifyHashes
+          ? `  publicKey: '${publicKey}',`
+          : `  publicKey: '${publicKey}',\n  verifyHashes: 'strict',`;
+        updated = updated.replace(insertRegex, `$1\n${fieldsToAdd}`);
       }
     }
+
+    if (updated !== content) {
+      writeFileSync(configPath, updated, 'utf8');
+      return true;
+    }
+    return false;
   } catch {
-    // Ignore write failure in read-only environment
+    return false;
   }
 }
+
 
 /**
  * Injects or updates `self.__NLPWA_PUBLIC_KEY = '...'` in a service worker file.

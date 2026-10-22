@@ -87,10 +87,16 @@ export async function cmdUpdate(args) {
   if (extractedSigningKey && derivedPublicKey && !rawConfig.publicKey) {
     rawConfig.publicKey = derivedPublicKey;
     if (configPath) {
-      syncSourceConfigPublicKey(configPath, derivedPublicKey);
-      console.log(`  ${c.green}+${c.reset} ${c.bold}Updated Source Config :${c.reset} ${c.cyan}${configPath}${c.reset} (added publicKey & verifyHashes: 'strict')`);
+      const updated = syncSourceConfigPublicKey(configPath, derivedPublicKey);
+      if (updated) {
+        console.log(`  ${c.green}+${c.reset} ${c.bold}Updated Source Config :${c.reset} ${c.cyan}${configPath}${c.reset} (added publicKey)`);
+      } else {
+        console.warn(`  ${c.yellow}! Notice: Could not automatically inject publicKey into ${configPath}.${c.reset}`);
+        console.warn(`  ${c.yellow}  Please add to your config manually: ${c.cyan}publicKey: '${derivedPublicKey}'${c.reset}`);
+      }
     }
   }
+
 
   // Key consistency and integrity checks & warnings
   if (extractedSigningKey && rawConfig.publicKey && derivedPublicKey && rawConfig.publicKey !== derivedPublicKey) {

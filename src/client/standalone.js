@@ -1,16 +1,22 @@
 /**
  * Standalone Client entry (built to out/client.js, the file `nlpwa init` copies).
  *
- * Automatically registers /sw.js by default when loaded via <script src="/client.js"></script>,
- * matching the zero-boilerplate behavior of out/sw.js.
+ * Automatically registers /sw.js (or sw.js sitting beside client.js) by default
+ * when loaded via <script src="/client.js"></script>, matching zero-boilerplate behavior.
  *
- * To disable auto-registration or specify a custom Service Worker path:
+ * NOTE ON PLACEMENT:
+ * By default, auto-registration assumes `sw.js` sits beside `client.js` or at the application root (`/sw.js`).
+ * If client.js is placed inside an asset subfolder (e.g. `/static/js/`, `/assets/`, `/dist/`), the registration
+ * automatically falls back to `/sw.js` because a service worker cannot control parent scopes.
+ *
+ * To specify a custom Service Worker location or disable auto-registration:
+ *   <script src="/static/js/client.js" data-sw="/sw.js"></script>
  *   <script src="/client.js" data-auto-register="false"></script>
- *   <script src="/client.js" data-sw="/custom-sw.js"></script>
  *   window.NLPWA_NO_AUTO_REGISTER = true;
  */
 export * from './index.js';
 import { register } from './registration.js';
+import { logger } from './logger.js';
 
 // Synchronously capture document.currentScript at module evaluation time
 const currentScript = typeof document !== 'undefined' ? document.currentScript : null;
@@ -28,7 +34,7 @@ function findClientScript() {
   return null;
 }
 
-function resolveDefaultSwUrl(script) {
+export function resolveDefaultSwUrl(script) {
   const customSw = script?.getAttribute?.('data-sw');
   if (customSw) {
     return customSw;
@@ -37,7 +43,13 @@ function resolveDefaultSwUrl(script) {
     try {
       const scriptUrl = new URL(script.src, window.location.href);
       if (scriptUrl.origin === window.location.origin) {
-        return new URL('sw.js', scriptUrl).pathname;
+        // If client.js sits in an asset subdirectory (e.g. /static/js/, /assets/, /dist/),
+        // sw.js cannot control outer scopes from there without special headers, so default to /sw.js
+        const pathSegments = scriptUrl.pathname.split('/').filter(Boolean);
+        const isAssetSubdir = pathSegments.some(seg => /^(?:assets|static|js|dist|build|vendor|public)$/i.test(seg));
+        if (!isAssetSubdir) {
+          return new URL('sw.js', scriptUrl).pathname;
+        }
       }
     } catch {}
   }
@@ -68,7 +80,29 @@ function autoRegister() {
       _auto: true,
       ...(swScope ? { scope: swScope } : {}),
     };
-    register(swUrl, regOptions).catch(() => {});
+
+    register(swUrl, { ...regOptions, _silentFail: swUrl !== '/sw.js' })
+      .then((res) => {
+        if (!res && swUrl !== '/sw.js') {
+          // Derived subpath failed; fall back to root /sw.js
+          return register('/sw.js', regOptions);
+        }
+        return res;
+      })
+      .then((res) => {
+        if (!res) {
+          logger.warn(
+            `[NLPWA] Auto-registration could not find a Service Worker at '${swUrl}' or '/sw.js'. ` +
+            `Ensure sw.js is located at the root or specify its location via <script src="client.js" data-sw="/path/to/sw.js"></script>.`
+          );
+        }
+      })
+      .catch((err) => {
+        logger.warn(
+          `[NLPWA] Auto-registration failed: ${err?.message || err}. ` +
+          `Specify Service Worker path via <script src="client.js" data-sw="/path/to/sw.js"></script>.`
+        );
+      });
   };
 
   if (typeof document !== 'undefined' && document.readyState === 'loading') {
@@ -78,6 +112,4 @@ function autoRegister() {
   }
 }
 
-
 autoRegister();
-

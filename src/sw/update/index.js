@@ -182,14 +182,16 @@ async function _doUpdateCheck({ force = false } = {}) {
     await syncBlockedVersions(versionRes.blockedVersions);
   }
 
-  const discardStaged = async () => {
+  const discardStaged = async (reason = '') => {
     if (staged) {
       await withLock(async () => {
-        logger.log(`[NLPWA] Server rolled back to v${active.version}; clearing staged update v${staged.version}`);
+        const activePart = active?.version ? ` (active: v${active.version})` : '';
+        const reasonPart = reason ? `: ${reason}` : '';
+        logger.log(`[NLPWA] Clearing staged update v${staged.version}${activePart}${reasonPart}`);
         await clearStaged();
         if (staged.cache) {
           await caches.delete(staged.cache).catch((err) => {
-            logger.debug('[NLPWA] Failed to delete rolled-back staged cache:', err?.message || err);
+            logger.debug('[NLPWA] Failed to delete staged cache:', err?.message || err);
           });
         }
       });
@@ -201,7 +203,7 @@ async function _doUpdateCheck({ force = false } = {}) {
     logger.warn(`[NLPWA] Active version v${active.version} is blocked by remote kill-switch. Triggering emergency rollback...`);
     const rollbackRes = await rollbackToFallback(`Active version v${active.version} is blocked`);
     if (rollbackRes.success) {
-      await discardStaged();
+      await discardStaged('active version blocked');
       setUpdateStatus('idle');
       return { updated: false, rolledBack: true, version: rollbackRes.version };
     }
@@ -219,7 +221,7 @@ async function _doUpdateCheck({ force = false } = {}) {
   // If server target version is blocked, do not stage it
   if (serverVersion && (await isVersionBlocked(serverVersion))) {
     logger.warn(`[NLPWA] Target version v${serverVersion} is blocked. Skipping update.`);
-    await discardStaged();
+    await discardStaged(`target version v${serverVersion} blocked`);
     setUpdateStatus('idle');
     return { updated: false, blocked: true, version: serverVersion };
   }
@@ -261,7 +263,7 @@ async function _doUpdateCheck({ force = false } = {}) {
   const isCurrent = (version) => !isFresh && !swVersionChanged && version === active.version;
 
   if (serverVersion && isCurrent(serverVersion)) {
-    await discardStaged();
+    await discardStaged(`server rolled back to v${active?.version}`);
     setUpdateStatus('idle');
     logger.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });
@@ -292,7 +294,7 @@ async function _doUpdateCheck({ force = false } = {}) {
 
     if (!isValid) {
       logger.error(`[NLPWA] Signature verification FAILED for v${serverManifest.version}! Untrusted manifest rejected.`);
-      await discardStaged();
+      await discardStaged('manifest signature verification failed');
       setUpdateStatus('idle');
       await broadcast({
         type: MESSAGE_TYPES.UPDATE_FAILED,
@@ -313,7 +315,7 @@ async function _doUpdateCheck({ force = false } = {}) {
     const seq = serverManifest.sequence;
     if (typeof seq !== 'number' || !Number.isFinite(seq)) {
       logger.error(`[NLPWA] Replay attack mitigation failed: manifest for v${serverManifest.version} is missing a required numeric sequence in signed mode.`);
-      await discardStaged();
+      await discardStaged('manifest sequence required in signed mode');
       setUpdateStatus('idle');
       return { updated: false, errorCode: 'SEQUENCE_REQUIRED', version: serverManifest.version };
     }
@@ -322,7 +324,7 @@ async function _doUpdateCheck({ force = false } = {}) {
     const lastSeq = Number(lastSeqData?.sequence) || 0;
     if (seq < lastSeq) {
       logger.error(`[NLPWA] Replay attack detected: manifest sequence (${seq}) is older than last seen (${lastSeq}).`);
-      await discardStaged();
+      await discardStaged('manifest sequence replay detected');
       setUpdateStatus('idle');
       return { updated: false, errorCode: 'REPLAY_DETECTED', version: serverManifest.version };
     }
@@ -335,7 +337,7 @@ async function _doUpdateCheck({ force = false } = {}) {
 
   if (await isVersionBlocked(serverManifest.version)) {
     logger.warn(`[NLPWA] Manifest version v${serverManifest.version} is blocked. Skipping staging.`);
-    await discardStaged();
+    await discardStaged(`manifest version v${serverManifest.version} blocked`);
     setUpdateStatus('idle');
     return { updated: false, blocked: true, version: serverManifest.version };
   }
@@ -365,7 +367,7 @@ async function _doUpdateCheck({ force = false } = {}) {
   });
 
   if (isCurrent(serverManifest.version)) {
-    await discardStaged();
+    await discardStaged(`server rolled back to v${active?.version}`);
     setUpdateStatus('idle');
     logger.log(`[NLPWA] App already up to date (v${active.version})`);
     await broadcast({ type: MESSAGE_TYPES.NO_UPDATE, version: active.version });

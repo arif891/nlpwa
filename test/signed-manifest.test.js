@@ -13,7 +13,7 @@ import {
 import { signManifestSync } from '../src/cli/core/signing.js';
 import { cmdGenerateKeys } from '../src/cli/commands/keys.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
-import { writeMeta, readMeta } from '../src/sw/cache/meta/index.js';
+import { writeMeta, readMeta, setStaged, getStaged, getActive } from '../src/sw/cache/meta/index.js';
 
 test('keys:generate CLI command outputs valid Ed25519 keys', async () => {
   const keys = await cmdGenerateKeys({ writeEnv: false });
@@ -349,4 +349,44 @@ test('update check: Tier 1 sequence replay rejection falls back to Tier 2', asyn
   const seq = await readMeta('/_nlpwa/sequence.json');
   assert.equal(seq.sequence, 200);
 });
+
+test('update check: discardStaged handles fresh install with null active without throwing', async () => {
+  const { publicKey } = generateKeyPairSync('ed25519');
+  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+  const pubKeyBase64 = spkiDer.subarray(-32).toString('base64');
+
+  const v1Files = {
+    '/api/update/config.json': JSON.stringify({ routes: [], precache: ['/app.js'] }),
+    '/app.js': 'app v1',
+  };
+
+  const server = makeServer('1.0.0', v1Files);
+  server.sequence = 100;
+  fakeSelf();
+
+  setupEnv(server.fetch, { publicKey: pubKeyBase64 });
+  // Do NOT call precacheFiles(); active is null (fresh install / interrupted install)
+  assert.equal(await getActive(), null);
+
+  // Simulate an interrupted initial install leaving an incomplete staged record
+  await setStaged({
+    version: '1.0.0',
+    cache: 'offline@1.0.0-1',
+    complete: false,
+    stagedAt: Date.now(),
+  });
+
+  // Server serves an invalid / untrusted signature
+  server.signature = 'invalid_signature_bytes';
+
+  // checkForUpdate() previously crashed with:
+  // TypeError: Cannot read properties of null (reading 'version') at discardStaged
+  const res = await checkForUpdate();
+  assert.equal(res.updated, false);
+  assert.equal(res.errorCode, 'SIGNATURE_VERIFICATION_FAILED');
+
+  // Staged record must have been discarded cleanly
+  assert.equal(await getStaged(), null);
+});
+
 

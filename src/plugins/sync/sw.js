@@ -217,6 +217,7 @@ export class BackgroundSyncPlugin {
         });
       },
       onReplayFail: (item, err) => {
+        if (options.onReplayFail) options.onReplayFail(item, err);
         this._notifyClients({
           type: 'NLPWA_SYNC_ITEM_FAILED',
           queue: this.queueName,

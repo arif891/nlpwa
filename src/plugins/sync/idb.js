@@ -76,6 +76,7 @@ export async function withStore(mode, callback) {
  */
 export async function serializeRequest(request, metadata = {}, options = {}) {
   const stripAuth = options.stripAuthHeaders ?? metadata.stripAuthHeaders ?? false;
+  const maxBodyBytes = options.maxBodyBytes ?? metadata.maxBodyBytes ?? (10 * 1024 * 1024);
   const headers = [];
   if (request.headers && typeof request.headers.forEach === 'function') {
     request.headers.forEach((val, key) => {
@@ -91,7 +92,13 @@ export async function serializeRequest(request, metadata = {}, options = {}) {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     try {
       body = await request.clone().arrayBuffer();
-    } catch {
+      if (body && body.byteLength > maxBodyBytes) {
+        throw new Error(`[NLPWA Sync] Request body size (${body.byteLength} bytes) exceeds maximum allowed size of ${maxBodyBytes} bytes.`);
+      }
+    } catch (err) {
+      if (err.message && err.message.includes('exceeds maximum allowed size')) {
+        throw err;
+      }
       body = null;
     }
   }
@@ -122,12 +129,14 @@ export async function serializeRequest(request, metadata = {}, options = {}) {
  * @param {Object} record
  * @param {Object} [options]
  * @param {HeadersInit} [options.headers] Override or dynamic headers to merge/re-attach at replay time
+ * @param {string} [options.idempotencyHeader] Header name for idempotency (defaults to 'Idempotency-Key')
  * @returns {Request}
  */
 export function deserializeRequest(record, options = {}) {
   const headers = new Headers(record.headers || []);
+  const idempotencyHeader = options.idempotencyHeader || record.idempotencyHeader || 'Idempotency-Key';
   if (record.idempotencyKey && !headers.has('idempotency-key') && !headers.has('x-idempotency-key')) {
-    headers.set('X-Idempotency-Key', record.idempotencyKey);
+    headers.set(idempotencyHeader, record.idempotencyKey);
   }
   if (options.headers) {
     const extraHeaders = new Headers(options.headers);

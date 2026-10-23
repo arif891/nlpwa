@@ -6,12 +6,39 @@ export class SyncQueue {
    * @param {Object} [options]
    * @param {number} [options.maxRetentionMs=86400000] Maximum age before discarding (default 24h)
    * @param {number} [options.maxRetries=5] Maximum attempts before discarding
+   * @param {boolean} [options.stripAuthHeaders=false]
+   * @param {number} [options.maxBodyBytes=10485760] Maximum request body size in bytes (default 10MB)
+   * @param {RegExp|Function|string} [options.loginPattern=/(?:login|signin|auth)/i] Pattern to distinguish login redirects from normal redirects
+   * @param {string} [options.idempotencyHeader='Idempotency-Key'] Header name for idempotency
    */
   constructor(name = 'default', options = {}) {
     this.name = name;
     this.maxRetentionMs = options.maxRetentionMs ?? 24 * 60 * 60 * 1000;
     this.maxRetries = options.maxRetries ?? 5;
     this.stripAuthHeaders = Boolean(options.stripAuthHeaders);
+    this.maxBodyBytes = options.maxBodyBytes ?? (10 * 1024 * 1024);
+    this.loginPattern = options.loginPattern ?? /(?:login|signin|auth)/i;
+    this.idempotencyHeader = options.idempotencyHeader ?? 'Idempotency-Key';
+  }
+
+  /**
+   * Check if a redirect URL represents a login / session-expired destination.
+   * @param {string} url
+   * @returns {boolean}
+   * @private
+   */
+  _isLoginRedirect(url) {
+    if (!url) return false;
+    if (this.loginPattern instanceof RegExp) {
+      return this.loginPattern.test(url);
+    }
+    if (typeof this.loginPattern === 'function') {
+      return Boolean(this.loginPattern(url));
+    }
+    if (typeof this.loginPattern === 'string') {
+      return url.includes(this.loginPattern);
+    }
+    return false;
   }
 
   /**
@@ -26,6 +53,8 @@ export class SyncQueue {
       maxRetries: this.maxRetries,
       maxRetentionMs: this.maxRetentionMs,
       stripAuthHeaders: this.stripAuthHeaders,
+      maxBodyBytes: this.maxBodyBytes,
+      idempotencyHeader: this.idempotencyHeader,
       ...extraMeta,
     });
 
@@ -39,7 +68,7 @@ export class SyncQueue {
   }
 
   /**
-   * Retrieve all pending requests for this queue, pruning expired ones.
+   * Retrieve all pending requests for this queue, moving expired items to dead-letter store.
    * @param {Object} [options]
    * @param {boolean} [options.includeDeadLetter=false] Include dead-letter items
    * @param {boolean} [options.deadLetterOnly=false] Return only dead-letter items
@@ -59,9 +88,18 @@ export class SyncQueue {
 
           for (const item of items) {
             const age = now - (item.timestamp || 0);
-            if (age > (item.maxRetentionMs || this.maxRetentionMs)) {
-              // Expired, delete from store
-              store.delete(item.id);
+            if (!item.deadLetter && age > (item.maxRetentionMs || this.maxRetentionMs)) {
+              // Move expired active item to dead-letter store instead of vanishing silently
+              const expiredRecord = {
+                ...item,
+                deadLetter: true,
+                deadLetterReason: 'expired',
+                failedAt: now,
+              };
+              store.put(expiredRecord);
+              if (deadLetterOnly || includeDeadLetter) {
+                valid.push(expiredRecord);
+              }
             } else {
               if (deadLetterOnly) {
                 if (item.deadLetter) valid.push(item);
@@ -274,13 +312,42 @@ export class SyncQueue {
       for (const item of items) {
         let dynamicHeaders = headers;
         if (typeof getHeaders === 'function') {
-          dynamicHeaders = await getHeaders(item);
+          try {
+            dynamicHeaders = await getHeaders(item);
+          } catch (headerErr) {
+            failedCount++;
+            if (onReplayFail) onReplayFail(item, headerErr);
+            continue;
+          }
         }
-        const req = deserializeRequest(item, dynamicHeaders ? { headers: dynamicHeaders } : {});
+
+        let req;
+        try {
+          req = deserializeRequest(item, {
+            headers: dynamicHeaders,
+            idempotencyHeader: this.idempotencyHeader,
+          });
+        } catch (deserializeErr) {
+          failedCount++;
+          const reason = 'deserialization_error';
+          await withStore('readwrite', (store) => {
+            store.put({
+              ...item,
+              deadLetter: true,
+              deadLetterReason: reason,
+              failedAt: Date.now(),
+              lastError: deserializeErr?.message || String(deserializeErr),
+            });
+          });
+          if (onReplayDiscard) onReplayDiscard(item, reason);
+          if (onReplayFail) onReplayFail(item, deserializeErr);
+          continue; // Corrupted request moved to dead-letter, remaining queue is unblocked!
+        }
+
         try {
           const response = await fetchImpl(req);
 
-          // Check for redirects (e.g. session-expired redirect to login page)
+          // Check for redirects (e.g. session-expired redirect vs POST-Redirect-GET)
           const isRedirected = Boolean(
             response.redirected ||
             response.type === 'opaqueredirect' ||
@@ -288,19 +355,31 @@ export class SyncQueue {
           );
 
           if (isRedirected) {
-            // Session expired or redirected to login: do NOT discard user data!
-            failedCount++;
-            await withStore('readwrite', (store) => {
-              store.put({
-                ...item,
-                authRequired: true,
-                lastStatus: response.status,
-                redirected: true,
-                redirectUrl: response.url || null,
+            const redirectUrl = response.headers?.get?.('location') || response.url || '';
+            const isLoginRedirect = this._isLoginRedirect(redirectUrl);
+
+            if (isLoginRedirect) {
+              // Real session expired or redirected to login: do NOT discard user data!
+              failedCount++;
+              await withStore('readwrite', (store) => {
+                store.put({
+                  ...item,
+                  authRequired: true,
+                  lastStatus: response.status,
+                  redirected: true,
+                  redirectUrl,
+                });
               });
-            });
-            if (onReplayFail) onReplayFail(item, response);
-            continue;
+              if (onReplayFail) onReplayFail(item, response);
+              continue;
+            } else {
+              // Standard POST-Redirect-GET or successful redirect (e.g. 303 to /orders/123)
+              // Server accepted the request! Remove from queue and mark success
+              await this.remove(item.id);
+              successCount++;
+              if (onReplaySuccess) onReplaySuccess(item, response);
+              continue;
+            }
           }
 
           if (response.ok || (response.status >= 200 && response.status < 300)) {
@@ -342,10 +421,45 @@ export class SyncQueue {
             if (onReplayFail) onReplayFail(item, response);
           }
         } catch (err) {
-          // Network error (offline or timeout): do NOT count network outage against maxRetries eviction
           failedCount++;
-          if (onReplayFail) onReplayFail(item, err);
-          break; // Stop FIFO replay when network is demonstrably down
+          const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+            /offline|networkerror|failed to fetch/i.test(err?.message || '');
+
+          if (isOffline) {
+            // True offline network outage: do NOT count network outage against maxRetries eviction
+            if (onReplayFail) onReplayFail(item, err);
+            break; // Stop FIFO replay when network is demonstrably down
+          }
+
+          // Fetch error while online (e.g. CORS rejection, DNS error, bad endpoint)
+          const newRetryCount = (item.retryCount || 0) + 1;
+          const maxRetries = item.maxRetries || this.maxRetries;
+
+          if (newRetryCount >= maxRetries) {
+            const reason = 'max_retries_exceeded';
+            await withStore('readwrite', (store) => {
+              store.put({
+                ...item,
+                deadLetter: true,
+                deadLetterReason: reason,
+                failedAt: Date.now(),
+                lastError: err?.message || String(err),
+              });
+            });
+            if (onReplayDiscard) onReplayDiscard(item, reason);
+            if (onReplayFail) onReplayFail(item, err);
+            continue; // Bad request is dead-lettered, queue continues!
+          } else {
+            await withStore('readwrite', (store) => {
+              store.put({
+                ...item,
+                retryCount: newRetryCount,
+                lastError: err?.message || String(err),
+              });
+            });
+            if (onReplayFail) onReplayFail(item, err);
+            break;
+          }
         }
       }
 

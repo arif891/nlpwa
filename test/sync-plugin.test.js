@@ -8,6 +8,7 @@ import {
   SyncClient,
   serializeRequest,
   deserializeRequest,
+  withStore,
 } from '../src/plugins/sync/index.js';
 
 test.beforeEach(() => {
@@ -278,6 +279,7 @@ test('sync queue: authRequired items are excluded from default replayAll and can
   // Simulate first replay getting a login redirect
   const redirectResponse = new Response('<html>Login</html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
   Object.defineProperty(redirectResponse, 'redirected', { value: true });
+  Object.defineProperty(redirectResponse, 'url', { value: 'https://example.com/login' });
 
   await queue.replayAll({ fetchImpl: async () => redirectResponse });
 
@@ -579,5 +581,123 @@ test('sync client: retryDeadLetter and retryAuthRequired accept flexible paramet
   assert.equal(reset2, 1);
 });
 
+test('sync queue: POST-Redirect-GET (e.g. 303 to confirmation URL) succeeds and does not duplicate', async () => {
+  const queue = new SyncQueue('prg-redirect');
+  await queue.push(new Request('https://example.com/api/orders', { method: 'POST', body: 'order-123' }));
 
+  // Mock 303 redirect to /orders/confirmation
+  const fake303 = new Response('Redirecting', {
+    status: 303,
+    headers: { 'Location': 'https://example.com/orders/confirmation' },
+  });
+  Object.defineProperty(fake303, 'redirected', { value: true });
+  Object.defineProperty(fake303, 'url', { value: 'https://example.com/orders/confirmation' });
 
+  const result = await queue.replayAll({ fetchImpl: async () => fake303 });
+  assert.equal(result.successCount, 1, 'Non-login redirect should succeed');
+  assert.equal(result.failedCount, 0);
+  assert.equal(await queue.size(), 0, 'Processed mutation should be removed from queue');
+});
+
+test('sync queue: corrupted item throwing in deserializeRequest is moved to dead-letter without blocking queue', async () => {
+  const queue = new SyncQueue('corrupt-unblock');
+  // Store an invalid/corrupted item directly in IDB
+  const badId = await queue.push(new Request('https://example.com/api/valid1', { method: 'POST' }));
+  const goodId = await queue.push(new Request('https://example.com/api/valid2', { method: 'POST' }));
+
+  // Corrupt badId's url to an invalid scheme that causes new Request() to throw
+  await withStore('readwrite', (store) => {
+    return new Promise((resolve) => {
+      const getReq = store.get(badId);
+      getReq.onsuccess = () => {
+        const item = getReq.result;
+        item.url = '::invalid-url::';
+        store.put(item);
+        resolve();
+      };
+    });
+  });
+
+  const successfulUrls = [];
+  const discardedReasons = [];
+  const result = await queue.replayAll({
+    fetchImpl: async (req) => {
+      successfulUrls.push(req.url);
+      return new Response('ok', { status: 200 });
+    },
+    onReplayDiscard: (item, reason) => {
+      discardedReasons.push({ id: item.id, reason });
+    },
+  });
+
+  assert.equal(result.successCount, 1, 'Good item succeeded');
+  assert.equal(successfulUrls.length, 1);
+  assert.equal(successfulUrls[0], 'https://example.com/api/valid2');
+  assert.equal(discardedReasons.length, 1);
+  assert.equal(discardedReasons[0].id, badId);
+  assert.equal(discardedReasons[0].reason, 'deserialization_error');
+
+  const deadLetters = await queue.getDeadLetter();
+  assert.equal(deadLetters.length, 1);
+  assert.equal(deadLetters[0].id, badId);
+  assert.equal(deadLetters[0].deadLetterReason, 'deserialization_error');
+});
+
+test('sync queue: expired items are moved to dead-letter store instead of vanishing silently', async () => {
+  const queue = new SyncQueue('expired-dead-letter', { maxRetentionMs: 1000 });
+  const id = await queue.push(new Request('https://example.com/api/expiring', { method: 'POST' }), {
+    timestamp: Date.now() - 5000, // 5s ago (exceeds 1s retention)
+  });
+
+  // Active items should be 0
+  assert.equal(await queue.size(), 0);
+
+  // But item is NOT lost: it is preserved in dead-letter store with reason 'expired'
+  const deadLetters = await queue.getDeadLetter();
+  assert.equal(deadLetters.length, 1);
+  assert.equal(deadLetters[0].id, id);
+  assert.equal(deadLetters[0].deadLetter, true);
+  assert.equal(deadLetters[0].deadLetterReason, 'expired');
+});
+
+test('sw plugin: replay() forwards onReplayFail to caller options', async () => {
+  const plugin = new BackgroundSyncPlugin({ queueName: 'sw-fail-forward' });
+  await plugin.queue.push(new Request('https://example.com/api/fail-check', { method: 'POST' }));
+
+  let forwardedError = null;
+  let forwardedItem = null;
+
+  await plugin.replay({
+    fetchImpl: async () => new Response('Internal Server Error', { status: 500 }),
+    onReplayFail: (item, err) => {
+      forwardedItem = item;
+      forwardedError = err;
+    },
+  });
+
+  assert.ok(forwardedItem, 'onReplayFail was forwarded item');
+  assert.equal(forwardedItem.url, 'https://example.com/api/fail-check');
+  assert.ok(forwardedError, 'onReplayFail was forwarded error response');
+  assert.equal(forwardedError.status, 500);
+});
+
+test('sync idb: uses standard Idempotency-Key header and enforces maxBodyBytes cap', async () => {
+  // 1. Standard Idempotency-Key header
+  const req = new Request('https://example.com/api/idem', { method: 'POST', body: 'payload' });
+  const serialized = await serializeRequest(req);
+  const deserialized = deserializeRequest(serialized);
+  assert.ok(deserialized.headers.has('idempotency-key'), 'Sets standard Idempotency-Key');
+  assert.equal(deserialized.headers.get('idempotency-key'), serialized.idempotencyKey);
+
+  // 2. Body size cap enforcement
+  const bigBody = new Uint8Array(1024 * 1024 * 2); // 2MB
+  const bigReq = new Request('https://example.com/api/big', { method: 'POST', body: bigBody });
+
+  await assert.rejects(
+    async () => {
+      await serializeRequest(bigReq, {}, { maxBodyBytes: 1024 * 1024 }); // 1MB limit
+    },
+    /exceeds maximum allowed size/,
+    'Rejects payloads exceeding maxBodyBytes'
+  );
+});

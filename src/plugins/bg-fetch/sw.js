@@ -2,7 +2,6 @@ import { BG_FETCH_CACHE_NAME, BG_FETCH_MESSAGE_TYPES } from './constants.js';
 import { createLogger } from '../../shared/logger.js';
 import { isManifestFile, matchRoute } from '../../sw/fetch/router.js';
 import { openActive } from '../../sw/cache/meta/active.js';
-import { storeLargeAssetInIDB } from '../../sw/cache/large-assets.js';
 
 const logger = createLogger('NLPWA:BgFetch');
 
@@ -105,18 +104,7 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
           if (method === 'GET') {
             const { cache, cacheName } = await resolveTargetCache(record.request, options);
 
-            // Determine file size without buffering the stream into JS memory:
-            // inspect Content-Length, fallback to bgFetch download counters if missing (e.g. CDN chunked transfer)
-            let contentLen = Number(response.headers?.get?.('content-length') || 0);
-            if (!contentLen && typeof bgFetch?.downloaded === 'number' && bgFetch.downloaded > 0) {
-              contentLen = bgFetch.downloaded;
-            }
-
-            // Only mirror to IndexedDB if explicitly enabled in options (avoid buffering large streams into memory)
-            if (options.mirrorToIDB && contentLen > largeThreshold) {
-              response = await storeLargeAssetInIDB(rawUrl, response);
-            }
-
+            // Stream response directly to native CacheStorage on disk without buffering in JS heap
             await cache.put(record.request, response);
             usedCacheNames.add(cacheName);
             storedRequests.push(rawUrl);

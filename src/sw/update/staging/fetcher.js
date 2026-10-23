@@ -1,12 +1,11 @@
 import { logger } from '../../logger.js';
 import { sha256Hex, hashMatches } from '../../../shared/hash.js';
 import { DEFAULT_STAGING_FETCH_TIMEOUT_MS } from '../../../shared/constants.js';
-import { storeLargeAssetInIDB } from '../../cache/large-assets.js';
 
 /**
  * Fetch a file fresh from the network and check it against its manifest hash.
  * If file size exceeds largeFileThresholdBytes (default: 25MB), attempts
- * delegation to Background Fetch (if supported) and streams into IndexedDB.
+ * delegation to Background Fetch (if supported) for native background downloading.
  *
  * @param {Object} params
  * @returns {Promise<Response>}
@@ -97,11 +96,6 @@ export async function fetchVerified({
         }
       }
     }
-  }
-
-  // If asset is large (>25MB), persist chunk stream into IndexedDB alongside CacheStorage
-  if (size > largeFileThresholdBytes) {
-    response = await storeLargeAssetInIDB(path, response);
   }
 
   return response;

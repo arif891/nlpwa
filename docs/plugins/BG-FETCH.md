@@ -7,7 +7,7 @@ Manages large file downloads (podcasts, videos, ML weights, 3D assets, games) an
 ## Architecture Overview
 
 ```
-[ Web Client ]                              [ Service Worker ]                         [ Cache Storage / IDB ]
+[ Web Client ]                              [ Service Worker ]                             [ Cache Storage ]
       │                                             │                                              │
       │── backgroundFetchClient.fetch(urls) ───────>│                                              │
       │   (Parallel HEAD discovers totals)          │── self.registration.backgroundFetch.fetch ──>│
@@ -18,7 +18,7 @@ Manages large file downloads (podcasts, videos, ML weights, 3D assets, games) an
       │                                             │── backgroundfetchsuccess ───────────────────>│
       │                                             │   ├── Resolve Target Cache                   │
       │                                             │   │   (offline@ver, route cache, runtime)    │
-      │                                             │   ├── If >25 MB: Stream to IDB               │
+      │                                             │   ├── Stream to native CacheStorage          │
       │                                             │   ├── If POST: Parse upload response         │
       │                                             │   └── event.updateUI({ title, icons })       │
       │<─ onSuccess({ count, cacheName }) ──────────│                                              │

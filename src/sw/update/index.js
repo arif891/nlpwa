@@ -94,15 +94,28 @@ async function runUpdateCheck({ force = false } = {}) {
   }
 }
 
-async function getRolloutCohort() {
+function stringHash(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+async function getRolloutCohort(targetVersion = '') {
   const SEED_KEY = '/_nlpwa/rollout-seed.json';
   const existing = await readMeta(SEED_KEY).catch(() => null);
+  let seed;
   if (existing && typeof existing.seed === 'number') {
-    return existing.seed;
+    seed = existing.seed;
+  } else {
+    seed = Math.floor(Math.random() * 100);
+    await writeMeta(SEED_KEY, { seed, createdAt: Date.now() }).catch(() => {});
   }
-  const seed = Math.floor(Math.random() * 100);
-  await writeMeta(SEED_KEY, { seed, createdAt: Date.now() }).catch(() => {});
-  return seed;
+  if (!targetVersion) return seed;
+  // Rotate canary cohort per version using deterministic hash of seed + targetVersion
+  return stringHash(`${seed}:${targetVersion}`) % 100;
 }
 
 async function _doUpdateCheck({ force = false } = {}) {
@@ -133,6 +146,20 @@ async function _doUpdateCheck({ force = false } = {}) {
         isTier1Trusted = await verifyManifestSignature(versionRes, config.publicKey);
         if (!isTier1Trusted) {
           logger.warn('[NLPWA] Tier 1 version.json signature verification failed; falling back to Tier 2 manifest.');
+        } else {
+          // Monotonic sequence verification on Tier 1 (prevent replaying old signed version.json)
+          const seq = versionRes.sequence;
+          if (typeof seq !== 'number' || !Number.isFinite(seq)) {
+            logger.warn('[NLPWA] Tier 1 version.json missing required numeric sequence in signed mode; falling back to Tier 2.');
+            isTier1Trusted = false;
+          } else {
+            const lastSeqData = await readMeta('/_nlpwa/sequence.json').catch(() => null);
+            const lastSeq = Number(lastSeqData?.sequence) || 0;
+            if (seq < lastSeq) {
+              logger.warn(`[NLPWA] Replay attack detected on Tier 1: sequence (${seq}) is older than last seen (${lastSeq}); falling back to Tier 2.`);
+              isTier1Trusted = false;
+            }
+          }
         }
       } catch (err) {
         logger.warn('[NLPWA] Tier 1 signature verification error:', err?.message || err);
@@ -208,7 +235,7 @@ async function _doUpdateCheck({ force = false } = {}) {
   if (!force && typeof versionRes?.rolloutPercent === 'number') {
     const pct = versionRes.rolloutPercent;
     if (pct >= 0 && pct < 100) {
-      const cohort = await getRolloutCohort();
+      const cohort = await getRolloutCohort(serverVersion);
       if (cohort >= pct) {
         logger.log(`[NLPWA] Client cohort (${cohort}) excluded from phased rollout of v${serverVersion} (${pct}%).`);
         return { updated: false, rolloutExcluded: true, rolloutPercent: pct };
@@ -322,7 +349,7 @@ async function _doUpdateCheck({ force = false } = {}) {
   if (!force && typeof serverManifest.rolloutPercent === 'number') {
     const pct = serverManifest.rolloutPercent;
     if (pct >= 0 && pct < 100) {
-      const cohort = await getRolloutCohort();
+      const cohort = await getRolloutCohort(serverManifest.version);
       if (cohort >= pct) {
         logger.log(`[NLPWA] Client cohort (${cohort}) excluded from phased rollout of v${serverManifest.version} (${pct}%).`);
         return { updated: false, rolloutExcluded: true, rolloutPercent: pct };

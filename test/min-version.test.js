@@ -9,6 +9,7 @@ import {
   getClientPinnedVersion,
   unpinClientsBelowVersion,
   setMinVersion,
+  getMinVersion,
 } from '../src/sw/cache/meta/index.js';
 import { handleMessage } from '../src/sw/events/message.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
@@ -95,3 +96,20 @@ test('minVersion: GET_VERSION reports updateRequired: true when client is below 
   assert.equal(replyData.minVersion, '2.0.0');
   assert.equal(replyData.updateRequired, true, 'updateRequired must be true when version is below minVersion');
 });
+
+test('minVersion: setMinVersion is strictly monotonic and rejects downgrade attempts', async () => {
+  const server = makeServer('1.0.0', { '/api/update/config.json': cfg(), '/app.js': 'app v1' });
+  setupEnv(server.fetch);
+
+  await setMinVersion('2.0.0');
+  assert.equal(await getMinVersion(), '2.0.0');
+
+  // Attempting to downgrade to 1.5.0 must be ignored
+  await setMinVersion('1.5.0');
+  assert.equal(await getMinVersion(), '2.0.0', 'minVersion must not be downgraded to an older version');
+
+  // Upgrading to 2.1.0 must be accepted
+  await setMinVersion('2.1.0');
+  assert.equal(await getMinVersion(), '2.1.0', 'minVersion must be upgradeable to higher versions');
+});
+

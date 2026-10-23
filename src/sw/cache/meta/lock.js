@@ -16,15 +16,16 @@ export function resetLockState() {
 
 /**
  * Execute an operation under the NLPWA operation lock.
- * Uses navigator.locks.request with ifAvailable: true across worker instances,
- * falling back to tryAcquire / release in memory.
+ * Uses navigator.locks.request with ifAvailable: true across worker instances by default,
+ * or queues/waits when { wait: true } is specified for critical operations (e.g. rollbacks).
  *
  * @template T
  * @param {() => Promise<T>} fn
  * @param {T|(() => T)} [fallback=false]
+ * @param {{ wait?: boolean, timeoutMs?: number }} [options={}]
  * @returns {Promise<T>}
  */
-export async function withLock(fn, fallback = false) {
+export async function withLock(fn, fallback = false, { wait = false, timeoutMs = 5000 } = {}) {
   const getFallback = () => (typeof fallback === 'function' ? fallback() : fallback);
 
   const nav = typeof navigator !== 'undefined'
@@ -35,10 +36,19 @@ export async function withLock(fn, fallback = false) {
 
   if (nav?.locks?.request && typeof nav.locks.request === 'function') {
     let ran = false;
+    const lockOptions = wait ? {} : { ifAvailable: true };
     try {
-      return await nav.locks.request('nlpwa-operation-lock', { ifAvailable: true }, async (lock) => {
-        if (!lock) return getFallback();
-        if (!tryAcquire()) return getFallback();
+      return await nav.locks.request('nlpwa-operation-lock', lockOptions, async (lock) => {
+        if (!lock && !wait) return getFallback();
+        if (wait) {
+          const startWait = Date.now();
+          while (!tryAcquire()) {
+            if (Date.now() - startWait > timeoutMs) return getFallback();
+            await new Promise((r) => setTimeout(r, 20));
+          }
+        } else {
+          if (!tryAcquire()) return getFallback();
+        }
         ran = true;
         try {
           return await fn();
@@ -54,7 +64,16 @@ export async function withLock(fn, fallback = false) {
     }
   }
 
-  if (!tryAcquire()) return getFallback();
+  if (wait) {
+    const startWait = Date.now();
+    while (!tryAcquire()) {
+      if (Date.now() - startWait > timeoutMs) return getFallback();
+      await new Promise((r) => setTimeout(r, 20));
+    }
+  } else {
+    if (!tryAcquire()) return getFallback();
+  }
+
   try {
     return await fn();
   } finally {

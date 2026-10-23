@@ -1,4 +1,5 @@
 import { idbGet, idbSet, idbDel } from '../../../shared/idb.js';
+import { compare } from '../../../shared/version.js';
 
 export let META_CACHE = 'nlpwa-meta';
 
@@ -50,7 +51,10 @@ export async function getMinVersion() {
 
 export async function setMinVersion(minVersion) {
   if (minVersion) {
-    await writeMeta(MIN_VERSION_KEY, { minVersion });
+    const current = await getMinVersion();
+    if (!current || compare(minVersion, current) > 0) {
+      await writeMeta(MIN_VERSION_KEY, { minVersion });
+    }
   } else {
     await deleteMeta(MIN_VERSION_KEY);
   }

@@ -249,7 +249,7 @@ export async function rollbackToFallback(reason = '', { ttlMs = 24 * 60 * 60 * 1
       rolledBackFrom: failingVersion,
       reason,
     };
-  });
+  }, { success: false, error: 'LOCK_UNAVAILABLE' }, { wait: true });
 }
 
 /**

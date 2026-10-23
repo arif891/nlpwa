@@ -13,6 +13,7 @@ import {
 import { signManifestSync } from '../src/cli/core/signing.js';
 import { cmdGenerateKeys } from '../src/cli/commands/keys.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
+import { writeMeta, readMeta } from '../src/sw/cache/meta/index.js';
 
 test('keys:generate CLI command outputs valid Ed25519 keys', async () => {
   const keys = await cmdGenerateKeys({ writeEnv: false });
@@ -279,3 +280,73 @@ test('update check: Tier 2 manifest enforces rolloutPercent limit', async () => 
   assert.equal(res.updated, false);
   assert.equal(res.rolloutExcluded, true);
 });
+
+test('update check: Tier 1 sequence replay rejection falls back to Tier 2', async () => {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+  const pubKeyBase64 = spkiDer.subarray(-32).toString('base64');
+
+  const v1Files = {
+    '/api/update/config.json': JSON.stringify({ routes: [], precache: ['/app.js'] }),
+    '/app.js': 'app v1',
+  };
+
+  const v2Files = {
+    '/api/update/config.json': JSON.stringify({ routes: [], precache: ['/app.js'] }),
+    '/app.js': 'app v2',
+  };
+
+  const server = makeServer('1.0.0', v1Files);
+  server.sequence = 100;
+  fakeSelf();
+
+  setupEnv(server.fetch, { publicKey: pubKeyBase64 });
+  await precacheFiles();
+
+  // Record that current client sequence is 100
+  await writeMeta('/_nlpwa/sequence.json', { sequence: 100, version: '1.0.0' });
+
+  // Attacker attempts to replay an older signed version.json with sequence: 50, version: '1.0.0'
+  server.set('2.0.0', v2Files);
+  server.sequence = 200; // Tier 2 has valid fresh sequence 200
+
+  const origFetch = server.fetch;
+  server.fetch = async (r) => {
+    const url = new URL(r.url);
+    if (url.pathname === '/api/update/version' || url.pathname === '/api/update/version.json') {
+      const replayedTier1 = {
+        version: '1.0.0',
+        sequence: 50, // Replayed sequence! Lower than recorded 100
+        blockedVersions: [],
+      };
+      const sig = signManifestSync(replayedTier1, privateKey);
+      return Response.json({ ...replayedTier1, signature: sig });
+    }
+    return origFetch(r);
+  };
+
+  const filesList = Object.entries(v2Files).map(([p, body]) => ({
+    path: p,
+    hash: hash8(body),
+    size: Buffer.byteLength(String(body)),
+  }));
+
+  server.signature = signManifestSync(
+    {
+      version: '2.0.0',
+      sequence: 200,
+      files: filesList,
+    },
+    privateKey
+  );
+
+  const res = await checkForUpdate();
+  // Must discard replayed Tier 1, proceed to Tier 2, and update to 2.0.0
+  assert.equal(res.updated, true, 'Should discard replayed Tier 1 and update via Tier 2');
+  assert.equal(res.version, '2.0.0');
+
+  // Sequence must be updated to 200
+  const seq = await readMeta('/_nlpwa/sequence.json');
+  assert.equal(seq.sequence, 200);
+});
+

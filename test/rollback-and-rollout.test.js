@@ -6,6 +6,7 @@ import { precacheFiles } from '../src/sw/cache/install.js';
 import { checkForUpdate } from '../src/sw/update/index.js';
 import { commitStaged, commitIfReady, rollbackToFallback } from '../src/sw/update/commit.js';
 import { getConfig } from '../src/sw/config/index.js';
+import { withLock } from '../src/sw/cache/meta/lock.js';
 import {
   getActive,
   getStaged,
@@ -107,6 +108,33 @@ test('rollback: commit retains fallbackCache, and rollbackToFallback reverts to 
   assert.equal(rollbackMsg.rolledBackFrom, '2.0.0');
 });
 
+test('rollback: rollbackToFallback waits for lock release when another operation holds the lock', async () => {
+  const server = makeServer('1.0.0', v1Files);
+  fakeSelf();
+  setupEnv(server.fetch);
+
+  await precacheFiles();
+  server.set('2.0.0', v2Files);
+  await checkForUpdate({ force: true });
+  await commitStaged();
+
+  // Hold lock intentionally for 100ms
+  let lockReleased = false;
+  const holdingPromise = withLock(async () => {
+    await new Promise((r) => setTimeout(r, 100));
+    lockReleased = true;
+    return 'done';
+  });
+
+  // Call rollbackToFallback while lock is held
+  const rollbackPromise = rollbackToFallback('Emergency rollback during locked operation');
+
+  const [_, rollbackResult] = await Promise.all([holdingPromise, rollbackPromise]);
+  assert.equal(lockReleased, true);
+  assert.equal(rollbackResult.success, true);
+  assert.equal(rollbackResult.version, '1.0.0');
+});
+
 test('kill-switch: update check detects active version is in remote blockedVersions and rolls back', async () => {
   const server = makeServer('1.0.0', v1Files);
   const messages = fakeSelf();
@@ -159,10 +187,10 @@ test('rollout: rolloutPercent excludes clients not in cohort unless forced', asy
 
   await precacheFiles();
 
-  // Set client seed to 50
-  await writeMeta('/_nlpwa/rollout-seed.json', { seed: 50 });
+  // Set client seed to 2 (for v2.0.0, stringHash('2:2.0.0') % 100 = 85)
+  await writeMeta('/_nlpwa/rollout-seed.json', { seed: 2 });
 
-  // Offer v2.0.0 with 25% rollout
+  // Offer v2.0.0 with 25% rollout (85 >= 25 -> excluded)
   server.set('2.0.0', v2Files);
   server.rolloutPercent = 25;
 
@@ -174,6 +202,32 @@ test('rollout: rolloutPercent excludes clients not in cohort unless forced', asy
   const resultForced = await checkForUpdate({ force: true });
   assert.equal(resultForced.updated, true);
   assert.equal(resultForced.version, '2.0.0');
+});
+
+test('rollout: cohorts rotate per release version to avoid sticky canary blast radius', async () => {
+  const server = makeServer('1.0.0', v1Files);
+  fakeSelf();
+  setupEnv(server.fetch);
+
+  await precacheFiles();
+
+  // With client seed 2:
+  // For target 2.0.0: hash cohort is 85 (excluded with 25% rollout)
+  // For target 1.1.0: hash cohort is 17 (included with 25% rollout)
+  await writeMeta('/_nlpwa/rollout-seed.json', { seed: 2 });
+
+  // Target 1: 2.0.0 with 25% rollout -> excluded
+  server.set('2.0.0', v2Files);
+  server.rolloutPercent = 25;
+  const res1 = await checkForUpdate();
+  assert.equal(res1.rolloutExcluded, true);
+
+  // Target 2: 1.1.0 with 25% rollout -> included
+  server.set('1.1.0', v2Files);
+  server.rolloutPercent = 25;
+  const res2 = await checkForUpdate();
+  assert.equal(res2.updated, true);
+  assert.equal(res2.version, '1.1.0');
 });
 
 test('channel: update check filters by release channel', async () => {

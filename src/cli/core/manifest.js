@@ -147,7 +147,7 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
   const missing = [];
   let allDiskFiles = null;
 
-  const maxVerifyBytes = runtimeConfig.maxVerifyBytes ?? (20 * 1024 * 1024);
+  const maxVerifyBytes = runtimeConfig.maxVerifyBytes ?? (25 * 1024 * 1024);
   const skipVerifyGlobs = Array.isArray(runtimeConfig.skipVerifyGlobs) ? runtimeConfig.skipVerifyGlobs : [];
 
   const shouldSkipVerify = (fileUrl, fileSize) => {

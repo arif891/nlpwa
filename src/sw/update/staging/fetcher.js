@@ -14,7 +14,7 @@ export async function fetchVerified({
   path,
   expected,
   verify,
-  maxVerifyBytes = 20 * 1024 * 1024,
+  maxVerifyBytes = 25 * 1024 * 1024,
   largeFileThresholdBytes = 25 * 1024 * 1024,
   fileSize = null,
   allowOversizedUnverified = true,

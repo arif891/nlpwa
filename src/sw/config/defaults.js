@@ -91,9 +91,9 @@ export const DEFAULTS = {
    * Files larger than this threshold (e.g. WASM binaries, on-device AI models)
    * can skip in-memory clone & buffer to avoid memory spikes and crashes on low-end devices
    * if allowOversizedUnverified is set to true.
-   * Default: 20 * 1024 * 1024 (20 MB)
+   * Default: 25 * 1024 * 1024 (25 MB)
    */
-  maxVerifyBytes: 20 * 1024 * 1024,
+  maxVerifyBytes: 25 * 1024 * 1024,
 
   /**
    * Allow files larger than maxVerifyBytes to skip in-memory SHA-256 verification

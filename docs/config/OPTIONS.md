@@ -65,11 +65,11 @@ How downloaded update files are verified against manifest hashes:
 - `'warn'` (default): Logs warnings on mismatches but continues staging. Ensures resilience against CDN minification or edge compression.
 - `'strict'`: Strictly aborts staging if a single byte differs from the manifest.
 
-### `maxVerifyBytes` · `number` · default: `20971520` (20 MB)
-Maximum file size in bytes to buffer and verify with in-memory SHA-256 hashing. Prevents mobile out-of-memory crashes.
+### `maxVerifyBytes` · `number` · default: `26214400` (25 MB)
+Maximum file size in bytes to buffer and verify with in-memory SHA-256 hashing. Prevents mobile out-of-memory crashes on oversized assets.
 
 ### `largeFileThresholdBytes` · `number` · default: `26214400` (25 MB)
-Threshold above which large assets automatically delegate to Background Fetch and stream directly into IndexedDB (`nlpwa-large-assets`).
+Threshold above which large update assets automatically delegate to Background Fetch and stream directly into native `CacheStorage` on disk.
 
 ### `applyMode` · `'navigation' | 'immediate'` · default: `'navigation'`
 - `'navigation'` (default): Updates stage completely in the background and commit on the next document navigation without interrupting active users.

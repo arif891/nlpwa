@@ -11,7 +11,7 @@ export async function isAlreadyStaged({
   path,
   expected,
   verify,
-  maxVerifyBytes = 20 * 1024 * 1024,
+  maxVerifyBytes = 25 * 1024 * 1024,
   fileSize = null,
   fetchUrl = path,
   allowOversizedUnverified = true,

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="NLPWA native-like PWA framework showcase featuring delta updates and 5 caching strategies.">
+  <meta name="description" content="NLPWA native-like PWA framework showcase featuring delta updates, offline navigation, and dev HUD.">
   <meta name="theme-color" content="#09090b">
   <title>NLPWA — Native-like PWA Showcase</title>
   <link rel="manifest" href="/manifest.webmanifest">
@@ -11,14 +11,14 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="app-container">
-    <!-- Top Header -->
-    <header class="app-header">
+  <!-- Top Navigation Bar -->
+  <header class="app-header">
+    <div class="header-inner">
       <div class="brand">
         <img src="/assets/offline-badge.svg" alt="NLPWA Logo" class="brand-icon">
         <div>
           <h1 class="brand-title">NLPWA Engine</h1>
-          <div class="brand-subtitle">Native-like PWA Framework & Delta OTA Updates</div>
+          <div class="brand-subtitle">Offline-First Reader & Framework Showcase</div>
         </div>
       </div>
       <div class="header-status">
@@ -27,189 +27,217 @@
           <span class="status-dot" id="connectionDot"></span>
           <span id="connectionLabel">Online</span>
         </span>
+        <button class="btn-hud-toggle" id="btnToggleHud" title="Toggle Developer HUD">
+          <span class="hud-icon">⚡</span>
+          <span>Dev HUD</span>
+        </button>
       </div>
-    </header>
+    </div>
+  </header>
 
-    <!-- Floating Update Ready Banner -->
-    <div class="update-banner" id="updateBanner">
-      <div class="update-info">
-        <span class="update-icon">⚡</span>
-        <div class="update-text">
-          <h4>New Version Ready (<span id="targetVersion">1.0.1</span>)</h4>
-          <p>Hashed delta staged in background cache. Zero interruption until you refresh.</p>
+  <!-- Floating Update Ready Banner -->
+  <div class="update-banner" id="updateBanner">
+    <div class="update-info">
+      <span class="update-icon">⚡</span>
+      <div class="update-text">
+        <h4>New Version Ready (<span id="targetVersion">1.0.1</span>)</h4>
+        <p>Hashed delta staged in background cache. Zero interruption until you refresh.</p>
+      </div>
+    </div>
+    <button class="btn-update" id="btnApplyUpdate">Apply & Reload</button>
+  </div>
+
+  <!-- Main Application Container -->
+  <main class="app-container">
+    <!-- Tab Navigation Bar -->
+    <nav class="app-tabs" role="tablist">
+      <button class="tab-btn active" data-tab="feed" role="tab" id="tabFeed">
+        <span class="tab-icon">📰</span>
+        <span>News Feed</span>
+        <span class="tab-badge">SWR</span>
+      </button>
+      <button class="tab-btn" data-tab="handbook" role="tab" id="tabHandbook">
+        <span class="tab-icon">📘</span>
+        <span>Handbook</span>
+        <span class="tab-badge">Cache-Only</span>
+      </button>
+      <button class="tab-btn" data-tab="profile" role="tab" id="tabProfile">
+        <span class="tab-icon">👤</span>
+        <span>Profile & Theme</span>
+        <span class="tab-badge">Net-First</span>
+      </button>
+      <button class="tab-btn" data-tab="live" role="tab" id="tabLive">
+        <span class="tab-icon">⏱️</span>
+        <span>Live Sync</span>
+        <span class="tab-badge">Network</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: News Feed -->
+    <section class="tab-pane active" id="paneFeed" role="tabpanel">
+      <div class="pane-header">
+        <div>
+          <h2 class="pane-title">Developer Feed</h2>
+          <p class="pane-desc">Served with <code>stale-while-revalidate</code> — instant cached reads with silent background revalidation.</p>
+        </div>
+        <button class="btn-action" id="btnRefreshFeed">
+          <span>↻ Refresh Feed</span>
+        </button>
+      </div>
+      <div class="articles-grid" id="feedContainer">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- Tab 2: Offline Handbook -->
+    <section class="tab-pane" id="paneHandbook" role="tabpanel">
+      <div class="pane-header">
+        <div>
+          <h2 class="pane-title">Offline Emergency Handbook</h2>
+          <p class="pane-desc">Served strictly via <code>cache-only</code> — guaranteed instant access with zero network reliance.</p>
+        </div>
+        <button class="btn-action" id="btnRefreshHandbook">
+          <span>↻ Reload Handbook</span>
+        </button>
+      </div>
+      <div class="handbook-container" id="handbookContainer">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- Tab 3: Profile & Theme -->
+    <section class="tab-pane" id="paneProfile" role="tabpanel">
+      <div class="pane-header">
+        <div>
+          <h2 class="pane-title">User Profile & Theme Configuration</h2>
+          <p class="pane-desc">User data via <code>network-first</code> (offline fallback) and theme tokens via <code>cache-first</code>.</p>
+        </div>
+        <div class="pane-actions">
+          <button class="btn-action" id="btnRefreshProfile"><span>Fetch Profile</span></button>
+          <button class="btn-action" id="btnRefreshTheme"><span>Load Theme</span></button>
         </div>
       </div>
-      <button class="btn-update" id="btnApplyUpdate">Apply & Reload</button>
+      <div class="profile-layout">
+        <div class="profile-card" id="profileContainer">
+          <!-- Rendered via JS -->
+        </div>
+        <div class="theme-card" id="themeContainer">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Live Edge Sync -->
+    <section class="tab-pane" id="paneLive" role="tabpanel">
+      <div class="pane-header">
+        <div>
+          <h2 class="pane-title">Real-Time Edge Clock</h2>
+          <p class="pane-desc">Served via <code>network-only</code> — bypasses all caches to ensure fresh data directly from origin.</p>
+        </div>
+        <button class="btn-action" id="btnRefreshLive">
+          <span>Sync Now</span>
+        </button>
+      </div>
+      <div class="live-clock-card" id="clockContainer">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+  </main>
+
+  <!-- ── Floating Dev HUD Bottom Sheet ──────────────────────────────────────── -->
+  <aside class="dev-sheet" id="devSheet">
+    <!-- Sheet Bar Header -->
+    <div class="sheet-header" id="sheetHeader">
+      <div class="sheet-title-group">
+        <span class="sheet-icon">⚡</span>
+        <span class="sheet-title">NLPWA Engine Inspector</span>
+        <span class="sheet-pill" id="hudStatusPill">Active</span>
+      </div>
+      <div class="sheet-kpis">
+        <div class="kpi-mini">
+          <span class="kpi-mini-label">SW:</span>
+          <span class="kpi-mini-value" id="swStatus">Connecting...</span>
+        </div>
+        <div class="kpi-mini">
+          <span class="kpi-mini-label">Requests:</span>
+          <span class="kpi-mini-value" id="metricRequests">0</span>
+        </div>
+        <div class="kpi-mini">
+          <span class="kpi-mini-label">Hit Rate:</span>
+          <span class="kpi-mini-value text-emerald" id="metricHitRate">100%</span>
+        </div>
+        <div class="kpi-mini">
+          <span class="kpi-mini-label">Scope:</span>
+          <span class="kpi-mini-value text-sky" id="metricScope">/</span>
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn-sheet-toggle" id="btnSheetToggle" aria-label="Toggle Sheet View">↕</button>
+      </div>
     </div>
 
-    <!-- Hero Overview -->
-    <section class="hero-section">
-      <h2 class="hero-title">Offline Caching & OTA Delivery</h2>
-      <p class="hero-description">
-        Zero-latency precaching, atomic background staging, route-aware eviction, and five caching strategies tagged with <code>X-Cache-Status</code> headers.
-      </p>
-    </section>
+    <!-- Sheet Body / Inspector Content -->
+    <div class="sheet-body" id="sheetBody">
+      <!-- Strategy Triggers Ribbon -->
+      <div class="strategy-ribbon">
+        <span class="ribbon-label">Quick Test:</span>
+        <button class="btn-test" id="btnTestFeed">stale-while-revalidate</button>
+        <button class="btn-test" id="btnTestTheme">cache-first</button>
+        <button class="btn-test" id="btnTestProfile">network-first</button>
+        <button class="btn-test" id="btnTestLive">network-only</button>
+        <button class="btn-test" id="btnTestOffline">cache-only</button>
+      </div>
 
-    <!-- Metrics Cards -->
-    <section class="metrics-grid">
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">SW Status</span>
-          <span class="metric-icon">●</span>
-        </div>
-        <div class="metric-value status-value" id="swStatus">Connecting...</div>
-        <div class="metric-footer">Service Worker Lifetime</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">Intercepted</span>
-          <span class="metric-icon">#</span>
-        </div>
-        <div class="metric-value" id="metricRequests">0</div>
-        <div class="metric-footer">Total GET fetches handled</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">Hit Ratio</span>
-          <span class="metric-icon">%</span>
-        </div>
-        <div class="metric-value hitrate-value" id="metricHitRate">100%</div>
-        <div class="metric-footer">Offline + Runtime Hits</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-label">Scope</span>
-          <span class="metric-icon">/</span>
-        </div>
-        <div class="metric-value scope-value" id="metricScope">/</div>
-        <div class="metric-footer">Origin Routing Scope</div>
-      </div>
-    </section>
-
-    <!-- Interactive Strategy Playground -->
-    <section>
-      <div class="section-header">
-        <h3 class="section-title">Caching Strategies</h3>
-        <span class="status-badge">Live Network & SW Interceptor</span>
-      </div>
-      <div class="playground-grid">
-        <!-- stale-while-revalidate -->
-        <div class="strategy-card">
-          <div class="strategy-header">
-            <span class="strategy-name">stale-while-revalidate</span>
-            <span class="strategy-tag">Feed</span>
+      <div class="sheet-grid">
+        <!-- Response Inspector -->
+        <div class="inspector-card" id="inspector">
+          <div class="section-header">
+            <h3 class="section-title">Response Header & Payload Inspector</h3>
+            <span class="status-badge" id="inspectCacheStatus">offline-cache</span>
           </div>
-          <p class="strategy-desc">
-            Serves immediately from cache while silently revalidating with the server in the background.
-          </p>
-          <div class="strategy-endpoint">GET /api/feed.json</div>
-          <button class="btn-test" id="btnTestFeed">Test Strategy</button>
-        </div>
-
-        <!-- cache-first -->
-        <div class="strategy-card">
-          <div class="strategy-header">
-            <span class="strategy-name">cache-first</span>
-            <span class="strategy-tag">Assets</span>
+          <div class="inspector-meta">
+            <div class="meta-item">
+              <span class="meta-label">Request URI</span>
+              <span class="meta-value" id="inspectEndpoint">/api/feed.json</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">HTTP Status</span>
+              <span class="meta-value" id="inspectStatus">200 OK</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Latency</span>
+              <span class="meta-value" id="inspectLatency">2ms</span>
+            </div>
           </div>
-          <p class="strategy-desc">
-            Instantly serves from offline / runtime cache. Falls back to network only on cache miss.
-          </p>
-          <div class="strategy-endpoint">GET /assets/theme.json</div>
-          <button class="btn-test" id="btnTestTheme">Test Strategy</button>
+          <pre class="code-preview" id="inspectBody">// Click any "Test Strategy" button or tab action to inspect live payload & cache headers</pre>
         </div>
 
-        <!-- network-first -->
-        <div class="strategy-card">
-          <div class="strategy-header">
-            <span class="strategy-name">network-first</span>
-            <span class="strategy-tag">User Data</span>
+        <!-- Controls & Telemetry Column -->
+        <div class="sheet-sidebar">
+          <!-- OTA Controls -->
+          <div class="actions-card">
+            <div class="actions-details">
+              <h4>OTA Delta Updates</h4>
+              <p>Simulate two-tier checks & atomic staging.</p>
+            </div>
+            <div class="actions-buttons">
+              <button class="btn-action" id="btnCheckUpdate">Check For Update</button>
+              <button class="btn-action btn-primary" id="btnSimulateUpdate">Simulate v1.0.1 Release</button>
+            </div>
           </div>
-          <p class="strategy-desc">
-            Prioritizes fresh server data. Falls back to cache or navigation fallback when offline.
-          </p>
-          <div class="strategy-endpoint">GET /api/profile.json</div>
-          <button class="btn-test" id="btnTestProfile">Test Strategy</button>
-        </div>
 
-        <!-- network-only -->
-        <div class="strategy-card">
-          <div class="strategy-header">
-            <span class="strategy-name">network-only</span>
-            <span class="strategy-tag">Real-Time</span>
+          <!-- Console Event Stream -->
+          <div class="console-card">
+            <div class="section-header">
+              <h4 class="section-title">Live Telemetry</h4>
+              <button class="btn-sm" id="btnClearLog">Clear</button>
+            </div>
+            <div class="log-stream" id="logStream"></div>
           </div>
-          <p class="strategy-desc">
-            Strictly bypasses all local caches. Always fetches fresh data directly from the network.
-          </p>
-          <div class="strategy-endpoint">GET /api/live/time.json</div>
-          <button class="btn-test" id="btnTestLive">Test Strategy</button>
-        </div>
-
-        <!-- cache-only -->
-        <div class="strategy-card">
-          <div class="strategy-header">
-            <span class="strategy-name">cache-only</span>
-            <span class="strategy-tag">Handbook</span>
-          </div>
-          <p class="strategy-desc">
-            Serves exclusively from local precache store. Never touches the external network.
-          </p>
-          <div class="strategy-endpoint">GET /offline-data.json</div>
-          <button class="btn-test" id="btnTestOffline">Test Strategy</button>
         </div>
       </div>
-    </section>
-
-    <!-- Response Inspector -->
-    <section class="inspector-card" id="inspector">
-      <div class="section-header">
-        <h3 class="section-title">Response Inspector</h3>
-        <span class="status-badge">X-Cache-Status Tagged</span>
-      </div>
-      <div class="inspector-meta">
-        <div class="meta-item">
-          <span class="meta-label">Request URI</span>
-          <span class="meta-value" id="inspectEndpoint">/api/feed.json</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">HTTP Status</span>
-          <span class="meta-value" id="inspectStatus">200 OK</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">Round-Trip Latency</span>
-          <span class="meta-value" id="inspectLatency">2ms</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">X-Cache-Status Header</span>
-          <span class="meta-value"><span class="header-status-badge status-offline-cache" id="inspectCacheStatus">offline-cache</span></span>
-        </div>
-      </div>
-      <div class="code-preview" id="inspectBody">// Click any "Test Strategy" button above to inspect live payload & cache headers</div>
-    </section>
-
-    <!-- OTA Simulation Actions -->
-    <section class="actions-card">
-      <div class="actions-details">
-        <h3>Over-The-Air (OTA) Delta Update Controls</h3>
-        <p>Trigger two-tier version checks or simulate a remote release to see atomic staging in action.</p>
-      </div>
-      <div class="actions-buttons">
-        <button class="btn-action" id="btnCheckUpdate">Check For Update</button>
-        <button class="btn-action btn-primary" id="btnSimulateUpdate">Simulate v1.0.1 Release</button>
-      </div>
-    </section>
-
-    <!-- Console / Activity Stream -->
-    <section class="console-card">
-      <div class="section-header">
-        <h3 class="section-title">Event Telemetry</h3>
-        <div class="console-actions">
-          <button class="btn-sm" id="btnClearLog">Clear Log</button>
-        </div>
-      </div>
-      <div class="log-stream" id="logStream"></div>
-    </section>
-  </div>
+    </div>
+  </aside>
 
   <!-- NLPWA Client Script -->
   <script src="/client.js"></script>

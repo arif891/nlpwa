@@ -1,5 +1,5 @@
 /**
- * NLPWA Interactive Showcase Application Logic
+ * NLPWA Interactive Showcase Application Logic - Hybrid Architecture
  */
 
 let interceptedCount = 0;
@@ -50,10 +50,159 @@ function updateNetworkStatus() {
 window.addEventListener('online', updateNetworkStatus);
 window.addEventListener('offline', updateNetworkStatus);
 
-// ── Strategy Playground ────────────────────────────────────────────────────
+// ── Visual Component Renderers ─────────────────────────────────────────────
+function renderFeed(data) {
+  const container = document.getElementById('feedContainer');
+  if (!container || !data?.articles) return;
+
+  container.innerHTML = data.articles.map((art) => `
+    <article class="article-card">
+      <div class="article-meta">
+        <span class="article-readtime">${art.readTime || '3 min'}</span>
+        <span class="status-badge" style="font-size: 0.65rem;">Article #${art.id}</span>
+      </div>
+      <h3 class="article-title">${art.title}</h3>
+      <p class="article-summary">${art.summary}</p>
+      <a href="#article-${art.id}" class="article-link">Read article →</a>
+    </article>
+  `).join('');
+}
+
+function renderHandbook(data) {
+  const container = document.getElementById('handbookContainer');
+  if (!container || !data) return;
+
+  container.innerHTML = `
+    <div class="handbook-header">
+      <h3 style="font-size: 1.05rem; font-weight: 600;">${data.title}</h3>
+      <span class="handbook-badge">Version ${data.version || '1.0'}</span>
+    </div>
+    <p class="handbook-content">${data.content}</p>
+    <ul class="handbook-points">
+      <li><strong>Precache Integrity:</strong> Core assets guaranteed available even on initial boot without network.</li>
+      <li><strong>Deterministic Eviction:</strong> Scoped LRU runtime cache cleanups prevent browser quota eviction.</li>
+      <li><strong>Atomic Staging:</strong> Delta updates download in isolated cache partitions to prevent partial-state crashes.</li>
+    </ul>
+  `;
+}
+
+function renderProfile(data) {
+  const container = document.getElementById('profileContainer');
+  if (!container || !data) return;
+
+  const initials = (data.name || 'User').split(' ').map(n => n[0]).join('');
+  const badgesHtml = (data.badges || []).map(b => `<span class="badge-chip">${b}</span>`).join('');
+
+  container.innerHTML = `
+    <div class="profile-avatar-row">
+      <div class="profile-avatar">${initials}</div>
+      <div>
+        <div class="profile-name">${data.name || 'User'}</div>
+        <div class="profile-role">${data.role || 'Developer'} (@${data.user || 'user'})</div>
+      </div>
+    </div>
+    <div class="profile-badges">${badgesHtml}</div>
+    <div class="profile-stats-grid">
+      <div class="stat-item">
+        <span class="stat-label">Cached</span>
+        <span class="stat-val">${data.stats?.cachedRequests || 0}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Saved</span>
+        <span class="stat-val">${data.stats?.bandwidthSaved || '0 MB'}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Uptime</span>
+        <span class="stat-val">${data.stats?.uptime || '100%'}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderTheme(data) {
+  const container = document.getElementById('themeContainer');
+  if (!container || !data) return;
+
+  container.innerHTML = `
+    <div class="handbook-header">
+      <h3 style="font-size: 1.05rem; font-weight: 600;">Theme: ${data.themeName || 'Default'}</h3>
+      <span class="status-badge" style="font-size: 0.65rem;">Cache-First</span>
+    </div>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.85rem;">${data.description || 'Static design tokens.'}</p>
+    <div class="theme-swatches">
+      <div class="swatch" style="background: ${data.primary || '#8b5cf6'};" title="Primary: ${data.primary}"></div>
+      <div class="swatch" style="background: ${data.secondary || '#6366f1'};" title="Secondary: ${data.secondary}"></div>
+      <div class="swatch" style="background: ${data.accent || '#10b981'};" title="Accent: ${data.accent}"></div>
+      <div class="swatch" style="background: ${data.background || '#09090b'};" title="Background: ${data.background}"></div>
+    </div>
+  `;
+}
+
+function renderClock(data) {
+  const container = document.getElementById('clockContainer');
+  if (!container || !data) return;
+
+  const date = data.timestamp ? new Date(data.timestamp) : new Date();
+  const timeStr = date.toTimeString().split(' ')[0];
+
+  container.innerHTML = `
+    <div class="clock-display">${timeStr}</div>
+    <div class="clock-sub">${data.iso || date.toISOString()}</div>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 1rem;">
+      ${data.message || 'Real-time origin timestamp.'}
+    </p>
+  `;
+}
+
+// ── Tab Controller ─────────────────────────────────────────────────────────
+function initTabs() {
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabPanes = document.querySelectorAll('.tab-pane');
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.getAttribute('data-tab');
+      tabButtons.forEach(b => b.classList.remove('active'));
+      tabPanes.forEach(p => p.classList.remove('active'));
+
+      btn.classList.add('active');
+      const targetPane = document.getElementById(`pane${targetTab.charAt(0).toUpperCase() + targetTab.slice(1)}`);
+      if (targetPane) targetPane.classList.add('active');
+    });
+  });
+}
+
+// ── Dev HUD Bottom Sheet Controller ────────────────────────────────────────
+function initDevSheet() {
+  const sheet = document.getElementById('devSheet');
+  const header = document.getElementById('sheetHeader');
+  const toggleBtn = document.getElementById('btnSheetToggle');
+  const hudBtn = document.getElementById('btnToggleHud');
+
+  function toggleSheet(e) {
+    if (e && e.target && e.target.closest('.sheet-kpis')) return;
+    if (!sheet) return;
+    sheet.classList.toggle('collapsed');
+    const isCollapsed = sheet.classList.contains('collapsed');
+    if (toggleBtn) toggleBtn.textContent = isCollapsed ? '↕' : '—';
+  }
+
+  header?.addEventListener('click', toggleSheet);
+  toggleBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleSheet();
+  });
+
+  hudBtn?.addEventListener('click', () => {
+    if (!sheet) return;
+    sheet.classList.remove('collapsed');
+    sheet.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  });
+}
+
+// ── Strategy Playground & Fetch Engine ─────────────────────────────────────
 async function testStrategy(endpoint, expectedStrategy) {
   log('FETCH', `Requesting ${endpoint} (${expectedStrategy})`);
-  const inspector = document.getElementById('inspector');
   const endpointEl = document.getElementById('inspectEndpoint');
   const statusEl = document.getElementById('inspectStatus');
   const latencyEl = document.getElementById('inspectLatency');
@@ -68,7 +217,8 @@ async function testStrategy(endpoint, expectedStrategy) {
 
     // Update Metrics
     interceptedCount++;
-    document.getElementById('metricRequests').textContent = interceptedCount;
+    const reqEl = document.getElementById('metricRequests');
+    if (reqEl) reqEl.textContent = interceptedCount;
 
     if (cacheStatus === 'offline-cache') cacheHits.offline++;
     else if (cacheStatus === 'runtime-cache') cacheHits.runtime++;
@@ -77,36 +227,48 @@ async function testStrategy(endpoint, expectedStrategy) {
 
     const totalHits = cacheHits.offline + cacheHits.runtime + cacheHits.stale;
     const hitRate = Math.round((totalHits / interceptedCount) * 100);
-    document.getElementById('metricHitRate').textContent = `${hitRate}%`;
+    const hitRateEl = document.getElementById('metricHitRate');
+    if (hitRateEl) hitRateEl.textContent = `${hitRate}%`;
 
-    // Render Preview
+    // Render Preview and UI Tab Content
     let bodyText;
+    let data;
     try {
-      const data = await res.json();
+      data = await res.json();
       bodyText = JSON.stringify(data, null, 2);
+
+      // Dynamically update corresponding application tab view
+      if (endpoint === '/api/feed.json') renderFeed(data);
+      else if (endpoint === '/offline-data.json') renderHandbook(data);
+      else if (endpoint === '/api/profile.json') renderProfile(data);
+      else if (endpoint === '/assets/theme.json') renderTheme(data);
+      else if (endpoint.startsWith('/api/live/')) renderClock(data);
     } catch {
       bodyText = await res.text();
     }
 
-    endpointEl.textContent = endpoint;
-    statusEl.textContent = `${res.status} ${res.statusText || 'OK'}`;
-    latencyEl.textContent = `${duration}ms`;
+    if (endpointEl) endpointEl.textContent = endpoint;
+    if (statusEl) statusEl.textContent = `${res.status} ${res.statusText || 'OK'}`;
+    if (latencyEl) latencyEl.textContent = `${duration}ms`;
 
-    cacheStatusEl.textContent = cacheStatus;
-    cacheStatusEl.className = `header-status-badge status-${cacheStatus.replace(/\s+/g, '-')}`;
+    if (cacheStatusEl) {
+      cacheStatusEl.textContent = cacheStatus;
+      cacheStatusEl.className = `status-badge status-${cacheStatus.replace(/\s+/g, '-')}`;
+    }
 
-    bodyEl.textContent = bodyText;
-    inspector.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (bodyEl) bodyEl.textContent = bodyText;
 
     log('RES', `${endpoint} → ${res.status} [X-Cache-Status: ${cacheStatus}] in ${duration}ms`);
   } catch (err) {
     const duration = Math.round(performance.now() - startTime);
-    endpointEl.textContent = endpoint;
-    statusEl.textContent = 'Failed';
-    latencyEl.textContent = `${duration}ms`;
-    cacheStatusEl.textContent = 'error';
-    cacheStatusEl.className = 'header-status-badge status-offline-fallback';
-    bodyEl.textContent = `Network Error: ${err.message}`;
+    if (endpointEl) endpointEl.textContent = endpoint;
+    if (statusEl) statusEl.textContent = 'Failed';
+    if (latencyEl) latencyEl.textContent = `${duration}ms`;
+    if (cacheStatusEl) {
+      cacheStatusEl.textContent = 'error';
+      cacheStatusEl.className = 'status-badge status-offline-fallback';
+    }
+    if (bodyEl) bodyEl.textContent = `Network Error: ${err.message}`;
     log('ERR', `Fetch failed for ${endpoint}: ${err.message}`);
   }
 }
@@ -161,19 +323,19 @@ async function initNLPWA() {
 
   if (!('serviceWorker' in navigator)) {
     log('WARN', 'Service Workers are not supported in this browser environment');
-    document.getElementById('swStatus').textContent = 'Unsupported';
+    const swStatus = document.getElementById('swStatus');
+    if (swStatus) swStatus.textContent = 'Unsupported';
     return;
   }
 
   if (window.NLPWA_NO_AUTO_REGISTER) {
-    log('INIT', 'Automatic and manual Service Worker registration suppressed by NLPWA_NO_AUTO_REGISTER.');
+    log('INIT', 'Automatic Service Worker registration suppressed by NLPWA_NO_AUTO_REGISTER.');
     return;
   }
 
   log('INIT', 'Registering NLPWA Service Worker...');
 
   try {
-    // If client.js is loaded, use NLPWAClient.register
     if (typeof NLPWAClient !== 'undefined' && NLPWAClient.register) {
       await NLPWAClient.register('/sw.js', {
         autoReload: false,
@@ -186,16 +348,18 @@ async function initNLPWA() {
     }
 
     const registration = await navigator.serviceWorker.ready;
-    document.getElementById('swStatus').textContent = 'Active & Controlled';
-    document.getElementById('metricScope').textContent = registration.scope.replace(window.location.origin, '');
+    const swStatus = document.getElementById('swStatus');
+    if (swStatus) swStatus.textContent = 'Active & Controlled';
+    const scopeEl = document.getElementById('metricScope');
+    if (scopeEl) scopeEl.textContent = registration.scope.replace(window.location.origin, '');
     log('SW', `Service Worker active at scope: ${registration.scope}`);
     await updateAppVersion();
   } catch (err) {
-    document.getElementById('swStatus').textContent = 'Registration Failed';
+    const swStatus = document.getElementById('swStatus');
+    if (swStatus) swStatus.textContent = 'Registration Failed';
     log('ERR', `Service Worker registration failed: ${err.message}`);
   }
 
-  // Listen for the custom decoupled event
   document.addEventListener('nlpwa:update-ready', (e) => {
     log('UPDATE', `Received update-ready event for v${e.detail.version}`);
     showUpdateBanner(e.detail.version);
@@ -209,32 +373,54 @@ function showUpdateBanner(version) {
   if (banner) banner.classList.add('show');
 }
 
-// ── Button Handlers ────────────────────────────────────────────────────────
+// ── Startup & Event Binding ────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
+  initTabs();
+  initDevSheet();
   initNLPWA();
 
-  // Test Buttons
-  document.getElementById('btnTestFeed')?.addEventListener('click', () => {
+  // Populate default views with initial loads
+  testStrategy('/api/feed.json', 'stale-while-revalidate');
+  testStrategy('/offline-data.json', 'cache-only');
+  testStrategy('/api/profile.json', 'network-first');
+  testStrategy('/assets/theme.json', 'cache-first');
+  testStrategy('/api/live/time.json', 'network-only');
+
+  // App Tab In-Pane Actions
+  document.getElementById('btnRefreshFeed')?.addEventListener('click', () => {
     testStrategy('/api/feed.json', 'stale-while-revalidate');
   });
-
-  document.getElementById('btnTestTheme')?.addEventListener('click', () => {
-    testStrategy('/assets/theme.json', 'cache-first');
+  document.getElementById('btnRefreshHandbook')?.addEventListener('click', () => {
+    testStrategy('/offline-data.json', 'cache-only');
   });
-
-  document.getElementById('btnTestProfile')?.addEventListener('click', () => {
+  document.getElementById('btnRefreshProfile')?.addEventListener('click', () => {
     testStrategy('/api/profile.json', 'network-first');
   });
-
-  document.getElementById('btnTestLive')?.addEventListener('click', () => {
+  document.getElementById('btnRefreshTheme')?.addEventListener('click', () => {
+    testStrategy('/assets/theme.json', 'cache-first');
+  });
+  document.getElementById('btnRefreshLive')?.addEventListener('click', () => {
     testStrategy('/api/live/time.json', 'network-only');
   });
 
+  // Dev HUD Quick Test Buttons
+  document.getElementById('btnTestFeed')?.addEventListener('click', () => {
+    testStrategy('/api/feed.json', 'stale-while-revalidate');
+  });
+  document.getElementById('btnTestTheme')?.addEventListener('click', () => {
+    testStrategy('/assets/theme.json', 'cache-first');
+  });
+  document.getElementById('btnTestProfile')?.addEventListener('click', () => {
+    testStrategy('/api/profile.json', 'network-first');
+  });
+  document.getElementById('btnTestLive')?.addEventListener('click', () => {
+    testStrategy('/api/live/time.json', 'network-only');
+  });
   document.getElementById('btnTestOffline')?.addEventListener('click', () => {
     testStrategy('/offline-data.json', 'cache-only');
   });
 
-  // Manual Update Check
+  // OTA Update Handlers
   document.getElementById('btnCheckUpdate')?.addEventListener('click', () => {
     log('CLI', 'Requesting manual update check via client API...');
     if (typeof NLPWAClient !== 'undefined' && NLPWAClient.requestUpdateCheck) {
@@ -244,7 +430,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Simulate Version Bump
   document.getElementById('btnSimulateUpdate')?.addEventListener('click', async () => {
     log('SIM', 'Simulating new application release (v1.0.1)...');
     try {
@@ -263,7 +448,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Apply Update
   document.getElementById('btnApplyUpdate')?.addEventListener('click', () => {
     log('UPDATE', 'Applying update and reloading application shell...');
     if (typeof NLPWAClient !== 'undefined' && NLPWAClient.applyUpdate) {
@@ -273,7 +457,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Clear Logs
   document.getElementById('btnClearLog')?.addEventListener('click', () => {
     const stream = document.getElementById('logStream');
     if (stream) stream.innerHTML = '';

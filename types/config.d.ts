@@ -213,8 +213,8 @@ export interface NLPWAConfig {
   };
   /** Path inside offline cache where snapshot is stored */
   snapshotCachePath?: string;
-  /** Files to pre-cache at SW install time (the app shell) */
-  precache?: string[];
+  /** Files to pre-cache at SW install time (the app shell) - accepts URL strings, URLPattern instances, or pattern objects */
+  precache?: (string | URLPatternInit | any)[];
   /** Per-URL-pattern fetch strategies */
   routes?: RouteConfig[];
   /** Strategy to use when no route matches (default: 'network-first') */

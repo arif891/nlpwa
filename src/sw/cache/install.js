@@ -94,7 +94,9 @@ async function precacheWithoutManifest() {
     await loadConfigFromCache();
   }
 
-  const precache = (getConfig().precache || []).filter((u) => typeof u === 'string' && !u.includes('*') && !u.includes('?'));
+  const precache = (getConfig().precache || [])
+    .map((u) => (typeof u === 'string' ? u : (typeof u?.pathname === 'string' ? u.pathname : null)))
+    .filter((u) => u && !u.includes('*') && !u.includes('?') && !u.includes(':'));
   // cache: 'reload' skips the HTTP cache so stale bytes are never stored
   const results = await Promise.allSettled(
     precache.map(async (url) => {

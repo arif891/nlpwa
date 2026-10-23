@@ -137,17 +137,23 @@ export function isManifestFile(requestUrl, config = getConfig()) {
   // 2. Precache files and URLPattern / glob patterns
   const precache = config.precache || [];
   for (const item of precache) {
-    if (typeof item !== 'string' && !(item instanceof URLPattern)) continue;
-    if (item === pathname) {
-      return true;
+    if (!item) continue;
+    if (typeof item !== 'string' && (typeof item !== 'object' || item === null)) continue;
+
+    const itemPath = typeof item === 'string' ? item : item.pathname;
+    if (typeof itemPath === 'string') {
+      if (itemPath === pathname) {
+        return true;
+      }
+      // Handle root / index.html alias
+      if (
+        (pathname === '/' && (itemPath === '/index.html' || itemPath === 'index.html')) ||
+        (pathname === '/index.html' && itemPath === '/')
+      ) {
+        return true;
+      }
     }
-    // Handle root / index.html alias
-    if (
-      (pathname === '/' && (item === '/index.html' || item === 'index.html')) ||
-      (pathname === '/index.html' && item === '/')
-    ) {
-      return true;
-    }
+
     const pattern = compileRoutePattern(item, requestUrl.origin);
     if (pattern && (pattern.test(requestUrl.href) || pattern.test(pathname, requestUrl.origin))) {
       return true;

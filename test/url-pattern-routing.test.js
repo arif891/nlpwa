@@ -163,6 +163,24 @@ test('isManifestFile: precache matches wildcard URLPattern patterns', () => {
   assert.equal(isManifestFile(new URL('https://example.com/other/file.txt'), config), false);
 });
 
+test('isManifestFile: precache accepts pattern objects with pathname or wildcards', () => {
+  const config = {
+    version: '1.0.0',
+    configPath: '/api/update/config.json',
+    precache: [
+      { pathname: '/index.html' },
+      { pathname: '/shell/:page' },
+      { pathname: '/static/*' },
+    ],
+  };
+
+  assert.equal(isManifestFile(new URL('https://example.com/index.html'), config), true);
+  assert.equal(isManifestFile(new URL('https://example.com/'), config), true, 'Matches root alias for /index.html');
+  assert.equal(isManifestFile(new URL('https://example.com/shell/dashboard'), config), true);
+  assert.equal(isManifestFile(new URL('https://example.com/static/bundle.css'), config), true);
+  assert.equal(isManifestFile(new URL('https://example.com/api/orders'), config), false);
+});
+
 test('config schema: validateConfig permits pattern objects and named params in route definitions', () => {
   const config = {
     version: '1.0.0',

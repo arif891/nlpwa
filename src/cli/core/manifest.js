@@ -155,8 +155,9 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
     return skipVerifyGlobs.some((g) => matchGlob(g.startsWith('/') ? g : '/' + g, fileUrl));
   };
 
-  for (const urlPath of trackedUrlPaths) {
-    if (typeof urlPath !== 'string') continue;
+  for (const rawItem of trackedUrlPaths) {
+    const urlPath = typeof rawItem === 'string' ? rawItem : (typeof rawItem?.pathname === 'string' ? rawItem.pathname : null);
+    if (!urlPath) continue;
     const isGlob = urlPath.includes('*') || urlPath.includes('?');
 
     if (isGlob) {

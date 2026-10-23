@@ -228,7 +228,16 @@ export function validateConfig(config) {
   }
 
   if (!Array.isArray(config.precache)) {
-    errors.push('config.precache must be an array of URL strings');
+    errors.push('config.precache must be an array of URL strings or pattern objects');
+  } else {
+    config.precache.forEach((item, i) => {
+      if (
+        typeof item !== 'string' &&
+        (typeof item !== 'object' || item === null)
+      ) {
+        errors.push(`config.precache[${i}] must be a URL string or pattern object`);
+      }
+    });
   }
 
   if (!Array.isArray(config.routes)) {

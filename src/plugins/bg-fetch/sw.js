@@ -2,8 +2,20 @@ import { BG_FETCH_CACHE_NAME, BG_FETCH_MESSAGE_TYPES } from './constants.js';
 import { createLogger } from '../../shared/logger.js';
 import { isManifestFile, matchRoute } from '../../sw/fetch/router.js';
 import { openActive } from '../../sw/cache/meta/active.js';
+import { getConfig } from '../../sw/config/index.js';
 
 const logger = createLogger('NLPWA:BgFetch');
+
+function getEffectiveConfig(options = {}) {
+  if (options.config && Object.keys(options.config).length > 0) {
+    return options.config;
+  }
+  try {
+    return getConfig() || {};
+  } catch {
+    return (typeof self !== 'undefined' && self.__NLPWA_CONFIG__) ? self.__NLPWA_CONFIG__ : {};
+  }
+}
 
 export { BG_FETCH_CACHE_NAME, BG_FETCH_MESSAGE_TYPES };
 
@@ -24,9 +36,7 @@ export async function resolveTargetCache(request, options = {}) {
     };
   }
 
-  const config = (typeof self !== 'undefined' && self.__NLPWA_CONFIG__)
-    ? self.__NLPWA_CONFIG__
-    : (options.config || {});
+  const config = getEffectiveConfig(options);
 
   const rawUrl = typeof request === 'string' ? request : request.url;
   let parsedUrl = null;
@@ -87,9 +97,7 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
     const storedRequests = [];
     const usedCacheNames = new Set();
     const uploadResults = [];
-    const config = (typeof self !== 'undefined' && self.__NLPWA_CONFIG__)
-      ? self.__NLPWA_CONFIG__
-      : (options.config || {});
+    const config = getEffectiveConfig(options);
     const largeThreshold = config.largeFileThresholdBytes ?? (25 * 1024 * 1024);
 
     for (const record of records) {

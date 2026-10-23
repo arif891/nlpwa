@@ -69,6 +69,14 @@ async function saveShareQueue(cache, queue) {
   );
 }
 
+async function withShareLock(fn) {
+  const nav = typeof navigator !== 'undefined' ? navigator : typeof self !== 'undefined' ? self.navigator : null;
+  if (nav?.locks?.request && typeof nav.locks.request === 'function') {
+    return nav.locks.request('nlpwa-share-queue-lock', () => fn());
+  }
+  return fn();
+}
+
 /**
  * Handle incoming Web Share Target submission.
  * Extracts title, text, url, and stores individual binary files directly as
@@ -192,9 +200,11 @@ export async function handleShareTarget(event, config = {}) {
         })
       );
 
-      const queue = await getShareQueue(cache);
-      queue.push(shareId);
-      await saveShareQueue(cache, queue);
+      await withShareLock(async () => {
+        const queue = await getShareQueue(cache);
+        queue.push(shareId);
+        await saveShareQueue(cache, queue);
+      });
     }
 
     if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
@@ -224,11 +234,14 @@ export async function getLatestSharedData() {
 
   try {
     const cache = await caches.open(SHARE_CACHE_NAME);
-    const queue = await getShareQueue(cache);
-    if (!queue || queue.length === 0) return null;
-
-    const shareId = queue.shift();
-    await saveShareQueue(cache, queue);
+    const shareId = await withShareLock(async () => {
+      const queue = await getShareQueue(cache);
+      if (!queue || queue.length === 0) return null;
+      const id = queue.shift();
+      await saveShareQueue(cache, queue);
+      return id;
+    });
+    if (!shareId) return null;
 
     const recordKey = `https://nlpwa.internal/_nlpwa_share/records/${shareId}`;
     const recordResp = await cache.match(recordKey);

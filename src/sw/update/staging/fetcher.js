@@ -31,7 +31,8 @@ export async function fetchVerified({
   // If file is large (>25MB) and backgroundFetch is supported, delegate to Background Fetch
   if (isLarge && typeof self !== 'undefined' && self.registration?.backgroundFetch) {
     try {
-      const bgId = `nlpwa-bg:${encodeURIComponent(path)}`;
+      const hashPart = expected ? `:${expected.slice(0, 16)}` : '';
+      const bgId = `nlpwa-bg:${encodeURIComponent(path)}${hashPart}`;
       let bgRegistration = await self.registration.backgroundFetch.get(bgId);
       if (!bgRegistration) {
         bgRegistration = await self.registration.backgroundFetch.fetch(bgId, [path], {
@@ -41,7 +42,10 @@ export async function fetchVerified({
       }
       const record = await bgRegistration.match(path);
       if (record) {
-        const bgRes = await record.responseReady;
+        const bgRes = await Promise.race([
+          record.responseReady,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Background Fetch timeout')), timeoutMs)),
+        ]).catch(() => null);
         if (bgRes && bgRes.ok) {
           response = bgRes;
           logger.log(`[NLPWA] Downloaded ${path} via Background Fetch.`);

@@ -48,7 +48,10 @@ export async function putInRuntime(request, response) {
           keyToStore = cleanedUrl;
         } else {
           try {
-            keyToStore = new Request(cleanedUrl, request);
+            keyToStore = new Request(cleanedUrl, {
+              headers: request.headers,
+              method: request.method,
+            });
           } catch {
             keyToStore = cleanedUrl;
           }
@@ -91,7 +94,10 @@ export async function putInRuntime(request, response) {
       keyToStore = cleanedUrl;
     } else {
       try {
-        keyToStore = new Request(cleanedUrl, request);
+        keyToStore = new Request(cleanedUrl, {
+          headers: request.headers,
+          method: request.method,
+        });
       } catch {
         keyToStore = cleanedUrl;
       }

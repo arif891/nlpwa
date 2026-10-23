@@ -55,16 +55,16 @@ initSW({
    - Manifest & precache assets automatically resolve to the active offline version cache (`offline@<version>`).
    - URLs matching custom route rules in `config.routes` resolve to that route's designated `cacheName`.
    - All other downloads route to `'runtime'` (or the plugin's `cacheName` option).
-2. **IndexedDB Delegation (>25 MB)**:
-   - File size is detected via the `Content-Length` header (with fallback to `clone().blob().size` for chunked/CORS responses).
-   - If the file exceeds `largeFileThresholdBytes` (default: 25 MB), it is automatically stored in IndexedDB (`nlpwa-large-assets`) while registering in the cache to avoid CacheStorage memory limits.
+2. **Native CacheStorage Streaming**:
+   - Downloads stream directly into the browser's native `CacheStorage` via native Response handles, avoiding in-memory blob buffering.
+   - Files exceeding `maxVerifyBytes` (default: 25 MB) skip in-memory cryptographic hash verification to avoid buffering large payloads into heap memory.
 3. **Native Upload Support**:
-   - Non-GET requests (e.g. `POST`, `PUT`) bypass `cache.put()` to prevent CacheStorage method exceptions. The server response is parsed and dispatched directly to client windows.
+   - Non-GET requests (e.g. `POST`, `PUT`) bypass `cache.put()` to prevent CacheStorage method exceptions. The server response is parsed and dispatched directly to client listeners.
 4. **Native OS Notifications (`BackgroundFetchUpdateUIEvent`)**:
    - `event.updateUI()` is automatically called on completion and failure to present native OS tray feedback with title, icons, and error reasons.
 5. **OTA Staging Integration**:
-   - During OTA updates, any file larger than `largeFileThresholdBytes` is automatically fetched via Background Fetch using a deterministic escaped URL ID: `nlpwa-bg:${encodeURIComponent(path)}`.
-   - If an existing task is already running for that asset, the staging engine reuses it instead of creating duplicates.
+   - During OTA updates, any file larger than `largeFileThresholdBytes` (default: 25 MB) is automatically fetched via Background Fetch using a deterministic version-qualified ID: `nlpwa-bg:${encodeURIComponent(path)}:${expectedHash}`.
+   - If an existing task is already running for that asset version, the staging engine reuses it instead of creating duplicates.
 
 ---
 

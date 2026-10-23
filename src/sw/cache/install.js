@@ -1,6 +1,6 @@
 import { getConfig, updateActiveConfig, loadConfigFromCache } from '../config/index.js';
 import { logger } from '../logger.js';
-import { tryAcquire, release, openActive, withLock } from './store.js';
+import { openActive, withLock } from './store.js';
 import { fetchServerInfo, loadCachedSnapshot } from '../update/manifest.js';
 import { stageUpdate } from '../update/stage.js';
 import { commitStaged } from '../update/commit.js';

@@ -22,11 +22,15 @@ export function getActive() {
             return null;
           }
           const cache = await caches.open(record.cache);
-          const keys = await cache.keys();
-          if (keys.length === 0) {
-            logger.warn(`[NLPWA] Active cache "${record.cache}" is empty (likely evicted by the browser). Clearing stale active pointer.`);
-            await deleteMeta(ACTIVE_KEY);
-            return null;
+          const snapshotPath = record.snapshotPath || '/__nlpwa_snapshot__.json';
+          const hasSnapshot = await cache.match(snapshotPath);
+          if (!hasSnapshot) {
+            const keys = await cache.keys();
+            if (keys.length === 0) {
+              logger.warn(`[NLPWA] Active cache "${record.cache}" is empty (likely evicted by the browser). Clearing stale active pointer.`);
+              await deleteMeta(ACTIVE_KEY);
+              return null;
+            }
           }
           if (record.previousCache && !names.includes(record.previousCache)) {
             delete record.previousCache;

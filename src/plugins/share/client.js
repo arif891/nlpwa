@@ -18,8 +18,13 @@ function initShareListener() {
 
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener?.('message', (event) => {
-      if (event.data?.type === SHARE_MESSAGE_TYPES.SHARED_DATA && event.data?.data) {
-        notifyShareListeners(event.data.data);
+      if (event.data?.type === SHARE_MESSAGE_TYPES.SHARED_DATA) {
+        getSharedData().then((data) => {
+          if (data) notifyShareListeners(data);
+          else if (event.data?.data) notifyShareListeners(event.data.data);
+        }).catch(() => {
+          if (event.data?.data) notifyShareListeners(event.data.data);
+        });
       }
     });
   }

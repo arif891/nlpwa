@@ -1,20 +1,17 @@
-import { getFromCache, getFromOffline, getFromRuntime } from '../../cache/runtime.js';
+import { getFromCache } from '../../cache/runtime.js';
 import { tagResponse, CACHE_STATUS } from '../../cache/tag.js';
 import { getConfig } from '../../config/index.js';
 import { logger } from '../../logger.js';
-import { resolveMaxAgeMs, isResponseExpired } from '../../../shared/time.js';
+import { resolveMaxAgeMs } from '../../../shared/time.js';
 import { isNavigationFallbackAllowed } from '../navigation.js';
-import {
-  getPlugins,
-  runCachedResponseWillBeUsed,
-  runCacheKeyWillBeUsed,
-} from '../plugins.js';
+import { getPlugins } from '../plugins.js';
 import {
   serveCached,
   performFetch,
   safePutInRuntime,
   getShouldThrow,
   resolveFallbackUrl,
+  lookupTaggedCache,
 } from './context.js';
 
 /**
@@ -33,40 +30,24 @@ import {
 export async function staleWhileRevalidate(request, event, options = {}) {
   const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
   const plugins = getPlugins(options);
-  const runtimeName = getConfig().caches?.runtime || 'runtime';
-  const offlineName = getConfig().caches?.offline || 'offline';
   const clientId = event?.clientId || (request.mode === 'navigate' ? event?.resultingClientId : null);
-
-  let cacheKey = request;
-  try {
-    cacheKey = await runCacheKeyWillBeUsed(plugins, { request, mode: 'read', event, options });
-  } catch (err) {
-    logger.warn('[NLPWA] cacheKeyWillBeUsed error:', err?.message || err);
-  }
-
-  let cached = await getFromRuntime(cacheKey, matchOptions);
-  let cacheNameUsed = runtimeName;
-  if (!cached) {
-    cached = await getFromOffline(cacheKey, matchOptions, clientId);
-    cacheNameUsed = offlineName;
-  }
-
-  if (cached) {
-    cached = await runCachedResponseWillBeUsed(plugins, {
-      cacheName: cacheNameUsed,
-      request: cacheKey,
-      matchOptions,
-      cachedResponse: cached,
-      event,
-      options,
-    });
-  }
-
   const maxAgeMs = resolveMaxAgeMs(options);
 
+  const lookupResult = await lookupTaggedCache({
+    request,
+    matchOptions,
+    clientId,
+    plugins,
+    options,
+    event,
+    maxAgeMs,
+  });
+
+  const isExpired = Boolean(lookupResult && lookupResult.expired);
+  const cached = isExpired ? lookupResult.response : lookupResult;
+
   if (cached) {
-    const expired = maxAgeMs ? isResponseExpired(cached, maxAgeMs) : false;
-    if (!expired) {
+    if (!isExpired) {
       // Serve stale immediately; keep the SW alive for the background refresh.
       const revalidate = (async () => {
         try {

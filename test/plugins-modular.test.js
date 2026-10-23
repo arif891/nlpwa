@@ -368,3 +368,63 @@ test('crypto plugin: verifies Ed25519 manifest payloads', async () => {
   const isInvalid = await verifyManifestSignature(tampered, spkiPem);
   assert.equal(isInvalid, false, 'Crypto plugin rejects tampered signature');
 });
+
+test('bg-fetch plugin: does not call clone.blob() when Content-Length is missing', async () => {
+  const cachedRecords = new Map();
+  globalThis.caches = {
+    open: async () => ({
+      put: async (req, res) => {
+        const url = typeof req === 'string' ? req : req.url;
+        cachedRecords.set(url, res);
+      },
+    }),
+  };
+
+  globalThis.self = {
+    clients: {
+      matchAll: async () => [],
+    },
+  };
+
+  let blobCalled = false;
+  const mockResponse = new Response('chunked-large-stream', {
+    status: 200,
+    headers: { 'Content-Type': 'application/octet-stream' }, // NO Content-Length
+  });
+
+  // Track if .blob() is ever called on the response or any clone
+  const origBlob = mockResponse.blob;
+  mockResponse.blob = async function () {
+    blobCalled = true;
+    return origBlob.apply(this, arguments);
+  };
+
+  const origClone = mockResponse.clone;
+  mockResponse.clone = function () {
+    const cl = origClone.apply(this, arguments);
+    cl.blob = async function () {
+      blobCalled = true;
+      return origBlob.apply(this, arguments);
+    };
+    return cl;
+  };
+
+  const event = {
+    registration: {
+      id: 'no-content-length-task',
+      downloaded: 1024 * 1024 * 50, // 50MB downloaded reported by browser
+      matchAll: async () => [
+        {
+          request: new Request('http://localhost:3000/media/stream.bin'),
+          responseReady: Promise.resolve(mockResponse),
+        },
+      ],
+    },
+  };
+
+  await handleBackgroundFetchSuccess(event);
+
+  assert.equal(blobCalled, false, 'Must not call clone.blob() to inspect size or buffer download into memory');
+  assert.equal(cachedRecords.has('http://localhost:3000/media/stream.bin'), true, 'Persisted directly to cache storage');
+});
+

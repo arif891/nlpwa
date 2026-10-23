@@ -105,18 +105,15 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
           if (method === 'GET') {
             const { cache, cacheName } = await resolveTargetCache(record.request, options);
 
-            // Determine file size: inspect Content-Length, fallback to blob.size if missing (e.g. CDN CORS / chunked)
+            // Determine file size without buffering the stream into JS memory:
+            // inspect Content-Length, fallback to bgFetch download counters if missing (e.g. CDN chunked transfer)
             let contentLen = Number(response.headers?.get?.('content-length') || 0);
-            if (!contentLen && typeof response.clone === 'function') {
-              try {
-                const clone = response.clone();
-                const blob = await clone.blob();
-                contentLen = blob.size;
-              } catch {}
+            if (!contentLen && typeof bgFetch?.downloaded === 'number' && bgFetch.downloaded > 0) {
+              contentLen = bgFetch.downloaded;
             }
 
-            // If asset is large (>25MB), mirror into IndexedDB for reliable chunk streaming
-            if (contentLen > largeThreshold) {
+            // Only mirror to IndexedDB if explicitly enabled in options (avoid buffering large streams into memory)
+            if (options.mirrorToIDB && contentLen > largeThreshold) {
               response = await storeLargeAssetInIDB(rawUrl, response);
             }
 

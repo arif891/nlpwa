@@ -222,11 +222,12 @@ export const DEFAULTS = {
   /**
    * Per-URL-pattern fetch strategies.
    * Matched top-to-bottom; first match wins.
-   * Patterns support glob syntax: * (segment) and ** (any path).
+   * Uses native URLPattern syntax: named parameters (:id), wildcards (*), origins, regex groups.
    *
    * Example:
-   *   { match: '/api/**',    strategy: 'network-only' }
-   *   { match: '/assets/**', strategy: 'cache-first' }
+   *   { match: '/api/:version/*', strategy: 'network-only' }
+   *   { match: '/assets/*',       strategy: 'cache-first' }
+   *   { pattern: new URLPattern({ pathname: '/users/:id' }), strategy: 'stale-while-revalidate' }
    */
   routes: [],
 

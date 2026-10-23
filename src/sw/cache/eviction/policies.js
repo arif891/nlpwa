@@ -114,6 +114,23 @@ export async function cleanRuntimeCache(options = {}) {
     // 3. Strategy evaluation on remaining items
     const candidates = allItems.filter(item => !toEvictSet.has(item));
 
+function testEvictionPattern(pattern, url) {
+  if (typeof URLPattern !== 'undefined') {
+    if (pattern instanceof URLPattern) {
+      return pattern.test(url);
+    }
+    try {
+      const p = new URLPattern(pattern, 'http://localhost');
+      if (p.test(url) || p.test(new URL(url, 'http://localhost').pathname, 'http://localhost')) {
+        return true;
+      }
+    } catch {
+      // Fall back to glob
+    }
+  }
+  return matchGlob(pattern, url);
+}
+
     if (strategy === CLEANUP_STRATEGIES.ALL) {
       for (const item of candidates) {
         markForEviction(item);
@@ -122,7 +139,7 @@ export async function cleanRuntimeCache(options = {}) {
       const pattern = options.match || options.pattern;
       if (pattern) {
         for (const item of candidates) {
-          if (matchGlob(pattern, item.url)) {
+          if (testEvictionPattern(pattern, item.url)) {
             markForEviction(item);
           }
         }
@@ -156,7 +173,7 @@ export async function cleanRuntimeCache(options = {}) {
       let lruCandidates = candidates;
       if (options.match || options.pattern) {
         const pattern = options.match || options.pattern;
-        lruCandidates = candidates.filter(item => matchGlob(pattern, item.url));
+        lruCandidates = candidates.filter(item => testEvictionPattern(pattern, item.url));
       }
       // Sort ascending by cachedAt (oldest first)
       lruCandidates.sort((a, b) => (a.cachedAt || 0) - (b.cachedAt || 0));

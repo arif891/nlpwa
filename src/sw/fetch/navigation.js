@@ -20,8 +20,29 @@ export function matchesNavigationPattern(pattern, url) {
   if (pattern instanceof RegExp) {
     return pattern.test(url.pathname) || pattern.test(url.href);
   }
+  if (typeof URLPattern !== 'undefined' && pattern instanceof URLPattern) {
+    return pattern.test(url.href);
+  }
   if (typeof pattern === 'string') {
+    if (typeof URLPattern !== 'undefined') {
+      try {
+        const p = new URLPattern(pattern, 'http://localhost');
+        if (p.test(url.href) || p.test(url.pathname, 'http://localhost')) {
+          return true;
+        }
+      } catch {
+        // Fall back to glob
+      }
+    }
     return matchGlob(pattern, url.pathname) || matchGlob(pattern, url.href);
+  }
+  if (typeof pattern === 'object' && pattern !== null && typeof URLPattern !== 'undefined') {
+    try {
+      const p = new URLPattern(pattern);
+      return p.test(url.href);
+    } catch {
+      return false;
+    }
   }
   return false;
 }

@@ -34,15 +34,43 @@ export default {
 
 ---
 
-## Glob Pattern Syntax
+## URLPattern Syntax & Parameter Extraction
 
-| Pattern | Matches | Example |
-|---|---|---|
-| `*` | Any characters except `/` | `/pages/*` matches `/pages/about` |
-| `**` | Any characters including `/` | `/assets/**` matches `/assets/img/logo.png` |
-| `?` | Single character except `/` | `/page?` matches `/pages` |
-| Literal | Exact pathname | `/offline.html` |
-| Full URL | Cross-origin endpoint | `https://cdn.example.com/libs/**` |
+NLPWA uses native browser **`URLPattern`** for route matching. Extracted parameters are automatically populated in `match.params` and passed to plugins and custom handlers.
+
+```javascript
+export default {
+  routes: [
+    // Named parameters (extracted to { id: '...' })
+    { match: '/api/v1/users/:id', strategy: 'network-first' },
+
+    // Wildcards (* matches across segments)
+    { match: '/assets/*', strategy: 'cache-first' },
+
+    // Regex-constrained parameters
+    { match: '/posts/:id(\\d+)', strategy: 'cache-first' },
+
+    // Query parameter matching
+    { match: { pathname: '/search', search: 'q=:query' }, strategy: 'network-only' },
+
+    // Cross-origin with origin property
+    { match: '/libs/*', origin: 'https://cdn.example.com', strategy: 'cache-first' },
+
+    // Pre-compiled URLPattern instance
+    { pattern: new URLPattern({ pathname: '/articles/:slug' }), strategy: 'stale-while-revalidate' },
+  ],
+};
+```
+
+| Pattern Type | Syntax | Extracted Parameters (`params`) | Example URL |
+|---|---|---|---|
+| Named parameter | `/users/:id` | `{ id: '42' }` | `/users/42` |
+| Multiple parameters | `/api/:version/:resource/:id` | `{ version: 'v1', resource: 'items', id: '10' }` | `/api/v1/items/10` |
+| Wildcard | `/assets/*` | `{ '0': 'css/main.css' }` | `/assets/css/main.css` |
+| Regex group | `/posts/:id(\\d+)` | `{ id: '123' }` | `/posts/123` (skips non-digits) |
+| Search params | `{ pathname: '/search', search: 'q=:q' }` | `{ q: 'nlpwa' }` | `/search?q=nlpwa` |
+| Cross-origin | `https://cdn.example.com/*` | `{ '0': 'app.js' }` | `https://cdn.example.com/app.js` |
+| All paths | `*` | `{ '0': '...' }` | Matches everything |
 
 ---
 

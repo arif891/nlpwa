@@ -250,7 +250,7 @@ fetch event (GET, http/https only)
        ├─ if isManifestFile(request.url) (in precache):
        │    └─ return cache-first (bound to active offline cache; guarantees atomicity)
        └─ otherwise: iterate active config.routes (hydrated from offline cache) top-to-bottom
-            ├─ matchGlob(route.match, request.url) → return matched strategy function
+            ├─ URLPattern match (route.pattern/match, request.url) → return matched strategy function with extracted params
             └─ no match → return defaultStrategy function
   └─ event.respondWith(strategyFn(request, event))
 ```

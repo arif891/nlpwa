@@ -4,6 +4,8 @@ const VALID_STRATEGIES = new Set(Object.values(STRATEGIES));
 
 const ALLOWED_ROUTE_KEYS = new Set([
   'match',
+  'pattern',
+  'params',
   'strategy',
   'origin',
   'networkTimeoutMs',
@@ -245,8 +247,12 @@ export function validateConfig(config) {
           }
         }
       }
-      if (typeof route.match !== 'string') {
-        errors.push(`config.routes[${i}].match must be a string (glob pattern)`);
+      const routePattern = route.pattern ?? route.match;
+      if (
+        typeof routePattern !== 'string' &&
+        (typeof routePattern !== 'object' || routePattern === null)
+      ) {
+        errors.push(`config.routes[${i}].match (or pattern) must be a string or URLPattern object`);
       }
       if (!VALID_STRATEGIES.has(route.strategy)) {
         errors.push(

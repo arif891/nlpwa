@@ -1,5 +1,4 @@
 import { getConfig } from '../config/index.js';
-import { matchGlob, globToRegex } from '../../shared/glob.js';
 import { STRATEGIES } from '../../shared/constants.js';
 import {
   cacheFirst,
@@ -19,6 +18,87 @@ const STRATEGY_FN = {
 };
 
 import { getActiveSnapshotPaths } from '../cache/store.js';
+
+const _routePatternCache = new WeakMap();
+const _stringPatternCache = new Map();
+const MAX_PATTERN_CACHE = 100;
+
+/**
+ * Compile or retrieve a cached URLPattern for a route definition or pattern string/object.
+ *
+ * @param {Object|string|URLPattern} routeOrPattern
+ * @param {string} [defaultOrigin='http://localhost']
+ * @returns {URLPattern|null}
+ */
+export function compileRoutePattern(routeOrPattern, defaultOrigin = 'http://localhost') {
+  if (typeof routeOrPattern === 'object' && routeOrPattern !== null && _routePatternCache.has(routeOrPattern)) {
+    return _routePatternCache.get(routeOrPattern);
+  }
+
+  const input = typeof routeOrPattern === 'string'
+    ? routeOrPattern
+    : (routeOrPattern?.pattern ?? routeOrPattern?.match ?? routeOrPattern);
+  if (!input) return null;
+
+  if (typeof URLPattern !== 'undefined' && input instanceof URLPattern) {
+    if (typeof routeOrPattern === 'object' && routeOrPattern !== null) {
+      _routePatternCache.set(routeOrPattern, input);
+    }
+    return input;
+  }
+
+  let pattern = null;
+  const routeOrigin = routeOrPattern?.origin;
+
+  try {
+    if (typeof input === 'object' && input !== null) {
+      if (routeOrigin === '*') {
+        pattern = new URLPattern({ protocol: '*', hostname: '*', port: '*', ...input });
+      } else if (routeOrigin) {
+        pattern = new URLPattern({ baseURL: routeOrigin, ...input });
+      } else if (!input.baseURL && !input.hostname) {
+        pattern = new URLPattern({ baseURL: defaultOrigin, ...input });
+      } else {
+        pattern = new URLPattern(input);
+      }
+    } else if (typeof input === 'string') {
+      const cacheKey = `${routeOrigin || ''}::${defaultOrigin}::${input}`;
+      if (_stringPatternCache.has(cacheKey)) {
+        pattern = _stringPatternCache.get(cacheKey);
+        if (typeof routeOrPattern === 'object' && routeOrPattern !== null) {
+          _routePatternCache.set(routeOrPattern, pattern);
+        }
+        return pattern;
+      }
+
+      if (input.startsWith('http://') || input.startsWith('https://')) {
+        pattern = new URLPattern(input);
+      } else if (input.startsWith('//')) {
+        pattern = new URLPattern('https:' + input);
+      } else if (routeOrigin === '*') {
+        const pathname = input.startsWith('/') ? input : '/' + input;
+        pattern = new URLPattern({ pathname, protocol: '*', hostname: '*', port: '*' });
+      } else if (routeOrigin) {
+        pattern = new URLPattern(input, routeOrigin);
+      } else {
+        pattern = new URLPattern(input, defaultOrigin);
+      }
+
+      if (_stringPatternCache.size >= MAX_PATTERN_CACHE) {
+        const oldest = _stringPatternCache.keys().next().value;
+        if (oldest !== undefined) _stringPatternCache.delete(oldest);
+      }
+      _stringPatternCache.set(cacheKey, pattern);
+    }
+  } catch {
+    pattern = null;
+  }
+
+  if (typeof routeOrPattern === 'object' && routeOrPattern !== null && pattern) {
+    _routePatternCache.set(routeOrPattern, pattern);
+  }
+  return pattern;
+}
 
 /**
  * Check whether a request URL corresponds to a precached app shell or manifest file.
@@ -54,11 +134,11 @@ export function isManifestFile(requestUrl, config = getConfig()) {
   const configPath = config.configPath || '/api/update/config.json';
   if (pathname === configPath) return true;
 
-  // 2. Precache files and glob patterns
+  // 2. Precache files and URLPattern / glob patterns
   const precache = config.precache || [];
   for (const item of precache) {
-    if (typeof item !== 'string') continue;
-    if (item === pathname || matchGlob(item, pathname)) {
+    if (typeof item !== 'string' && !(item instanceof URLPattern)) continue;
+    if (item === pathname) {
       return true;
     }
     // Handle root / index.html alias
@@ -66,6 +146,10 @@ export function isManifestFile(requestUrl, config = getConfig()) {
       (pathname === '/' && (item === '/index.html' || item === 'index.html')) ||
       (pathname === '/index.html' && item === '/')
     ) {
+      return true;
+    }
+    const pattern = compileRoutePattern(item, requestUrl.origin);
+    if (pattern && (pattern.test(requestUrl.href) || pattern.test(pathname, requestUrl.origin))) {
       return true;
     }
   }
@@ -80,18 +164,18 @@ export function isManifestFile(requestUrl, config = getConfig()) {
 }
 
 /**
- * Match a request URL against configured routes.
- * Handles origin matching, base stripping, full URL match patterns, and globs.
+ * Match a request URL against configured routes using native URLPattern.
+ * Handles named parameter extraction, origin matching, base stripping, full URL match patterns, and wildcards.
  *
  * @param {URL} requestUrl
  * @param {Array<Object>} routes
  * @param {Object} [config]
- * @returns {Object|null} matched route object or null
+ * @returns {Object|null} matched route object with params and urlPatternResult or null
  */
 export function matchRoute(requestUrl, routes = [], config = {}) {
-  const isSameOrigin = typeof self !== 'undefined' && self.location
-    ? requestUrl.origin === self.location.origin
-    : true;
+  const defaultOrigin = typeof self !== 'undefined' && self.location?.origin
+    ? self.location.origin
+    : (requestUrl?.origin || 'http://localhost');
 
   let appPathname = requestUrl.pathname;
   let isUnderBase = true;
@@ -107,37 +191,45 @@ export function matchRoute(requestUrl, routes = [], config = {}) {
     }
   }
 
+  let appUrl = null;
+  if (isUnderBase && config.base) {
+    try {
+      appUrl = new URL(appPathname + (requestUrl.search || '') + (requestUrl.hash || ''), requestUrl.origin);
+    } catch {
+      appUrl = null;
+    }
+  }
+
   for (const route of routes) {
-    let routeOrigin = route.origin;
-    let matchPattern = route.match;
+    const pattern = compileRoutePattern(route, defaultOrigin);
+    if (!pattern) continue;
 
-    // Support full URL patterns directly in match: "https://cdn.jsdelivr.net/npm/**"
-    if (!routeOrigin && (matchPattern.startsWith('http://') || matchPattern.startsWith('https://'))) {
-      try {
-        routeOrigin = new URL(matchPattern.replace(/\*/g, 'x')).origin;
-      } catch {
-        // fallback
-      }
+    let match = pattern.exec(requestUrl.href);
+    if (!match && appUrl) {
+      match = pattern.exec(appUrl.href);
     }
 
-    // If route specifies an origin (e.g. origin: 'https://cdn.example.com' or '*'),
-    // match against that. Otherwise default to same-origin only.
-    if (routeOrigin) {
-      if (routeOrigin !== '*' && routeOrigin !== requestUrl.origin) {
-        continue;
+    if (match) {
+      const params = {};
+      if (match.pathname?.groups) {
+        for (const [k, v] of Object.entries(match.pathname.groups)) {
+          if (v !== undefined && (v !== '' || !/^\d+$/.test(k))) {
+            params[k] = v;
+          }
+        }
       }
-    } else if (!isSameOrigin) {
-      // Unspecified origin matches ONLY same-origin requests
-      continue;
-    }
-
-    const regex = globToRegex(matchPattern);
-    if (
-      regex.test(requestUrl.href) ||
-      regex.test(requestUrl.pathname) ||
-      (isUnderBase && regex.test(appPathname))
-    ) {
-      return route;
+      if (match.search?.groups) {
+        for (const [k, v] of Object.entries(match.search.groups)) {
+          if (v !== undefined && (v !== '' || !/^\d+$/.test(k))) {
+            params[k] = v;
+          }
+        }
+      }
+      return {
+        ...route,
+        params,
+        urlPatternResult: match,
+      };
     }
   }
 
@@ -192,6 +284,8 @@ export function resolveStrategy(request) {
     const matchedRoute = matchRoute(requestUrl, routes, config);
     const handler = (req, event) => networkOnly(req, event, matchedRoute || {});
     handler.strategy = 'network-only';
+    handler.route = matchedRoute;
+    handler.params = matchedRoute?.params || {};
     return handler;
   }
 
@@ -209,6 +303,8 @@ export function resolveStrategy(request) {
     const fn = STRATEGY_FN[matchedRoute.strategy] ?? STRATEGY_FN[defaultStrategy] ?? networkFirst;
     const handler = (req, event) => fn(req, event, matchedRoute);
     handler.strategy = matchedRoute.strategy;
+    handler.route = matchedRoute;
+    handler.params = matchedRoute.params;
     return handler;
   }
 

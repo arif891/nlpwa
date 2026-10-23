@@ -16,6 +16,7 @@ async function main() {
       dir: 'example',
       version: '1.0.0',
       pretty: true,
+      unsigned: true,
     });
     console.log('[NLPWA] Example assets and manifest synced successfully.');
   } catch (err) {

@@ -87,14 +87,16 @@ export async function cmdUpdate(args) {
   }
 
   // Extract signing key from environment, arguments, or config
-  const extractedSigningKey =
+  const isNoSign = Boolean(args['no-sign'] || args.noSign || args.unsigned);
+  const extractedSigningKey = isNoSign ? null : (
     process.env.NLPWA_SIGNING_KEY ||
     process.env.NLPWA_PRIVATE_KEY ||
     args.signingKey ||
     args.privateKey ||
     args['signing-key'] ||
     args['private-key'] ||
-    rawConfig.signingKey;
+    rawConfig.signingKey
+  );
 
   let derivedPublicKey = '';
   if (extractedSigningKey) {

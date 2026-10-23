@@ -1,6 +1,4 @@
 export default {
-  publicKey: '7fyTYGU3f0kwUc6lOG0p6LCjJKk85cT2rAs2MQRivxk=',
-  verifyHashes: 'strict',
   version: '1.0.0',
   configPath: '/api/update/config.json',
   updateAPI: {

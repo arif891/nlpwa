@@ -9,7 +9,7 @@ NLPWA separates **Service Worker engine initialization** (`sw.js`) from **Applic
 Detailed configuration guides are organized in the [`docs/config/`](config/README.md) directory:
 
 - ⚙️ [**Global Options Schema**](config/OPTIONS.md) — Reference for versions, update endpoints, caches, multi-boot probation, hash verification, staging budgets, and security keys.
-- 🚦 [**Routing & Strategies**](config/ROUTES.md) — Per-route glob matching, fetch strategies, cross-origin/CDN handling, navigation fallbacks, cache keys, and route plugins.
+- 🚦 [**Routing & Strategies**](config/ROUTES.md) — Per-route URLPattern matching, named parameter extraction, fetch strategies, cross-origin/CDN handling, navigation fallbacks, and route plugins.
 - 🔌 [**Plugin System Guide**](plugins/README.md) — Writing custom plugins and configuring official extensions (`sync`, `bg-fetch`, `share`, `badge`, `crypto`).
 
 ---
@@ -43,9 +43,9 @@ export default {
     '/styles/main.css',
   ],
   routes: [
-    { match: '/api/**',    strategy: 'network-only' },
-    { match: '/assets/**', strategy: 'cache-first' },
-    { match: '**',         strategy: 'network-first' },
+    { match: '/api/:version/*', strategy: 'network-only' },
+    { match: '/assets/*',       strategy: 'cache-first' },
+    { match: '*',               strategy: 'network-first' },
   ],
 };
 ```

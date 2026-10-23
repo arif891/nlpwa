@@ -28,7 +28,7 @@ import { BackgroundFetchPlugin } from 'nlpwa/bg-fetch';
 export default {
   routes: [
     {
-      match: '/api/mutations/**',
+      match: '/api/mutations/*',
       strategy: 'network-only',
       plugins: [
         new BackgroundSyncPlugin({ queueName: 'mutations' }),

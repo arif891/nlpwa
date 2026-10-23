@@ -9,7 +9,7 @@ NLPWA cleanly separates **Service Worker engine initialization** (`sw.js`) from 
 Detailed configuration guides are organized into focused documents:
 
 - ⚙️ [**Global Options Schema (`OPTIONS.md`)**](OPTIONS.md) — Reference for versions, update endpoints, caches, multi-boot probation, hash verification, staging budgets, and security keys.
-- 🚦 [**Routing & Strategies (`ROUTES.md`)**](ROUTES.md) — Per-route glob matching, fetch strategies, cross-origin/CDN handling, navigation fallbacks, cache keys, and route plugins.
+- 🚦 [**Routing & Strategies (`ROUTES.md`)**](ROUTES.md) — Per-route URLPattern matching, named parameter extraction, fetch strategies, cross-origin/CDN handling, navigation fallbacks, and route plugins.
 - 🔌 [**Plugin System Guide (`../plugins/README.md`)**](../plugins/README.md) — Writing custom plugins and configuring official extensions (`sync`, `bg-fetch`, `share`, `badge`, `crypto`).
 
 ---
@@ -55,14 +55,14 @@ export default {
     '/index.html',
     '/app.js',
     '/styles/main.css',
-    '/assets/icons/**',
+    '/assets/icons/*',
   ],
 
-  // Per-route fetch strategies
+  // Per-route fetch strategies using native URLPattern
   routes: [
-    { match: '/api/**',    strategy: 'network-only' },
-    { match: '/assets/**', strategy: 'cache-first' },
-    { match: '**',         strategy: 'network-first' },
+    { match: '/api/:version/*', strategy: 'network-only' },
+    { match: '/assets/*',       strategy: 'cache-first' },
+    { match: '*',               strategy: 'network-first' },
   ],
 };
 ```

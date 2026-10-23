@@ -71,7 +71,7 @@ import { BackgroundSyncPlugin } from 'nlpwa/sync';
 export default {
   routes: [
     {
-      match: '/api/mutations/**',
+      match: '/api/mutations/*',
       strategy: 'network-only',
       plugins: [
         new BackgroundSyncPlugin({

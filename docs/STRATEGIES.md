@@ -52,8 +52,8 @@ With `throwOnFailure: true`, strategies re-throw the original `TypeError: Failed
 // In your config.js
 routes: [
   // Let fetch('/api/...').catch(...) fire when offline
-  { match: '/api/**', strategy: 'network-only', throwOnFailure: true },
-  { match: '/items/**', strategy: 'network-first', throwOnFailure: true },
+  { match: '/api/:version/*', strategy: 'network-only', throwOnFailure: true },
+  { match: '/items/:id', strategy: 'network-first', throwOnFailure: true },
 ]
 ```
 
@@ -83,10 +83,10 @@ Request → offline cache → runtime cache → network → store in runtime
 **Route examples:**
 ```js
 // Content-hashed assets (cache indefinitely)
-{ match: '/assets/**', strategy: 'cache-first' },
+{ match: '/assets/*', strategy: 'cache-first' },
 
 // Unfingerprinted assets with 7-day TTL expiration
-{ match: '/images/**', strategy: 'cache-first', maxAge: '7d' }
+{ match: '/images/*', strategy: 'cache-first', maxAge: '7d' }
 ```
 
 ---
@@ -119,9 +119,9 @@ Request → network (within networkTimeoutMs) → store in runtime → return
 
 **Route example:**
 ```js
-{ match: '/pages/**', strategy: 'network-first' },
-{ match: '/articles/**', strategy: 'network-first', fallbackOn5xx: true }, // Serves cached copy if server returns 500/502/503
-{ match: '**',        strategy: 'network-first' },  // catch-all
+{ match: '/pages/:slug', strategy: 'network-first' },
+{ match: '/articles/:id', strategy: 'network-first', fallbackOn5xx: true }, // Serves cached copy if server returns 500/502/503
+{ match: '*',            strategy: 'network-first' },  // catch-all
 ```
 
 ---
@@ -152,7 +152,7 @@ Request → network → return (no caching)
 
 **Route example:**
 ```js
-{ match: '/api/**', strategy: 'network-only', throwOnFailure: true }
+{ match: '/api/:version/*', strategy: 'network-only', throwOnFailure: true }
 ```
 
 > **Note:** Even though `network-only` is listed in routes, it is not considered
@@ -187,8 +187,8 @@ Request → runtime/offline cache → return immediately (stale)
 
 **Route example:**
 ```js
-{ match: '/_feeds/**',   strategy: 'stale-while-revalidate' },
-{ match: '/listings/**', strategy: 'stale-while-revalidate' },
+{ match: '/feeds/*',      strategy: 'stale-while-revalidate' },
+{ match: '/listings/:cat', strategy: 'stale-while-revalidate' },
 ```
 
 ---
@@ -283,13 +283,13 @@ You can define cross-origin routes in either style:
 
 ```js
 // Option 1: Full URL pattern
-{ match: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/**', strategy: 'cache-first' }
+{ match: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/*', strategy: 'cache-first' }
 
-// Option 2: Origin property + path glob
-{ origin: 'https://cdn.jsdelivr.net', match: '/npm/onnxruntime-web@1.30.0/**', strategy: 'cache-first' }
+// Option 2: Origin property + path pattern
+{ origin: 'https://cdn.jsdelivr.net', match: '/npm/onnxruntime-web@1.30.0/*', strategy: 'cache-first' }
 
 // Option 3: Wildcard origin for all origins matching a path pattern
-{ origin: '*', match: '/fonts/**', strategy: 'cache-first' }
+{ origin: '*', match: '/fonts/*', strategy: 'cache-first' }
 ```
 
 ### Opaque Responses & CDN Assets
@@ -299,7 +299,7 @@ You can define cross-origin routes in either style:
 - If you specifically need to cache cross-origin CDN assets without CORS (such as unauthenticated `.wasm` binaries or scripts), explicitly opt in on that route via `cacheOpaque: true`:
   ```javascript
   {
-    match: 'https://cdn.jsdelivr.net/**',
+    match: 'https://cdn.jsdelivr.net/*',
     strategy: 'cache-first',
     cacheOpaque: true,
   }

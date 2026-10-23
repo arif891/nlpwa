@@ -113,7 +113,7 @@ import { TelemetryPlugin } from './telemetry-plugin.js';
 export default {
   routes: [
     {
-      match: '/api/**',
+      match: '/api/*',
       strategy: 'network-only',
       plugins: [
         new TelemetryPlugin('my-pwa-app-123'),

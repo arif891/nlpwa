@@ -180,12 +180,12 @@ export default {
     '/assets/image/icon/icon.svg',
   ],
 
-  // Per-route fetch strategies (evaluated top-to-bottom)
+  // Per-route fetch strategies using native URLPattern (evaluated top-to-bottom)
   routes: [
-    { match: '/api/**',       strategy: 'network-only' },
-    { match: '/assets/**',    strategy: 'cache-first'  },
-    { match: '/pages/**',     strategy: 'network-first', networkTimeoutMs: 3000 },
-    { match: '/_feeds/**',    strategy: 'stale-while-revalidate' },
+    { match: '/api/:version/*', strategy: 'network-only' },
+    { match: '/assets/*',       strategy: 'cache-first'  },
+    { match: '/pages/:slug',    strategy: 'network-first', networkTimeoutMs: 3000 },
+    { match: '/feeds/*',        strategy: 'stale-while-revalidate' },
   ],
   defaultStrategy: 'network-first',
 };

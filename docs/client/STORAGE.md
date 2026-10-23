@@ -64,7 +64,7 @@ console.log(`Evicted ${result.evictedCount} items, freed ${(result.freedBytes / 
 // Scoped cleanup matching specific URL patterns
 await nlpwa.cleanupRuntimeCache({
   strategy: 'pattern',
-  match: '/api/feed/**',
+  match: '/api/feed/*',
   maxAgeMs: 24 * 60 * 60 * 1000, // 24 hours
   maxEntries: 20,
 });

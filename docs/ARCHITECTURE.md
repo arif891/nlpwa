@@ -38,7 +38,7 @@ src/
 │   ├── time.js                     parseDurationMs(), resolveMaxAgeMs(), isResponseExpired()
 │   ├── constants.js                Cache names (OFFLINE, RUNTIME, META), message types, strategies
 │   ├── hash.js                     sha256Hex(), hashMatches()
-│   ├── glob.js                     Glob URL pattern matching (*, **, ?)
+│   ├── glob.js                     Legacy string glob matcher (*, ?, **)
 │   ├── version.js                  Semver comparison & incrementPatch (isNewer, compare)
 │   ├── url.js                      resolvePathWithBase(), resolveUpdateEndpoints()
 │   └── logger.js                   Tiered logging utility (silent, error, warn, info, debug)
@@ -340,7 +340,7 @@ Eviction runs on **both** caches after every successful update application.
 NLPWA includes an intelligent cleanup manager for the dynamic `runtime` cache:
 - **Storage Quota Detection**: Reads `navigator.storage.estimate()` to inspect storage usage and quota limits.
 - **Cache Inspection**: `getCacheInfo()` queries the SW to return total entries, estimated bytes, and quota metrics.
-- **Eviction Strategies**: Supports `largest` (evicts largest files first via `X-NLPWA-Content-Length`), `lru` (least-recently-used via `X-NLPWA-Cached-At`), `max-age` (evicts expired entries), `quota` (evicts until storage is under quota threshold), `pattern` (glob match eviction), and `all` (full wipe).
+- **Eviction Strategies**: Supports `largest` (evicts largest files first via `X-NLPWA-Content-Length`), `lru` (least-recently-used via `X-NLPWA-Cached-At`), `max-age` (evicts expired entries), `quota` (evicts until storage is under quota threshold), `pattern` (URLPattern / glob match eviction), and `all` (full wipe).
 - **Flexible Limits**: Supports limits by item count (`maxEntries`), total size (`maxTotalMB`, `maxTotalBytes`), or individual item bounds (`minItemBytes`, `maxItemBytes`, string units like `'50MB'`).
 
 ---

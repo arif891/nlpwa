@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/nlpwa.svg?color=0284c7&style=flat-square)](https://www.npmjs.com/package/nlpwa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Zero Runtime Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-success.svg?style=flat-square)](https://github.com/arif891/nlpwa)
-[![Tests Passing](https://img.shields.io/badge/tests-339%20passing-brightgreen.svg?style=flat-square)](https://github.com/arif891/nlpwa)
+[![Tests Passing](https://img.shields.io/badge/tests-passing-brightgreen.svg?style=flat-square)](https://github.com/arif891/nlpwa)
 [![Standalone SW Size](https://img.shields.io/badge/standalone%20SW-~26%20KB%20gz-informational.svg?style=flat-square)](https://github.com/arif891/nlpwa)
 [![Client SDK Size](https://img.shields.io/badge/client%20SDK-~10%20KB%20gz-informational.svg?style=flat-square)](https://github.com/arif891/nlpwa)
 

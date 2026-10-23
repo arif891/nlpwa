@@ -131,6 +131,7 @@
     },
     "./sync/periodic/sw": {
       "types": "./types/sync.d.ts",
+      "import": "./out/plugins/sync.periodic.js",
       "default": "./out/plugins/sync.periodic.js"
     },
     "./push": {

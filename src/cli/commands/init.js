@@ -233,6 +233,10 @@ ${c.bold}${c.green}  NLPWA files initialized successfully!${c.reset}
      ${c.dim}(client.js automatically registers /sw.js by default)${c.reset}
 
   2. Configure routes & offline precache in ${c.bold}nlpwa.config.js${c.reset}
-${generatedPubKey ? `\n  3. Ed25519 signing enabled: .env.nlpwa is protected. Run:\n     ${c.cyan}npx nlpwa update${c.reset}\n` : `\n  3. When deploying updates, run:\n     ${c.cyan}npx nlpwa update${c.reset}\n`}`);
+
+  3. Generate your offline precache and update manifest before deploying:
+     ${c.cyan}npx nlpwa update${c.reset}
+     ${c.dim}(Generates /api/update/*.json files required for SW offline caching and updates)${c.reset}
+`);
 }
 

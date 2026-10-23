@@ -302,18 +302,18 @@ console.log(diag);
 
 ## 9. Modular Micro-Kernel & Plugin Ecosystem
 
-NLPWA's Service Worker engine is designed as an ultra-lightweight micro-kernel (~4KB min/gzip) focused purely on offline caching, fetch strategies, and atomic updates. Specialized capabilities are imported as zero-dependency modular plugins:
+NLPWA's Service Worker engine is designed as a standalone or modular zero-dependency engine focused purely on offline caching, fetch strategies, and atomic updates. Specialized capabilities are imported as modular plugins:
 
-| Plugin | Export Path | Bundle Size | Purpose |
+| Component / Plugin | Export Path | Bundle Size (Gzip) | Purpose |
 |---|---|---|---|
-| **Core SW** | `nlpwa/sw` | ~4 KB | Offline routing, caching strategies, atomic OTA updater |
-| **Core Client** | `nlpwa/client` | ~3 KB | Registration, update prompts, reactive state, tab bus |
-| **Background Sync & Periodic Sync** | `nlpwa/sync` | ~3.5 KB | Offline POST/PUT queue, dead-letter store & scheduled tasks |
-| **Web Push** | `nlpwa/push` | ~1.5 KB | Web Push subscriptions, VAPID conversion & action button routing |
-| **Web Share Target** | `nlpwa/share` | ~1.5 KB | OS share sheet listener, FIFO payload queue, size protection |
-| **OS App Badging** | `nlpwa/badge` | ~1 KB | App icon badge counter, auto-clear on push notification click |
-| **Background Fetch** | `nlpwa/bg-fetch` | ~1.5 KB | Large asset background downloads with OS progress indicators |
-| **Ed25519 Crypto** | `nlpwa/crypto` | ~1.2 KB | Web Crypto detached signature verification utilities |
+| **Standalone SW** | `nlpwa/sw` | ~26 KB gz | Complete offline engine, router, staging pipeline, OTA updater |
+| **Client SDK** | `nlpwa/client` | ~10 KB gz | Lifecycle, update prompts, reactive state, tab coordination |
+| **Background Sync & Periodic Sync** | `nlpwa/sync` | ~6.4 KB gz | Offline POST/PUT queue, dead-letter store & scheduled background sync |
+| **Web Push** | `nlpwa/push` | ~1.7 KB gz | Web Push subscriptions, VAPID conversion & action button routing |
+| **Web Share Target** | `nlpwa/share` | ~2.7 KB gz | OS share sheet listener, FIFO payload queue, size protection |
+| **OS App Badging** | `nlpwa/badge` | ~0.5 KB gz | App icon badge counter, auto-clear on push notification click |
+| **Background Fetch** | `nlpwa/bg-fetch` | ~4.8 KB gz | Large asset background downloads with OS progress indicators |
+| **Ed25519 Crypto** | `nlpwa/crypto` | ~1.1 KB gz | Web Crypto detached signature verification utilities |
 
 ### Using Modular Plugins:
 

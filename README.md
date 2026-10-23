@@ -3,8 +3,9 @@
 [![npm version](https://img.shields.io/npm/v/nlpwa.svg?color=0284c7&style=flat-square)](https://www.npmjs.com/package/nlpwa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Zero Runtime Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-success.svg?style=flat-square)](https://github.com/arif891/nlpwa)
-[![Tests Passing](https://img.shields.io/badge/tests-332%20passing-brightgreen.svg?style=flat-square)](https://github.com/arif891/nlpwa)
-[![Core Size](https://img.shields.io/badge/core%20SW%20size-%3C4%20KB%20gz-informational.svg?style=flat-square)](https://github.com/arif891/nlpwa)
+[![Tests Passing](https://img.shields.io/badge/tests-339%20passing-brightgreen.svg?style=flat-square)](https://github.com/arif891/nlpwa)
+[![Standalone SW Size](https://img.shields.io/badge/standalone%20SW-~26%20KB%20gz-informational.svg?style=flat-square)](https://github.com/arif891/nlpwa)
+[![Client SDK Size](https://img.shields.io/badge/client%20SDK-~10%20KB%20gz-informational.svg?style=flat-square)](https://github.com/arif891/nlpwa)
 
 A lightweight, zero-runtime-dependency Service Worker framework that makes Progressive Web Apps feel truly native. It delivers **atomic over-the-air (OTA) delta updates**, **per-tab client version pinning**, **cryptographic manifest signing (Ed25519)**, **automated health-gated rollbacks**, and **modular plugins** — all from drop-in files or npm subpath exports.
 

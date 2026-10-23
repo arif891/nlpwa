@@ -175,6 +175,7 @@
     "build": "rollup -c --environment PROD && npm run sync:example",
     "build:dev": "rollup -c && npm run sync:example",
     "build:prod": "rollup -c --environment PROD && npm run sync:example",
+    "pretest": "npm run build:prod",
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
     "sync:example": "node ./bin/sync-example.js",

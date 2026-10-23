@@ -144,6 +144,12 @@ async function _doUpdateCheck({ force = false } = {}) {
     }
   }
 
+  // If Tier 1 is untrusted, discard untrusted metadata completely to prevent freeze/bypass attacks
+  if (!isTier1Trusted) {
+    versionRes = null;
+    serverVersion = null;
+  }
+
   // Synchronize blocked versions list from Tier 1 ONLY if trusted
   if (isTier1Trusted && Array.isArray(versionRes?.blockedVersions)) {
     await syncBlockedVersions(versionRes.blockedVersions);
@@ -277,15 +283,21 @@ async function _doUpdateCheck({ force = false } = {}) {
     logger.log(`[NLPWA] Ed25519 manifest signature verified for v${serverManifest.version}.`);
 
     // Monotonic sequence verification (Replay & downgrade attack mitigation)
-    if (serverManifest.sequence !== undefined) {
-      const lastSeqData = await readMeta('/_nlpwa/sequence.json').catch(() => null);
-      const lastSeq = Number(lastSeqData?.sequence) || 0;
-      if (serverManifest.sequence < lastSeq) {
-        logger.error(`[NLPWA] Replay attack detected: manifest sequence (${serverManifest.sequence}) is older than last seen (${lastSeq}).`);
-        await discardStaged();
-        setUpdateStatus('idle');
-        return { updated: false, errorCode: 'REPLAY_DETECTED', version: serverManifest.version };
-      }
+    const seq = serverManifest.sequence;
+    if (typeof seq !== 'number' || !Number.isFinite(seq)) {
+      logger.error(`[NLPWA] Replay attack mitigation failed: manifest for v${serverManifest.version} is missing a required numeric sequence in signed mode.`);
+      await discardStaged();
+      setUpdateStatus('idle');
+      return { updated: false, errorCode: 'SEQUENCE_REQUIRED', version: serverManifest.version };
+    }
+
+    const lastSeqData = await readMeta('/_nlpwa/sequence.json').catch(() => null);
+    const lastSeq = Number(lastSeqData?.sequence) || 0;
+    if (seq < lastSeq) {
+      logger.error(`[NLPWA] Replay attack detected: manifest sequence (${seq}) is older than last seen (${lastSeq}).`);
+      await discardStaged();
+      setUpdateStatus('idle');
+      return { updated: false, errorCode: 'REPLAY_DETECTED', version: serverManifest.version };
     }
   }
 
@@ -304,6 +316,18 @@ async function _doUpdateCheck({ force = false } = {}) {
   if (!force && activeChannel && serverManifest.channel && activeChannel !== serverManifest.channel) {
     logger.log(`[NLPWA] Skipping manifest release channel "${serverManifest.channel}" (configured channel: "${activeChannel}").`);
     return { updated: false, channelMismatch: true };
+  }
+
+  // Check phased rollout percentage from Tier 2 manifest
+  if (!force && typeof serverManifest.rolloutPercent === 'number') {
+    const pct = serverManifest.rolloutPercent;
+    if (pct >= 0 && pct < 100) {
+      const cohort = await getRolloutCohort();
+      if (cohort >= pct) {
+        logger.log(`[NLPWA] Client cohort (${cohort}) excluded from phased rollout of v${serverManifest.version} (${pct}%).`);
+        return { updated: false, rolloutExcluded: true, rolloutPercent: pct };
+      }
+    }
   }
 
   // Check minimum supported version from Tier 2 manifest
@@ -402,14 +426,14 @@ async function _doUpdateCheck({ force = false } = {}) {
       return { updated: false, errorCode, version: serverManifest.version, failed: result.failed, error: errorMsg, quotaExceeded: Boolean(result.quotaExceeded) };
     }
 
+    if (serverManifest.sequence !== undefined) {
+      await writeMeta('/_nlpwa/sequence.json', { sequence: serverManifest.sequence, updatedAt: Date.now() }).catch(() => {});
+    }
+
     if (isFresh) {
       setUpdateStatus('idle');
       await commitStaged();
       return { updated: false, version: serverManifest.version, initial: true };
-    }
-
-    if (serverManifest.sequence !== undefined) {
-      await writeMeta('/_nlpwa/sequence.json', { sequence: serverManifest.sequence, updatedAt: Date.now() }).catch(() => {});
     }
 
     setUpdateStatus('ready');

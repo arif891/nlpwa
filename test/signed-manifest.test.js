@@ -119,7 +119,7 @@ test('update check: enforces Ed25519 signature when config.publicKey is configur
   assert.ok(failedMsg);
   assert.equal(failedMsg.errorCode, 'SIGNATURE_VERIFICATION_FAILED');
 
-  // 2. Server provides valid signed manifest -> accepted and staged!
+  // 2. Server provides valid signed manifest without sequence -> rejected with SEQUENCE_REQUIRED
   const filesList = Object.entries(v2Files).map(([p, body]) => ({
     path: p,
     hash: hash8(body),
@@ -135,10 +135,147 @@ test('update check: enforces Ed25519 signature when config.publicKey is configur
   );
 
   messages.length = 0;
+  const noSeqResult = await checkForUpdate();
+  assert.equal(noSeqResult.updated, false);
+  assert.equal(noSeqResult.errorCode, 'SEQUENCE_REQUIRED');
+
+  // 3. Server provides valid signed manifest with numeric sequence -> accepted and staged!
+  server.sequence = 100;
+  server.signature = signManifestSync(
+    {
+      version: '2.0.0',
+      sequence: 100,
+      files: filesList,
+    },
+    privateKey
+  );
+
+  messages.length = 0;
   const signedResult = await checkForUpdate();
   assert.equal(signedResult.updated, true);
   assert.equal(signedResult.version, '2.0.0');
 
   const readyMsg = messages.find((m) => m.type === MESSAGE_TYPES.UPDATE_READY);
   assert.ok(readyMsg);
+});
+
+test('update check: untrusted Tier 1 version.json does not freeze updates or fake rollout', async () => {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+  const pubKeyBase64 = spkiDer.subarray(-32).toString('base64');
+
+  const v1Files = {
+    '/api/update/config.json': JSON.stringify({ routes: [], precache: ['/app.js'] }),
+    '/app.js': 'app v1',
+  };
+
+  const v2Files = {
+    '/api/update/config.json': JSON.stringify({ routes: [], precache: ['/app.js'] }),
+    '/app.js': 'app v2',
+  };
+
+  const server = makeServer('1.0.0', v1Files);
+  server.sequence = 10;
+  fakeSelf();
+
+  setupEnv(server.fetch, { publicKey: pubKeyBase64 });
+  await precacheFiles();
+
+  // Attack scenario: Attacker/CDN serves untrusted unsigned version.json with version='1.0.0' or rolloutPercent=0
+  // but Tier 2 has legitimate signed v2.0.0 with sequence=20
+  server.set('2.0.0', v2Files);
+  server.sequence = 20;
+
+  // Untrusted Tier 1 tries to claim version is current v1.0.0 with rolloutPercent: 0
+  server.versionSignature = null; // Unsigned!
+  // Force version.json to return version='1.0.0' and rolloutPercent=0
+  const origFetch = server.fetch;
+  server.fetch = async (r) => {
+    const url = new URL(r.url);
+    if (url.pathname === '/api/update/version' || url.pathname === '/api/update/version.json') {
+      return Response.json({
+        version: '1.0.0', // Claims up to date
+        rolloutPercent: 0, // Claims 0% rollout
+        signature: 'invalid_sig',
+      });
+    }
+    return origFetch(r);
+  };
+
+  const filesList = Object.entries(v2Files).map(([p, body]) => ({
+    path: p,
+    hash: hash8(body),
+    size: Buffer.byteLength(String(body)),
+  }));
+
+  server.signature = signManifestSync(
+    {
+      version: '2.0.0',
+      sequence: 20,
+      files: filesList,
+    },
+    privateKey
+  );
+
+  // checkForUpdate must NOT be fooled by the untrusted Tier 1 response; it must fall back to Tier 2 and update!
+  const res = await checkForUpdate();
+  assert.equal(res.updated, true, 'Should successfully update from signed Tier 2 manifest');
+  assert.equal(res.version, '2.0.0');
+});
+
+test('update check: Tier 2 manifest enforces rolloutPercent limit', async () => {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+  const pubKeyBase64 = spkiDer.subarray(-32).toString('base64');
+
+  const v1Files = {
+    '/api/update/config.json': JSON.stringify({ routes: [], precache: ['/app.js'] }),
+    '/app.js': 'app v1',
+  };
+
+  const v2Files = {
+    '/api/update/config.json': JSON.stringify({ routes: [], precache: ['/app.js'] }),
+    '/app.js': 'app v2',
+  };
+
+  const server = makeServer('1.0.0', v1Files);
+  server.sequence = 10;
+  fakeSelf();
+
+  setupEnv(server.fetch, { publicKey: pubKeyBase64 });
+  await precacheFiles();
+
+  // Tier 1 endpoint returns 404 to force Tier 2 lookup
+  const origFetch = server.fetch;
+  server.fetch = async (r) => {
+    const url = new URL(r.url);
+    if (url.pathname === '/api/update/version' || url.pathname === '/api/update/version.json') {
+      return new Response('not found', { status: 404 });
+    }
+    return origFetch(r);
+  };
+
+  server.set('2.0.0', v2Files);
+  server.sequence = 20;
+  server.rolloutPercent = 0; // 0% rollout! All cohorts excluded
+
+  const filesList = Object.entries(v2Files).map(([p, body]) => ({
+    path: p,
+    hash: hash8(body),
+    size: Buffer.byteLength(String(body)),
+  }));
+
+  server.signature = signManifestSync(
+    {
+      version: '2.0.0',
+      sequence: 20,
+      rolloutPercent: 0,
+      files: filesList,
+    },
+    privateKey
+  );
+
+  const res = await checkForUpdate();
+  assert.equal(res.updated, false);
+  assert.equal(res.rolloutExcluded, true);
 });

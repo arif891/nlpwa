@@ -67,6 +67,7 @@ export async function commitStaged(event) {
     cache: staged.cache,
     version: staged.version,
     swVersion: staged.swVersion,
+    snapshotPath: getSnapshotPath(),
     ...(previousActive?.cache ? {
       fallbackCache: previousActive.cache,
       fallbackVersion: previousActive.version,

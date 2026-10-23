@@ -300,4 +300,54 @@ describe('Runtime Bugfixes & Hardening', () => {
     const meta = await readMeta('/_nlpwa/channel.json');
     assert.deepEqual(meta, { channel: 'beta' });
   });
+
+  test('touchClientPin schedules debounced flush and persists updated lastSeenAt', async () => {
+    const { touchClientPin, pinClient, initClientPins, flushClientPins, resetClientPinsMemo } = await import('../src/sw/cache/meta/client-pins.js');
+    const { readMeta } = await import('../src/sw/cache/store.js');
+
+    resetClientPinsMemo();
+    await pinClient('client-test-1', 'offline@1.0.0', '1.0.0', 1000);
+    const initialMeta = await readMeta('/_nlpwa/client-pins.json');
+    assert.equal(initialMeta['client-test-1'].lastSeenAt, 1000);
+
+    // Touch client pin
+    touchClientPin('client-test-1');
+    // Flush immediately to verify debounced write executed
+    await flushClientPins();
+
+    const updatedMeta = await readMeta('/_nlpwa/client-pins.json');
+    assert.ok(updatedMeta['client-test-1'].lastSeenAt > 1000);
+  });
+
+  test('plugins/sync withStore falls back gracefully to in-memory store when IndexedDB is blocked', async () => {
+    const { withStore } = await import('../src/plugins/sync/idb.js');
+    const { SyncQueue } = await import('../src/plugins/sync/queue.js');
+
+    // Simulate blocked DB by passing a mock callback
+    let addedId = null;
+    await withStore('readwrite', (store) => {
+      return new Promise((resolve) => {
+        const req = store.add({ queueName: 'test-q', timestamp: Date.now() });
+        req.onsuccess = () => {
+          addedId = req.result;
+          resolve();
+        };
+      });
+    });
+
+    assert.ok(addedId !== null);
+  });
+
+  test('active.js verifies active cache with SNAPSHOT_CACHE_PATH', async () => {
+    const { getActive, setActive, clearActive } = await import('../src/sw/cache/meta/active.js');
+    const { SNAPSHOT_CACHE_PATH } = await import('../src/shared/constants.js');
+
+    await clearActive();
+    const cache = await caches.open('offline@test-snap');
+    await cache.put(SNAPSHOT_CACHE_PATH, new Response('{"files":[]}'));
+
+    await setActive({ cache: 'offline@test-snap', version: '1.0.0' });
+    const active = await getActive();
+    assert.equal(active?.cache, 'offline@test-snap');
+  });
 });

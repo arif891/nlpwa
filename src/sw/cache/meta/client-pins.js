@@ -90,6 +90,12 @@ export function touchClientPin(clientId) {
   const pin = _clientPins.get(clientId);
   if (pin && typeof pin === 'object') {
     pin.lastSeenAt = Date.now();
+    if (!_savePinsTimeout) {
+      _savePinsTimeout = setTimeout(() => {
+        _savePinsTimeout = null;
+        flushClientPins();
+      }, 5000);
+    }
   }
 }
 

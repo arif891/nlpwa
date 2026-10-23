@@ -1,5 +1,6 @@
 import { readMeta, writeMeta, deleteMeta } from './store.js';
 import { createLogger } from '../../../shared/logger.js';
+import { SNAPSHOT_CACHE_PATH } from '../../../shared/constants.js';
 
 const logger = createLogger();
 const ACTIVE_KEY = '/_nlpwa/active.json';
@@ -22,7 +23,7 @@ export function getActive() {
             return null;
           }
           const cache = await caches.open(record.cache);
-          const snapshotPath = record.snapshotPath || '/__nlpwa_snapshot__.json';
+          const snapshotPath = record.snapshotPath || SNAPSHOT_CACHE_PATH;
           const hasSnapshot = await cache.match(snapshotPath);
           if (!hasSnapshot) {
             const keys = await cache.keys();

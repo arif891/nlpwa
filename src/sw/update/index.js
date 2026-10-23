@@ -158,6 +158,9 @@ async function _doUpdateCheck({ force = false } = {}) {
             if (seq < lastSeq) {
               logger.warn(`[NLPWA] Replay attack detected on Tier 1: sequence (${seq}) is older than last seen (${lastSeq}); falling back to Tier 2.`);
               isTier1Trusted = false;
+            } else {
+              // Persist monotonic sequence progression immediately on trusted Tier 1 checks
+              await writeMeta('/_nlpwa/sequence.json', { sequence: seq, updatedAt: Date.now() }).catch(() => {});
             }
           }
         }

@@ -23,6 +23,9 @@ export function openSyncDB() {
   });
 }
 
+const _syncMemStore = new Map();
+let _syncMemAutoId = 1;
+
 /**
  * Run a transaction on the sync store.
  * @template T
@@ -32,6 +35,58 @@ export function openSyncDB() {
  */
 export async function withStore(mode, callback) {
   const db = await openSyncDB();
+  if (!db) {
+    const mockStore = {
+      add: (record) => {
+        const id = record.id || _syncMemAutoId++;
+        const item = { ...record, id };
+        _syncMemStore.set(id, item);
+        const req = { result: id, onsuccess: null, onerror: null };
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+      put: (record) => {
+        const id = record.id || _syncMemAutoId++;
+        const item = { ...record, id };
+        _syncMemStore.set(id, item);
+        const req = { result: id, onsuccess: null, onerror: null };
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+      get: (id) => {
+        const result = _syncMemStore.get(id);
+        const req = { result, onsuccess: null, onerror: null };
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+      delete: (id) => {
+        _syncMemStore.delete(id);
+        const req = { result: undefined, onsuccess: null, onerror: null };
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+      clear: () => {
+        _syncMemStore.clear();
+        const req = { result: undefined, onsuccess: null, onerror: null };
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+      index: (indexName) => ({
+        getAll: (keyRange) => {
+          let items = Array.from(_syncMemStore.values());
+          if (indexName === 'queueName' && keyRange) {
+            const qName = keyRange?.lower ?? keyRange;
+            if (qName) items = items.filter((it) => it.queueName === qName);
+          }
+          const req = { result: items, onsuccess: null, onerror: null };
+          queueMicrotask(() => req.onsuccess?.());
+          return req;
+        },
+      }),
+    };
+    return Promise.resolve(callback(mockStore, null));
+  }
+
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, mode);
     const store = tx.objectStore(STORE_NAME);

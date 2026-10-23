@@ -11,15 +11,23 @@ export async function focusOrOpenUrl(targetUrl = PUSH_CONSTANTS.DEFAULT_NOTIFICA
     return null;
   }
 
+  let resolvedTargetUrl = targetUrl;
+  try {
+    const origin = (typeof self !== 'undefined' && self.location && self.location.origin) || 'http://localhost';
+    resolvedTargetUrl = new URL(targetUrl, origin).href;
+  } catch {
+    resolvedTargetUrl = targetUrl;
+  }
+
   const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
   for (const client of windowClients) {
-    if (client.url === targetUrl && 'focus' in client) {
+    if ((client.url === resolvedTargetUrl || client.url === targetUrl) && 'focus' in client) {
       return await client.focus();
     }
   }
 
   if (self.clients.openWindow) {
-    return await self.clients.openWindow(targetUrl);
+    return await self.clients.openWindow(resolvedTargetUrl);
   }
   return null;
 }
@@ -97,11 +105,11 @@ export class PushPlugin {
         const actionRes = this.actions[action](event);
         if (actionRes && typeof actionRes.then === 'function') {
           event.waitUntil(actionRes);
-          return;
         }
       } catch (err) {
         console.warn?.(`[NLPWA/push] action handler for "${action}" error:`, err?.message || err);
       }
+      return;
     }
 
     if (this.customOnClick) {
@@ -109,11 +117,11 @@ export class PushPlugin {
         const clickRes = this.customOnClick(event);
         if (clickRes && typeof clickRes.then === 'function') {
           event.waitUntil(clickRes);
-          return;
         }
       } catch (err) {
         console.warn?.('[NLPWA/push] custom onNotificationClick error:', err?.message || err);
       }
+      return;
     }
 
     const targetUrl = event.notification?.data?.url || this.defaultUrl;

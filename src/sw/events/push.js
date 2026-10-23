@@ -112,9 +112,9 @@ export function handleNotificationClick(userConfig = {}) {
     if (typeof effectiveConfig.onNotificationClick === 'function') {
       try {
         const customRes = effectiveConfig.onNotificationClick(event);
+        customHandled = true;
         if (customRes && typeof customRes.then === 'function') {
           event.waitUntil(customRes);
-          customHandled = true;
         }
       } catch (err) {
         logger.warn('[NLPWA] onNotificationClick handler error:', err?.message || err);
@@ -125,6 +125,9 @@ export function handleNotificationClick(userConfig = {}) {
       if (typeof plugin?.onNotificationClick === 'function') {
         try {
           const res = plugin.onNotificationClick(event);
+          if (plugin.constructor?.name === 'PushPlugin' || plugin.actions || plugin.customOnClick !== undefined) {
+            customHandled = true;
+          }
           if (res && typeof res.then === 'function') {
             event.waitUntil(res);
           }
@@ -142,18 +145,29 @@ export function handleNotificationClick(userConfig = {}) {
       navigator.clearAppBadge().catch(() => {});
     }
 
+    if (customHandled || event.action) {
+      return;
+    }
+
     const targetUrl = event.notification.data?.url || '/';
+    let resolvedTargetUrl = targetUrl;
+    try {
+      const origin = (typeof self !== 'undefined' && self.location && self.location.origin) || 'http://localhost';
+      resolvedTargetUrl = new URL(targetUrl, origin).href;
+    } catch {
+      resolvedTargetUrl = targetUrl;
+    }
 
     event.waitUntil((async () => {
       if (typeof self !== 'undefined' && self.clients && typeof self.clients.matchAll === 'function') {
         const windowClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
         for (const client of windowClients) {
-          if (client.url === targetUrl && 'focus' in client) {
+          if ((client.url === resolvedTargetUrl || client.url === targetUrl) && 'focus' in client) {
             return client.focus();
           }
         }
         if (self.clients.openWindow) {
-          return self.clients.openWindow(targetUrl);
+          return self.clients.openWindow(resolvedTargetUrl);
         }
       }
     })());

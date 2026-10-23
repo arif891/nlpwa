@@ -10,6 +10,7 @@ import {
   PushClient,
   pushClient,
   PushPlugin,
+  focusOrOpenUrl,
 } from '../src/plugins/push/index.js';
 
 test.beforeEach(() => {
@@ -243,3 +244,169 @@ test('push: PushPlugin handles notificationclick action button and custom click'
   assert.equal(closed, true);
   assert.equal(actionFired, true);
 });
+
+test('push: focusOrOpenUrl resolves relative targetUrl against origin and focuses existing window', async () => {
+  let focusedClient = null;
+  let openedUrl = null;
+
+  globalThis.self = {
+    location: { origin: 'https://example.com' },
+    clients: {
+      matchAll: async () => [
+        {
+          url: 'https://example.com/',
+          focus: async function () {
+            focusedClient = this;
+            return this;
+          },
+        },
+      ],
+      openWindow: async (url) => {
+        openedUrl = url;
+        return { url };
+      },
+    },
+  };
+
+  // Target URL is relative '/'
+  const result = await focusOrOpenUrl('/');
+
+  assert.ok(result, 'Expected window client returned');
+  assert.equal(focusedClient?.url, 'https://example.com/', 'Focused matching absolute client URL');
+  assert.equal(openedUrl, null, 'Did not open a new window');
+});
+
+test('push: focusOrOpenUrl resolves relative URL and opens new window if not open', async () => {
+  let openedUrl = null;
+
+  globalThis.self = {
+    location: { origin: 'https://example.com' },
+    clients: {
+      matchAll: async () => [
+        {
+          url: 'https://example.com/settings',
+          focus: async () => {},
+        },
+      ],
+      openWindow: async (url) => {
+        openedUrl = url;
+        return { url };
+      },
+    },
+  };
+
+  await focusOrOpenUrl('/dashboard');
+
+  assert.equal(openedUrl, 'https://example.com/dashboard', 'Opened resolved absolute URL');
+});
+
+test('push: synchronous action handler returns without falling through to open window', async () => {
+  let actionCalled = false;
+  let windowOpened = false;
+
+  globalThis.self = {
+    location: { origin: 'https://example.com' },
+    clients: {
+      matchAll: async () => [],
+      openWindow: async () => {
+        windowOpened = true;
+      },
+    },
+  };
+
+  const plugin = new PushPlugin({
+    actions: {
+      'dismiss': (event) => {
+        actionCalled = true;
+        // Synchronous handler returns void/undefined
+      },
+    },
+  });
+
+  const event = {
+    action: 'dismiss',
+    notification: {
+      close: () => {},
+      data: { url: '/somewhere' },
+    },
+    waitUntil: () => {},
+  };
+
+  plugin.onNotificationClick(event);
+
+  assert.equal(actionCalled, true);
+  assert.equal(windowOpened, false, 'Synchronous action handler did not fall through to openWindow');
+});
+
+test('push: synchronous custom onNotificationClick returns without falling through to default open window', async () => {
+  let customClickCalled = false;
+  let windowOpened = false;
+
+  globalThis.self = {
+    location: { origin: 'https://example.com' },
+    clients: {
+      matchAll: async () => [],
+      openWindow: async () => {
+        windowOpened = true;
+      },
+    },
+  };
+
+  const plugin = new PushPlugin({
+    onNotificationClick: (event) => {
+      customClickCalled = true;
+      // Synchronous handler returning nothing
+    },
+  });
+
+  const event = {
+    action: '',
+    notification: {
+      close: () => {},
+      data: { url: '/custom-destination' },
+    },
+    waitUntil: () => {},
+  };
+
+  plugin.onNotificationClick(event);
+
+  assert.equal(customClickCalled, true);
+  assert.equal(windowOpened, false, 'Synchronous custom onNotificationClick did not fall through to default openWindow');
+});
+
+test('push: default notification click falls through to open window when no action or custom handler', async () => {
+  let openedUrl = null;
+
+  globalThis.self = {
+    location: { origin: 'https://example.com' },
+    clients: {
+      matchAll: async () => [],
+      openWindow: async (url) => {
+        openedUrl = url;
+        return { url };
+      },
+    },
+  };
+
+  const plugin = new PushPlugin({
+    defaultUrl: '/fallback-url',
+  });
+
+  let waitPromise = null;
+  const event = {
+    action: '',
+    notification: {
+      close: () => {},
+      data: { url: '/my-page' },
+    },
+    waitUntil: (p) => {
+      waitPromise = p;
+    },
+  };
+
+  plugin.onNotificationClick(event);
+  await waitPromise;
+
+  assert.equal(openedUrl, 'https://example.com/my-page', 'Default handler opened resolved target URL');
+});
+

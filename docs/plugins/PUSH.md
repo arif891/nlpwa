@@ -110,6 +110,13 @@ initSW({
 });
 ```
 
+### Notification Click & Window Routing Behavior
+
+- **URL Resolution**: `focusOrOpenUrl(url)` resolves relative paths (e.g. `'/'` or `'/inbox'`) against `self.location.origin` before checking open window clients. If an existing window matching the target URL is already open, it is focused; otherwise, a new window is opened.
+- **Action Handlers (`actions`)**: When an action button is clicked and a matching handler in `actions` is defined, the handler executes (synchronously or asynchronously) and completes the interaction. It will **not** fall through to open the default window. If an action handler wants to open or focus a window, it can explicitly call `focusOrOpenUrl(url)`.
+- **Custom Click Handler (`onNotificationClick`)**: When a custom click handler is specified, it handles notification interactions without falling through to open the default window. Call `focusOrOpenUrl(url)` within your handler if opening or focusing a window is desired.
+- **Default Fallback**: If neither a matching action handler nor `onNotificationClick` is provided, clicking the notification automatically calls `focusOrOpenUrl(event.notification.data?.url || defaultUrl)`.
+
 ---
 
 ## Push Payload Format

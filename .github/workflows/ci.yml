@@ -12,17 +12,17 @@ permissions:
 
 jobs:
   unit-and-build:
-    name: Unit Tests & Build Drift (Node 22)
+    name: Unit Tests & Build Drift (Node 26)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 22.x
+      - name: Set up Node.js 26.x
         uses: actions/setup-node@v4
         with:
-          node-version: 22.x
+          node-version: 26.x
           cache: 'npm'
 
       - name: Install dependencies
@@ -38,17 +38,17 @@ jobs:
         run: npm run check:drift
 
   e2e:
-    name: Playwright E2E Tests (Node 22)
+    name: Playwright E2E Tests (Node 26)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 22.x
+      - name: Set up Node.js 26.x
         uses: actions/setup-node@v4
         with:
-          node-version: 22.x
+          node-version: 26.x
           cache: 'npm'
 
       - name: Install dependencies

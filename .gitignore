@@ -7,3 +7,6 @@
 /.agents
 .env
 .env.*
+
+# NLPWA Signing Keys
+.env.nlpwa

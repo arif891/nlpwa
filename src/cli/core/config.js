@@ -23,12 +23,24 @@ export function resolvePackageVersion(cwd = process.cwd()) {
  *
  * @param {string} [explicitPath]
  * @param {string} [cwd=process.cwd()]
+ * @param {string[]|string} [fallbackDirs=[]]
  * @returns {string|null}
  */
-export function findConfigFile(explicitPath, cwd = process.cwd()) {
+export function findConfigFile(explicitPath, cwd = process.cwd(), fallbackDirs = []) {
+  const dirs = [cwd];
+  if (Array.isArray(fallbackDirs)) {
+    for (const d of fallbackDirs) {
+      if (d && !dirs.includes(d)) dirs.push(d);
+    }
+  } else if (fallbackDirs && !dirs.includes(fallbackDirs)) {
+    dirs.push(fallbackDirs);
+  }
+
   if (explicitPath) {
-    const resolved = resolve(cwd, explicitPath);
-    if (existsSync(resolved)) return resolved;
+    for (const dir of dirs) {
+      const resolved = resolve(dir, explicitPath);
+      if (existsSync(resolved)) return resolved;
+    }
     return null;
   }
 
@@ -41,9 +53,11 @@ export function findConfigFile(explicitPath, cwd = process.cwd()) {
     './config.json',
   ];
 
-  for (const candidate of candidates) {
-    const resolved = resolve(cwd, candidate);
-    if (existsSync(resolved)) return resolved;
+  for (const dir of dirs) {
+    for (const candidate of candidates) {
+      const resolved = resolve(dir, candidate);
+      if (existsSync(resolved)) return resolved;
+    }
   }
 
   return null;

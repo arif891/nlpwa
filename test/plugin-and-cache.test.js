@@ -214,6 +214,28 @@ test('build-utils: findConfigFile discovers nlpwa.config.json', () => {
   assert.equal(found, configPath);
 });
 
+test('build-utils: findConfigFile discovers config in fallbackDirs when not in root', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-find-root-'));
+  const targetDir = mkdtempSync(join(tmpdir(), 'nlpwa-find-target-'));
+  const configPath = join(targetDir, 'nlpwa.config.js');
+  writeFileSync(configPath, 'export default { version: "2.0.0" };');
+
+  const found = findConfigFile(null, root, [targetDir]);
+  assert.equal(found, configPath);
+});
+
+test('build-utils: findConfigFile prefers root config over fallbackDirs', () => {
+  const root = mkdtempSync(join(tmpdir(), 'nlpwa-pref-root-'));
+  const targetDir = mkdtempSync(join(tmpdir(), 'nlpwa-pref-target-'));
+  const rootConfig = join(root, 'nlpwa.config.js');
+  const targetConfig = join(targetDir, 'nlpwa.config.js');
+  writeFileSync(rootConfig, 'export default { version: "root" };');
+  writeFileSync(targetConfig, 'export default { version: "target" };');
+
+  const found = findConfigFile(null, root, [targetDir]);
+  assert.equal(found, rootConfig);
+});
+
 test('build-utils: syncSourceConfigVersion does not overwrite version in comments', () => {
   const root = mkdtempSync(join(tmpdir(), 'nlpwa-sync-'));
   const configPath = join(root, 'config.js');

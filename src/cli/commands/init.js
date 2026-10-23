@@ -1,5 +1,5 @@
 import { writeFileSync, existsSync, mkdirSync, copyFileSync, readFileSync, appendFileSync } from 'node:fs';
-import { resolve, dirname, basename } from 'node:path';
+import { resolve, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateKeyPairSync } from 'node:crypto';
 import { c, printBanner } from '../ui/terminal.js';
@@ -187,22 +187,29 @@ ${signingConfigFields}  precache: [
 };
 `;
     writeFileSync(nlpwaConfigJsPath, starterConfigJs, 'utf8');
-    console.log(`  ${c.green}+${c.reset} ${c.bold}Scaffolded starter config:${c.reset} nlpwa.config.js`);
+    const relConfig = relative(process.cwd(), nlpwaConfigJsPath) || 'nlpwa.config.js';
+    console.log(`  ${c.green}+${c.reset} ${c.bold}Scaffolded starter config:${c.reset} ${relConfig}`);
   } else if (generatedPubKey) {
     syncSourceConfigPublicKey(nlpwaConfigJsPath, generatedPubKey);
-    console.log(`  ${c.green}+${c.reset} ${c.bold}Synchronized:${c.reset} publicKey into nlpwa.config.js`);
+    const relConfig = relative(process.cwd(), nlpwaConfigJsPath) || 'nlpwa.config.js';
+    console.log(`  ${c.green}+${c.reset} ${c.bold}Synchronized:${c.reset} publicKey into ${relConfig}`);
   }
 
   // Ensure .env.nlpwa is protected in .gitignore
-  const gitignorePath = resolve(targetDir, '.gitignore');
-  if (existsSync(gitignorePath)) {
-    try {
-      const gitignore = readFileSync(gitignorePath, 'utf8');
-      if (!gitignore.includes('.env.nlpwa')) {
-        appendFileSync(gitignorePath, '\n# NLPWA Signing Keys\n.env.nlpwa\n', 'utf8');
-        console.log(`  ${c.green}+${c.reset} Added .env.nlpwa to .gitignore`);
-      }
-    } catch {}
+  const gitignoreCandidates = [
+    resolve(process.cwd(), '.gitignore'),
+    ...(targetDir !== process.cwd() ? [resolve(targetDir, '.gitignore')] : []),
+  ];
+  for (const gitignorePath of gitignoreCandidates) {
+    if (existsSync(gitignorePath)) {
+      try {
+        const gitignore = readFileSync(gitignorePath, 'utf8');
+        if (!gitignore.includes('.env.nlpwa')) {
+          appendFileSync(gitignorePath, '\n# NLPWA Signing Keys\n.env.nlpwa\n', 'utf8');
+          console.log(`  ${c.green}+${c.reset} Added .env.nlpwa to ${relative(process.cwd(), gitignorePath) || '.gitignore'}`);
+        }
+      } catch {}
+    }
   }
 
   if (missing.length > 0) {

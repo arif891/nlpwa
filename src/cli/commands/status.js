@@ -10,7 +10,7 @@ export async function cmdStatus(args) {
   const targetDir = resolve(process.cwd(), args.dir ?? (existsSync(resolve(process.cwd(), 'dist')) ? 'dist' : '.'));
   console.log(`${c.bold}[NLPWA] Status for ${c.cyan}${targetDir}${c.reset}\n`);
 
-  const configFile = findConfigFile(args.config, process.cwd());
+  const configFile = findConfigFile(args.config, process.cwd(), [targetDir]);
   let sourceConfig = null;
   if (configFile) {
     try {

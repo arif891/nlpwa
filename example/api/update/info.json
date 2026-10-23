@@ -1,10 +1,11 @@
 {
   "version": "1.0.0",
+  "sequence": 1792733208598,
   "files": [
     {
       "path": "/api/update/config.json",
-      "hash": "14703cac50950d771ffc34924a70c774",
-      "size": 842
+      "hash": "035e1809c90cecbf815585949bb83cd4",
+      "size": 905
     },
     {
       "path": "/",
@@ -51,5 +52,6 @@
       "hash": "edda2af4adca694fc24dd4f75e4c6977",
       "size": 292
     }
-  ]
+  ],
+  "signature": "m4Tg+tJ944bzylQOfbeDQUOTULgdJh2aWqXVzL5H+THcfplJDw+QW1po+kbG4xqs7BB/50PrlA1U6YWTqcTVCA=="
 }

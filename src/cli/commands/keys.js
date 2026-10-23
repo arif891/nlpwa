@@ -84,7 +84,8 @@ export async function cmdGenerateKeys(args) {
   let configSynced = false;
   if (shouldSyncConfig) {
     try {
-      const configPath = findConfigFile(args.config);
+      const targetDir = args.dir ? resolve(process.cwd(), args.dir) : null;
+      const configPath = findConfigFile(args.config, process.cwd(), targetDir ? [targetDir] : []);
       if (configPath) {
         const updated = syncSourceConfigPublicKey(configPath, rawPublicBase64);
         if (updated) {

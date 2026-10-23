@@ -19,10 +19,20 @@ import {
 } from '../core/config.js';
 import { signManifestSync, derivePublicKey } from '../core/signing.js';
 
-function tryLoadLocalEnv() {
-  const envCandidates = ['.env.nlpwa', '.env.local', '.env'];
-  for (const file of envCandidates) {
-    const envPath = resolve(process.cwd(), file);
+function tryLoadLocalEnv(targetDir) {
+  const envCandidates = [
+    resolve(process.cwd(), '.env.nlpwa'),
+    resolve(process.cwd(), '.env.local'),
+    resolve(process.cwd(), '.env'),
+  ];
+  if (targetDir && targetDir !== process.cwd()) {
+    envCandidates.push(
+      resolve(targetDir, '.env.nlpwa'),
+      resolve(targetDir, '.env.local'),
+      resolve(targetDir, '.env')
+    );
+  }
+  for (const envPath of envCandidates) {
     if (!existsSync(envPath)) continue;
     try {
       const content = readFileSync(envPath, 'utf8');
@@ -46,25 +56,35 @@ function tryLoadLocalEnv() {
 }
 
 export async function cmdUpdate(args) {
-  tryLoadLocalEnv();
+  const targetDir = resolve(args.dir ?? (existsSync('./dist') ? './dist' : '.'));
+  mkdirSync(targetDir, { recursive: true });
+
+  tryLoadLocalEnv(targetDir);
   let configPath = null;
   try {
-    configPath = findConfigFile(args.config);
+    configPath = findConfigFile(args.config, process.cwd(), [targetDir]);
   } catch (err) {
     console.error(`${c.red}X ${err.message}${c.reset}`);
     process.exit(1);
   }
 
   const rawConfig = await loadConfig(configPath);
-  const targetDir = resolve(args.dir ?? (existsSync('./dist') ? './dist' : '.'));
-  mkdirSync(targetDir, { recursive: true });
 
   printBanner();
   console.log(`${c.bold}nlpwa update${c.reset}\n`);
   if (configPath) {
     console.log(`  ${c.dim}Config  :${c.reset} ${c.cyan}${configPath}${c.reset}`);
+  } else {
+    console.log(`  ${c.dim}Config  :${c.reset} ${c.yellow}(none found)${c.reset}`);
   }
   console.log(`  ${c.dim}Target  :${c.reset} ${c.cyan}${targetDir}${c.reset}`);
+
+  if (!configPath) {
+    console.warn(`\n  ${c.yellow}! Warning: No nlpwa configuration file found.${c.reset}`);
+    console.warn(`  ${c.yellow}  Looked in: ${c.cyan}${process.cwd()}${c.reset} and ${c.cyan}${targetDir}${c.reset}`);
+    console.warn(`  ${c.yellow}  An empty manifest (precache: [], routes: []) will be generated. Offline caching will NOT work until an nlpwa.config.js is created.${c.reset}`);
+    console.warn(`  ${c.yellow}  Tip: Run 'npx nlpwa init' to scaffold a starter config or create 'nlpwa.config.js' in your project root.${c.reset}\n`);
+  }
 
   // Extract signing key from environment, arguments, or config
   const extractedSigningKey =
@@ -305,4 +325,9 @@ ${c.bold}${c.green}  Update outputs written successfully${c.reset}
   ${c.dim}Info API Endpoint     :${c.reset} ${infoOut}
   ${c.dim}Elapsed Time          :${c.reset} ${elapsedMs}ms
 `);
+
+  if (files.length <= 1) {
+    console.warn(`  ${c.yellow}! Warning: Only ${files.length} file is tracked in this update manifest (${files[0]?.path || 'none'}).${c.reset}`);
+    console.warn(`  ${c.yellow}  Ensure 'precache' in nlpwa.config.js includes your app shell and assets, or that files exist in ${targetDir}.${c.reset}\n`);
+  }
 }

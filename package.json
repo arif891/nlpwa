@@ -1,6 +1,6 @@
 {
   "name": "nlpwa",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Native-like PWA framework with install-time caching and OTA hash-based delta updates",
   "type": "module",
   "author": "Arif",
@@ -14,7 +14,7 @@
     "url": "https://github.com/arif891/nlpwa/issues"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "main": "./out/client.esm.js",
   "module": "./out/client.esm.js",

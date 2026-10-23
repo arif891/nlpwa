@@ -2,6 +2,17 @@
 
 All notable changes to `nlpwa` will be documented in this file.
 
+## [0.2.2] - 2026-10-23
+
+### Security Hardening & Update Pipeline Resilience
+- **Minimum Node Version**: Updated engine requirement to Node `>=22`.
+- **Tier 1 Monotonic Sequence Verification**: Enforced monotonic sequence check on Tier 1 responses in cryptographic mode (`config.publicKey`); rejected replayed or missing sequence payloads and discarded untrusted metadata so compromised CDNs cannot freeze updates or unblock versions.
+- **Strictly Monotonic `minVersion`**: Guarded `setMinVersion` with `compare(minVersion, current) > 0` so replayed payloads cannot lower the minimum supported version.
+- **Lock Queuing for Emergency Rollbacks**: Extended `withLock` with `{ wait: true }` and updated `rollbackToFallback` to queue on Web Locks / poll in-memory locks instead of failing immediately.
+- **Rotating Phased Rollout Cohorts**: Replaced static sticky seed with `stringHash(`${seed}:${targetVersion}`) % 100`, fairly distributing canary exposure across releases while maintaining determinism per client version.
+- **Rollback Pin Protection**: Prevented `rollbackToFallback` from deleting failing caches while active client tabs are still pinned to them, preserving the "zero version drift" guarantee.
+- **Interrupted Install Null-Safety**: Added `active?.version` safety checks and generic context logging in `discardStaged`, eliminating `TypeError: Cannot read properties of null` during fresh install recovery.
+
 ## [0.2.1] - 2026-10-20
 
 ### Bug Fixes

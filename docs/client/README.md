@@ -41,11 +41,10 @@ The Client SDK documentation is organized into modular guides:
 ```
 
 > **Note on Service Worker Placement (`data-sw`):**
-> When using the drop-in `/client.js` bundle, it automatically registers `sw.js` with zero boilerplate.
-> By default, auto-registration derives the Service Worker path beside `client.js` or falls back to `/sw.js` at root.
-> If `client.js` is placed in an asset subdirectory (such as `/static/js/client.js` or `/assets/client.js`), or if your Service Worker is hosted at a custom path, specify it explicitly via `data-sw`:
+> When using the drop-in `/client.js` bundle, it automatically registers `/sw.js` at the application root.
+> To prevent fragile directory guessing that can accidentally restrict your Service Worker scope, specify any custom Service Worker location or scope explicitly via `data-sw` and `data-scope` (or `window.NLPWA_SW_URL` and `window.NLPWA_SW_SCOPE`):
 > ```html
-> <script src="/static/js/client.js" data-sw="/sw.js"></script>
+> <script src="/static/js/client.js" data-sw="/custom/sw.js" data-scope="/"></script>
 > ```
 > To disable auto-registration entirely (e.g. if you prefer manual registration):
 > ```html

@@ -1,17 +1,15 @@
 /**
  * Standalone Client entry (built to out/client.js, the file `nlpwa init` copies).
  *
- * Automatically registers /sw.js (or sw.js sitting beside client.js) by default
- * when loaded via <script src="/client.js"></script>, matching zero-boilerplate behavior.
+ * Automatically registers /sw.js by default when loaded via <script src="/client.js"></script>,
+ * matching zero-boilerplate behavior.
  *
- * NOTE ON PLACEMENT:
- * By default, auto-registration assumes `sw.js` sits beside `client.js` or at the application root (`/sw.js`).
- * If client.js is placed inside an asset subfolder (e.g. `/static/js/`, `/assets/`, `/dist/`), the registration
- * automatically falls back to `/sw.js` because a service worker cannot control parent scopes.
- *
- * To specify a custom Service Worker location or disable auto-registration:
- *   <script src="/static/js/client.js" data-sw="/sw.js"></script>
+ * To specify an explicit Service Worker location, custom scope, or disable auto-registration:
+ *   <script src="/client.js" data-sw="/custom/sw.js"></script>
+ *   <script src="/client.js" data-scope="/my-app/"></script>
  *   <script src="/client.js" data-auto-register="false"></script>
+ *   window.NLPWA_SW_URL = '/custom/sw.js';
+ *   window.NLPWA_SW_SCOPE = '/my-app/';
  *   window.NLPWA_NO_AUTO_REGISTER = true;
  */
 export * from './index.js';
@@ -53,7 +51,9 @@ function autoRegister() {
       return;
     }
     const swUrl = resolveDefaultSwUrl(script);
-    const swScope = script?.getAttribute?.('data-scope') || undefined;
+    const swScope = script?.getAttribute?.('data-scope')
+      || (typeof window !== 'undefined' ? window.NLPWA_SW_SCOPE : undefined)
+      || undefined;
     const regOptions = {
       _auto: true,
       ...(swScope ? { scope: swScope } : {}),
@@ -62,7 +62,7 @@ function autoRegister() {
     register(swUrl, { ...regOptions, _silentFail: swUrl !== '/sw.js' })
       .then((res) => {
         if (!res && swUrl !== '/sw.js') {
-          // Derived subpath failed; fall back to root /sw.js
+          // Custom path failed; fall back to root /sw.js
           return register('/sw.js', regOptions);
         }
         return res;

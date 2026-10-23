@@ -865,7 +865,7 @@ test('register: auto-registration (_auto: true) does not unsubscribe or overwrit
   }
 });
 
-test('client standalone: auto-registers with derived subpath base from script src and does not match vendor-client.js', async () => {
+test('client standalone: auto-registers with explicit data-sw attribute and does not match vendor-client.js', async () => {
   const clientBundle = readFileSync(fileURLToPath(new URL('../out/client.js', import.meta.url)), 'utf8');
 
   const registeredUrls = [];
@@ -888,7 +888,10 @@ test('client standalone: auto-registers with derived subpath base from script sr
       if (selector === 'script[src]') {
         return [
           { getAttribute: (attr) => attr === 'src' ? '/vendor/vendor-client.js' : null },
-          { getAttribute: (attr) => attr === 'src' ? '/my-subpath/client.js' : null, src: 'http://localhost/my-subpath/client.js' },
+          {
+            getAttribute: (attr) => attr === 'src' ? '/my-subpath/client.js' : (attr === 'data-sw' ? '/my-subpath/sw.js' : null),
+            src: 'http://localhost/my-subpath/client.js',
+          },
         ];
       }
       return [];
@@ -920,38 +923,44 @@ test('client standalone: auto-registers with derived subpath base from script sr
   await new Promise(r => setTimeout(r, 50));
 
   assert.equal(registeredUrls.length, 1);
-  assert.equal(registeredUrls[0].url, '/my-subpath/sw.js', 'derived subpath /my-subpath/sw.js correctly');
+  assert.equal(registeredUrls[0].url, '/my-subpath/sw.js', 'registered explicit data-sw /my-subpath/sw.js correctly');
 });
 
-test('client standalone: resolveDefaultSwUrl handles asset subdirectories, custom subpaths, and data-sw', () => {
+test('client standalone: resolveDefaultSwUrl prefers explicit path (data-sw or window.NLPWA_SW_URL) and defaults to /sw.js', () => {
   const origWindow = globalThis.window;
   try {
     globalThis.window = { location: { href: 'https://example.com/', origin: 'https://example.com' } };
 
-    // Asset subdirectories fall back to /sw.js
+    // Without explicit config, defaults cleanly to root /sw.js without fragile folder guessing
     assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/assets/client.js' }), '/sw.js');
     assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/static/js/client.js' }), '/sw.js');
     assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/dist/client.js' }), '/sw.js');
     assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/build/client.js' }), '/sw.js');
     assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/vendor/client.js' }), '/sw.js');
-
-    // App subpath derives sw.js in the same subpath
-    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/my-app/client.js' }), '/my-app/sw.js');
-
-    // Root client.js derives root /sw.js
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/my-app/client.js' }), '/sw.js');
     assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/client.js' }), '/sw.js');
+    assert.equal(resolveDefaultSwUrl(null), '/sw.js');
 
     // Explicit data-sw overrides everything
     assert.equal(resolveDefaultSwUrl({
       src: 'https://example.com/static/js/client.js',
       getAttribute: (name) => name === 'data-sw' ? '/custom/sw.js' : null,
     }), '/custom/sw.js');
+
+    // window.NLPWA_SW_URL provides runtime fallback override
+    globalThis.window.NLPWA_SW_URL = '/runtime-configured/sw.js';
+    assert.equal(resolveDefaultSwUrl({ src: 'https://example.com/client.js' }), '/runtime-configured/sw.js');
+
+    // data-sw takes precedence over window.NLPWA_SW_URL
+    assert.equal(resolveDefaultSwUrl({
+      getAttribute: (name) => name === 'data-sw' ? '/attr/sw.js' : null,
+    }), '/attr/sw.js');
   } finally {
     globalThis.window = origWindow;
   }
 });
 
-test('client standalone: auto-registers with fallback to /sw.js when derived subpath registration fails', async () => {
+test('client standalone: auto-registers with fallback to /sw.js when custom path registration fails', async () => {
   const clientBundle = readFileSync(fileURLToPath(new URL('../out/client.js', import.meta.url)), 'utf8');
 
   const registeredUrls = [];
@@ -976,7 +985,10 @@ test('client standalone: auto-registers with fallback to /sw.js when derived sub
     querySelectorAll(selector) {
       if (selector === 'script[src]') {
         return [
-          { getAttribute: (attr) => attr === 'src' ? '/custom-app/client.js' : null, src: 'http://localhost/custom-app/client.js' },
+          {
+            getAttribute: (attr) => attr === 'src' ? '/custom-app/client.js' : (attr === 'data-sw' ? '/custom-app/sw.js' : null),
+            src: 'http://localhost/custom-app/client.js',
+          },
         ];
       }
       return [];
@@ -1007,8 +1019,53 @@ test('client standalone: auto-registers with fallback to /sw.js when derived sub
   await new Promise(r => setTimeout(r, 60));
 
   assert.equal(registeredUrls.length, 2);
-  assert.equal(registeredUrls[0].url, '/custom-app/sw.js', 'first tried derived path');
+  assert.equal(registeredUrls[0].url, '/custom-app/sw.js', 'first tried custom data-sw path');
   assert.equal(registeredUrls[1].url, '/sw.js', 'fell back to root /sw.js');
+});
+
+test('register: logs resolved service worker URL and scope', async () => {
+  const origNavDesc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const logged = [];
+  const origLog = console.log;
+  console.log = (...args) => {
+    logged.push(args.join(' '));
+    origLog(...args);
+  };
+
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        serviceWorker: {
+          async register(url, opts) {
+            return { scope: opts?.scope || 'https://example.com/' };
+          },
+          addEventListener() {},
+          removeEventListener() {},
+          controller: null,
+        },
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await register('/sw-test.js', { scope: '/test-scope/' });
+
+    assert.ok(
+      logged.some(msg => msg.includes("Registering Service Worker: url='/sw-test.js', scope='/test-scope/'")),
+      'logged registration attempt with url and scope'
+    );
+    assert.ok(
+      logged.some(msg => msg.includes("SW registered: url='/sw-test.js', scope='/test-scope/'")),
+      'logged registration success with url and scope'
+    );
+  } finally {
+    console.log = origLog;
+    if (origNavDesc) {
+      Object.defineProperty(globalThis, 'navigator', origNavDesc);
+    } else {
+      delete globalThis.navigator;
+    }
+  }
 });
 
 test('register: concurrent manual register calls serialize and do not leak listeners', async () => {

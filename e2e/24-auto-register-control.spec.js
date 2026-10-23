@@ -26,12 +26,18 @@ test.describe('24 - Auto-Registration & Custom Path Controls', () => {
       const plainScript = document.createElement('script');
       const url3 = resolveDefaultSwUrl(plainScript);
 
-      return { url1, url2, url3 };
+      // 4. Runtime global window.NLPWA_SW_URL
+      window.NLPWA_SW_URL = '/workers/global-worker.js';
+      const url4 = resolveDefaultSwUrl(plainScript);
+      delete window.NLPWA_SW_URL;
+
+      return { url1, url2, url3, url4 };
     });
 
     expect(urls.url1).toBe('/workers/custom-worker.js');
     expect(urls.url2).toBe('/sw.js');
     expect(urls.url3).toBe('/sw.js');
+    expect(urls.url4).toBe('/workers/global-worker.js');
   });
 
   test('window.NLPWA_NO_AUTO_REGISTER suppresses automatic service worker registration', async ({ browser }) => {

@@ -57,21 +57,27 @@ register('/sw.js', {
 
 When using the pre-bundled `/client.js` in a browser `<script src="/client.js"></script>` tag, the SDK automatically registers the Service Worker on load with zero setup.
 
-### Placement & Custom Paths (`data-sw`)
+### Placement & Custom Paths (`data-sw`, `data-scope`)
 
-By default, auto-registration derives the Service Worker URL from the `client.js` location (sitting beside it) or falls back to `/sw.js` at the origin root. If your script is bundled or placed in an asset subdirectory (such as `/static/js/client.js` or `/assets/client.js`), the auto-registration defaults directly to `/sw.js`.
+By default, auto-registration defaults explicitly to `/sw.js` at the origin root. Rather than fragile directory guessing that can silently register the Service Worker under the wrong scope, custom worker paths or scopes should be specified explicitly via script attributes or globals.
 
 To explicitly configure the Service Worker path, custom scope, or disable auto-registration:
 
 ```html
 <!-- Explicit custom Service Worker path -->
-<script src="/static/js/client.js" data-sw="/sw.js"></script>
+<script src="/static/js/client.js" data-sw="/custom/sw.js"></script>
 
 <!-- Custom scope -->
 <script src="/client.js" data-scope="/my-app/"></script>
 
 <!-- Disable auto-registration (e.g. for purely manual register() calls) -->
 <script src="/client.js" data-auto-register="false"></script>
+```
+
+Alternatively, set runtime globals prior to script load:
+```javascript
+window.NLPWA_SW_URL = '/custom/sw.js';
+window.NLPWA_SW_SCOPE = '/my-app/';
 ```
 
 ---

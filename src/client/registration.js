@@ -17,7 +17,9 @@ let _isRegisteredOrRegistering = false;
 let _inFlightRegisterPromise = null;
 
 /**
- * Resolve the default service worker URL based on script location and data attributes.
+ * Resolve the default service worker URL.
+ * Prefers explicit configuration via `data-sw` attribute or `window.NLPWA_SW_URL`,
+ * falling back to root `/sw.js` without fragile directory guessing.
  *
  * @param {HTMLScriptElement} [script]
  * @returns {string}
@@ -27,19 +29,8 @@ export function resolveDefaultSwUrl(script) {
   if (customSw) {
     return customSw;
   }
-  if (script?.src && typeof window !== 'undefined' && window.location) {
-    try {
-      const scriptUrl = new URL(script.src, window.location.href);
-      if (scriptUrl.origin === window.location.origin) {
-        // If client.js sits in an asset subdirectory (e.g. /static/js/, /assets/, /dist/),
-        // sw.js cannot control outer scopes from there without special headers, so default to /sw.js
-        const pathSegments = scriptUrl.pathname.split('/').filter(Boolean);
-        const isAssetSubdir = pathSegments.some(seg => /^(?:assets|static|js|dist|build|vendor|public)$/i.test(seg));
-        if (!isAssetSubdir) {
-          return new URL('sw.js', scriptUrl).pathname;
-        }
-      }
-    } catch {}
+  if (typeof window !== 'undefined' && window.NLPWA_SW_URL) {
+    return window.NLPWA_SW_URL;
   }
   return '/sw.js';
 }
@@ -88,201 +79,202 @@ export async function register(swUrl = '/sw.js', options = {}) {
     if (options.scope) regOptions.scope = options.scope;
     if (options.updateViaCache) regOptions.updateViaCache = options.updateViaCache;
 
+    const requestedScope = regOptions.scope || 'default';
+    logger.log(`[NLPWA] Registering Service Worker: url='${swUrl}', scope='${requestedScope}'`);
+
     let registration;
     try {
       registration = await navigator.serviceWorker.register(swUrl, regOptions);
-      logger.log('[NLPWA] SW registered:', registration.scope);
+      logger.log(`[NLPWA] SW registered: url='${swUrl}', scope='${registration.scope}'`);
     } catch (err) {
       _isRegisteredOrRegistering = false;
       if (!options._silentFail) {
-        logger.error('[NLPWA] SW registration failed:', err);
+        logger.error(`[NLPWA] SW registration failed: url='${swUrl}', scope='${requestedScope}':`, err);
       }
       return null;
     }
 
-
-
-  function checkReloadDeferral(version, reason) {
-    const customDefer = typeof options.shouldDeferReload === 'function'
-      && Boolean(options.shouldDeferReload({ version, reason }));
-    const editing = isUserEditing();
-    const shouldDefer = customDefer || editing;
-    const deferReason = shouldDefer ? (customDefer ? 'deferred' : 'editing') : null;
-    return { shouldDefer, reason: deferReason };
-  }
-
-  // ── Update-ready handler ───────────────────────────────────────────────────
-  let lastReadyVersion = null;
-  const unsubscribeUpdate = onUpdateReady((data) => {
-    if (data?.version && data.version === lastReadyVersion && !data.force) {
-      return;
+    function checkReloadDeferral(version, reason) {
+      const customDefer = typeof options.shouldDeferReload === 'function'
+        && Boolean(options.shouldDeferReload({ version, reason }));
+      const editing = isUserEditing();
+      const shouldDefer = customDefer || editing;
+      const deferReason = shouldDefer ? (customDefer ? 'deferred' : 'editing') : null;
+      return { shouldDefer, reason: deferReason };
     }
-    lastReadyVersion = data?.version || null;
 
-    if (typeof options.onUpdateReady === 'function') {
-      options.onUpdateReady(data);
-    }
-    if (options.autoReload) {
-      const { shouldDefer, reason } = checkReloadDeferral(data?.version, 'ready');
-
-      if (!shouldDefer) {
-        applyUpdate();
-      } else {
-        logger.warn(`[NLPWA] Auto-reload deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
-        if (typeof options.onUpdatePrompt === 'function') {
-          options.onUpdatePrompt({ ...data, reason });
-        }
-        document.dispatchEvent(
-          new CustomEvent('nlpwa:update-prompt', {
-            bubbles: true,
-            detail: { version: data?.version, reason },
-          })
-        );
+    // ── Update-ready handler ───────────────────────────────────────────────────
+    let lastReadyVersion = null;
+    const unsubscribeUpdate = onUpdateReady((data) => {
+      if (data?.version && data.version === lastReadyVersion && !data.force) {
+        return;
       }
-    }
-  });
+      lastReadyVersion = data?.version || null;
 
-  // ── Update-applied handler (cross-tab coordination) ────────────────────────
-  let unsubscribeApplied = onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, (data) => {
-    if (data?.applied === false) return;
-    lastReadyVersion = null;
-
-    document.dispatchEvent(
-      new CustomEvent('nlpwa:update-applied', {
-        bubbles: true,
-        detail: { version: data?.version },
-      })
-    );
-    if (typeof options.onUpdateApplied === 'function') {
-      options.onUpdateApplied(data);
-    }
-    if (options.reloadOnUpdateApplied || options.autoReload) {
-      const { shouldDefer, reason } = checkReloadDeferral(data?.version, 'applied');
-
-      if (!shouldDefer) {
-        window.location.reload();
-      } else {
-        logger.warn(`[NLPWA] Reload on update-applied deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
-        if (typeof options.onUpdatePrompt === 'function') {
-          options.onUpdatePrompt({ version: data?.version, updateApplied: true, reason });
-        } else if (typeof options.onUpdateReady === 'function') {
-          options.onUpdateReady({ version: data?.version, updateApplied: true, reason });
-        }
-        document.dispatchEvent(
-          new CustomEvent('nlpwa:update-prompt', {
-            bubbles: true,
-            detail: { version: data?.version, updateApplied: true, reason },
-          })
-        );
+      if (typeof options.onUpdateReady === 'function') {
+        options.onUpdateReady(data);
       }
-    }
-  });
+      if (options.autoReload) {
+        const { shouldDefer, reason } = checkReloadDeferral(data?.version, 'ready');
 
-  // ── No-update handler ──────────────────────────────────────────────────────
-  const unsubscribeNoUpdate = onNoUpdate((data) => {
-    if (typeof options.onNoUpdate === 'function') {
-      options.onNoUpdate(data);
-    }
-  });
-
-  // ── Update-failed handler ──────────────────────────────────────────────────
-  const unsubscribeUpdateFailed = onUpdateFailed((data) => {
-    if (typeof options.onUpdateFailed === 'function') {
-      options.onUpdateFailed(data);
-    }
-  });
-
-  // ── Update-required handler (minVersion enforcement) ───────────────────────
-  const unsubscribeUpdateRequired = onUpdateRequired((data) => {
-    if (typeof options.onUpdateRequired === 'function') {
-      options.onUpdateRequired(data);
-    } else if (options.forceReloadOnRequired !== false) {
-      let canReload = true;
-      try {
-        if (typeof sessionStorage !== 'undefined') {
-          const key = 'nlpwa_req_reload';
-          const record = JSON.parse(sessionStorage.getItem(key) || '{"count":0,"time":0}');
-          const now = Date.now();
-          if (now - (record.time || 0) < 10000) {
-            record.count = (record.count || 0) + 1;
-          } else {
-            record.count = 1;
-            record.time = now;
+        if (!shouldDefer) {
+          applyUpdate();
+        } else {
+          logger.warn(`[NLPWA] Auto-reload deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
+          if (typeof options.onUpdatePrompt === 'function') {
+            options.onUpdatePrompt({ ...data, reason });
           }
-          sessionStorage.setItem(key, JSON.stringify(record));
-          if (record.count > 2) {
-            canReload = false;
-            logger.error(`[NLPWA] Multiple rapid reloads detected for minVersion (${data?.minVersion}). Reload loop blocked to protect user.`);
-            if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
-              document.dispatchEvent(new CustomEvent('nlpwa:update-required-blocked', { detail: data }));
+          document.dispatchEvent(
+            new CustomEvent('nlpwa:update-prompt', {
+              bubbles: true,
+              detail: { version: data?.version, reason },
+            })
+          );
+        }
+      }
+    });
+
+    // ── Update-applied handler (cross-tab coordination) ────────────────────────
+    let unsubscribeApplied = onSWMessage(MESSAGE_TYPES.UPDATE_APPLIED, (data) => {
+      if (data?.applied === false) return;
+      lastReadyVersion = null;
+
+      document.dispatchEvent(
+        new CustomEvent('nlpwa:update-applied', {
+          bubbles: true,
+          detail: { version: data?.version },
+        })
+      );
+      if (typeof options.onUpdateApplied === 'function') {
+        options.onUpdateApplied(data);
+      }
+      if (options.reloadOnUpdateApplied || options.autoReload) {
+        const { shouldDefer, reason } = checkReloadDeferral(data?.version, 'applied');
+
+        if (!shouldDefer) {
+          window.location.reload();
+        } else {
+          logger.warn(`[NLPWA] Reload on update-applied deferred (${reason}). Offering update prompt instead to protect unsaved edits.`);
+          if (typeof options.onUpdatePrompt === 'function') {
+            options.onUpdatePrompt({ version: data?.version, updateApplied: true, reason });
+          } else if (typeof options.onUpdateReady === 'function') {
+            options.onUpdateReady({ version: data?.version, updateApplied: true, reason });
+          }
+          document.dispatchEvent(
+            new CustomEvent('nlpwa:update-prompt', {
+              bubbles: true,
+              detail: { version: data?.version, updateApplied: true, reason },
+            })
+          );
+        }
+      }
+    });
+
+    // ── No-update handler ──────────────────────────────────────────────────────
+    const unsubscribeNoUpdate = onNoUpdate((data) => {
+      if (typeof options.onNoUpdate === 'function') {
+        options.onNoUpdate(data);
+      }
+    });
+
+    // ── Update-failed handler ──────────────────────────────────────────────────
+    const unsubscribeUpdateFailed = onUpdateFailed((data) => {
+      if (typeof options.onUpdateFailed === 'function') {
+        options.onUpdateFailed(data);
+      }
+    });
+
+    // ── Update-required handler (minVersion enforcement) ───────────────────────
+    const unsubscribeUpdateRequired = onUpdateRequired((data) => {
+      if (typeof options.onUpdateRequired === 'function') {
+        options.onUpdateRequired(data);
+      } else if (options.forceReloadOnRequired !== false) {
+        let canReload = true;
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            const key = 'nlpwa_req_reload';
+            const record = JSON.parse(sessionStorage.getItem(key) || '{"count":0,"time":0}');
+            const now = Date.now();
+            if (now - (record.time || 0) < 10000) {
+              record.count = (record.count || 0) + 1;
+            } else {
+              record.count = 1;
+              record.time = now;
+            }
+            sessionStorage.setItem(key, JSON.stringify(record));
+            if (record.count > 2) {
+              canReload = false;
+              logger.error(`[NLPWA] Multiple rapid reloads detected for minVersion (${data?.minVersion}). Reload loop blocked to protect user.`);
+              if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function') {
+                document.dispatchEvent(new CustomEvent('nlpwa:update-required-blocked', { detail: data }));
+              }
             }
           }
-        }
-      } catch {}
+        } catch {}
 
-      if (canReload) {
-        logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${data?.minVersion}). Reloading application.`);
-        if (typeof window !== 'undefined' && window.location?.reload) {
-          window.location.reload();
+        if (canReload) {
+          logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${data?.minVersion}). Reloading application.`);
+          if (typeof window !== 'undefined' && window.location?.reload) {
+            window.location.reload();
+          }
         }
       }
+    });
+
+    // ── Polling & background sync ─────────────────────────────────────────────
+    const cleanupFocus = setupFocusPolling({
+      options,
+      onCheck: () => requestUpdateCheck().catch(() => {}),
+    });
+
+    const intervalTimer = setupIntervalPolling({
+      options,
+      onCheck: () => requestUpdateCheck().catch(() => {}),
+    });
+
+    setupPeriodicSync({ registration, options, logger });
+    setupPersistentStorage({ options, logger });
+
+    // ── Initial update check on registration ──────────────────────────────────
+    const checkOnRegister = options.checkOnRegister !== false;
+    let initialCheckControllerListener = null;
+    if (checkOnRegister) {
+      let initialCheckDone = false;
+      const triggerInitialCheck = () => {
+        if (initialCheckDone) return;
+        initialCheckDone = true;
+        if (initialCheckControllerListener) {
+          navigator.serviceWorker.removeEventListener?.('controllerchange', initialCheckControllerListener);
+          initialCheckControllerListener = null;
+        }
+        requestUpdateCheck().catch(() => {});
+      };
+
+      if (navigator.serviceWorker.controller) {
+        triggerInitialCheck();
+      } else {
+        initialCheckControllerListener = triggerInitialCheck;
+        navigator.serviceWorker.addEventListener?.('controllerchange', initialCheckControllerListener, { once: true });
+        navigator.serviceWorker.ready?.then(triggerInitialCheck).catch(() => {});
+      }
     }
-  });
 
-  // ── Polling & background sync ─────────────────────────────────────────────
-  const cleanupFocus = setupFocusPolling({
-    options,
-    onCheck: () => requestUpdateCheck().catch(() => {}),
-  });
-
-  const intervalTimer = setupIntervalPolling({
-    options,
-    onCheck: () => requestUpdateCheck().catch(() => {}),
-  });
-
-  setupPeriodicSync({ registration, options, logger });
-  setupPersistentStorage({ options, logger });
-
-  // ── Initial update check on registration ──────────────────────────────────
-  const checkOnRegister = options.checkOnRegister !== false;
-  let initialCheckControllerListener = null;
-  if (checkOnRegister) {
-    let initialCheckDone = false;
-    const triggerInitialCheck = () => {
-      if (initialCheckDone) return;
-      initialCheckDone = true;
+    const unsubscribe = () => {
+      unsubscribeUpdate();
+      if (unsubscribeApplied) unsubscribeApplied();
+      if (unsubscribeNoUpdate) unsubscribeNoUpdate();
+      if (unsubscribeUpdateFailed) unsubscribeUpdateFailed();
+      if (unsubscribeUpdateRequired) unsubscribeUpdateRequired();
+      if (intervalTimer) clearInterval(intervalTimer);
+      if (cleanupFocus) cleanupFocus();
       if (initialCheckControllerListener) {
         navigator.serviceWorker.removeEventListener?.('controllerchange', initialCheckControllerListener);
-        initialCheckControllerListener = null;
       }
-      requestUpdateCheck().catch(() => {});
+      if (_activeUnsubscribe === unsubscribe) {
+        _activeUnsubscribe = null;
+        _isRegisteredOrRegistering = false;
+      }
     };
-
-    if (navigator.serviceWorker.controller) {
-      triggerInitialCheck();
-    } else {
-      initialCheckControllerListener = triggerInitialCheck;
-      navigator.serviceWorker.addEventListener?.('controllerchange', initialCheckControllerListener, { once: true });
-      navigator.serviceWorker.ready?.then(triggerInitialCheck).catch(() => {});
-    }
-  }
-
-  const unsubscribe = () => {
-    unsubscribeUpdate();
-    if (unsubscribeApplied) unsubscribeApplied();
-    if (unsubscribeNoUpdate) unsubscribeNoUpdate();
-    if (unsubscribeUpdateFailed) unsubscribeUpdateFailed();
-    if (unsubscribeUpdateRequired) unsubscribeUpdateRequired();
-    if (intervalTimer) clearInterval(intervalTimer);
-    if (cleanupFocus) cleanupFocus();
-    if (initialCheckControllerListener) {
-      navigator.serviceWorker.removeEventListener?.('controllerchange', initialCheckControllerListener);
-    }
-    if (_activeUnsubscribe === unsubscribe) {
-      _activeUnsubscribe = null;
-      _isRegisteredOrRegistering = false;
-    }
-  };
 
     _activeUnsubscribe = unsubscribe;
     return { registration, unsubscribe };

@@ -176,6 +176,7 @@
     "build": "rollup -c --environment PROD && npm run sync:example",
     "build:dev": "rollup -c && npm run sync:example",
     "build:prod": "rollup -c --environment PROD && npm run sync:example",
+    "build:types": "tsc",
     "pretest": "npm run build:prod",
     "dev": "rollup -c --watch",
     "test": "node --test test/*.test.js",
@@ -192,7 +193,8 @@
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@rollup/plugin-terser": "^1.0.0",
-    "rollup": "^4.0.0"
+    "rollup": "^4.0.0",
+    "typescript": "^7.0.2"
   },
   "keywords": [
     "pwa",

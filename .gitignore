@@ -10,3 +10,5 @@
 
 # NLPWA Signing Keys
 .env.nlpwa
+
+/types-gen

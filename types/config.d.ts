@@ -90,8 +90,12 @@ export interface NLPWAPlugin {
 }
 
 export interface RouteConfig {
-  /** Glob pattern to match request URL pathname (e.g. '/api/**', '/assets/*') */
-  match: string;
+  /** URLPattern string, pattern object, or URLPattern instance to match request URL (e.g. '/api/:version/*', '/assets/*') */
+  match?: string | URLPatternInit | any;
+  /** Pre-compiled URLPattern instance or URLPatternInit object */
+  pattern?: any;
+  /** Extracted named route parameters (e.g. { id: '42' }) */
+  params?: Record<string, string>;
   /** Caching and fetch strategy to use */
   strategy: FetchStrategy;
   /** Explicit origin to match (e.g. 'https://cdn.example.com' or '*') */

@@ -17,6 +17,9 @@ import {
   getBlockedVersions,
   writeMeta,
   resetStoreMemo,
+  pinClient,
+  unpinClient,
+  cleanupCaches,
 } from '../src/sw/cache/store.js';
 import { MESSAGE_TYPES } from '../src/shared/constants.js';
 
@@ -106,6 +109,42 @@ test('rollback: commit retains fallbackCache, and rollbackToFallback reverts to 
   assert.ok(rollbackMsg);
   assert.equal(rollbackMsg.version, '1.0.0');
   assert.equal(rollbackMsg.rolledBackFrom, '2.0.0');
+});
+
+test('rollback: rollbackToFallback preserves failing cache if active client tabs are pinned to it', async () => {
+  const server = makeServer('1.0.0', v1Files);
+  fakeSelf();
+  setupEnv(server.fetch);
+
+  await precacheFiles();
+  server.set('2.0.0', v2Files);
+  await checkForUpdate({ force: true });
+  await commitStaged();
+
+  const active2 = await getActive();
+  const v2CacheName = active2.cache;
+
+  // Pin a client tab to v2 cache
+  pinClient('tab-active-during-v2', v2CacheName, '2.0.0');
+
+  // Trigger emergency rollback
+  const rollbackResult = await rollbackToFallback('Crash reported');
+  assert.equal(rollbackResult.success, true);
+  assert.equal(rollbackResult.version, '1.0.0');
+
+  // Verify that v2Cache was preserved on disk so the pinned tab does not fall through to network mid-session
+  const cacheNames = await caches.keys();
+  assert.ok(cacheNames.includes(v2CacheName), 'failing cache is preserved on disk while client pins exist');
+
+  // Now unpin the client and verify subsequent cleanup deletes it
+  await unpinClient('tab-active-during-v2');
+  await cleanupCaches({
+    base: 'offline',
+    runtime: 'runtime',
+    keep: [(await getActive()).cache],
+  });
+  const afterCleanup = await caches.keys();
+  assert.equal(afterCleanup.includes(v2CacheName), false, 'failing cache deleted after client unpins');
 });
 
 test('rollback: rollbackToFallback waits for lock release when another operation holds the lock', async () => {

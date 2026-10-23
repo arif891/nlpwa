@@ -220,11 +220,17 @@ export async function rollbackToFallback(reason = '', { ttlMs = 24 * 60 * 60 * 1
     // 3. Reload config from restored cache
     await loadConfigFromCache();
 
-    // 4. Delete the broken failing cache
+    // 4. Delete the broken failing cache unless open tabs are still pinned to it
     if (failingCache && failingCache !== fallbackCacheName) {
-      await caches.delete(failingCache).catch((err) => {
-        logger.debug('[NLPWA] Failed to delete broken cache after rollback:', err?.message || err);
-      });
+      await pruneClientPins().catch(() => {});
+      const pinned = getAllPinnedCaches();
+      if (!pinned.includes(failingCache)) {
+        await caches.delete(failingCache).catch((err) => {
+          logger.debug('[NLPWA] Failed to delete broken cache after rollback:', err?.message || err);
+        });
+      } else {
+        logger.log(`[NLPWA] Preserving cache "${failingCache}" after rollback: active client tabs are still pinned to it.`);
+      }
     }
 
     logger.warn(`[NLPWA] ROLLBACK EXECUTED: Reverted from v${failingVersion} to v${fallbackVersion}.${reason ? ` Reason: ${reason}` : ''}`);

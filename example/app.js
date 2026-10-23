@@ -373,10 +373,185 @@ function showUpdateBanner(version) {
   if (banner) banner.classList.add('show');
 }
 
+// ── DevTools Push & Background Sync Demonstration ──────────────────────────
+let pendingOutbox = [];
+
+function updateOutboxUI() {
+  const metric = document.getElementById('metricOutbox');
+  if (metric) {
+    metric.textContent = String(pendingOutbox.length);
+  }
+}
+
+function updateNotifButtonUI() {
+  const btn = document.getElementById('btnToggleNotif');
+  const label = document.getElementById('notifStatusLabel');
+  if (!btn || !label) return;
+
+  if (typeof Notification === 'undefined') {
+    label.textContent = 'Unsupported';
+    btn.disabled = true;
+    return;
+  }
+
+  if (Notification.permission === 'granted') {
+    label.textContent = 'Active';
+    btn.classList.add('granted');
+    btn.title = 'Push notifications are enabled';
+  } else if (Notification.permission === 'denied') {
+    label.textContent = 'Denied';
+    btn.classList.remove('granted');
+    btn.title = 'Push notifications blocked by browser settings';
+  } else {
+    label.textContent = 'Alerts';
+    btn.classList.remove('granted');
+    btn.title = 'Click to enable desktop notifications';
+  }
+}
+
+async function requestNotifPermission() {
+  if (typeof Notification === 'undefined') {
+    log('PUSH', 'Desktop Notifications API is not supported in this browser.');
+    return false;
+  }
+  if (Notification.permission === 'granted') {
+    log('PUSH', 'Notification permission already granted.');
+    updateNotifButtonUI();
+    return true;
+  }
+  try {
+    const res = await Notification.requestPermission();
+    log('PUSH', `Notification permission response: ${res}`);
+    updateNotifButtonUI();
+    return res === 'granted';
+  } catch (err) {
+    log('PUSH', `Failed to request notification permission: ${err.message}`);
+    return false;
+  }
+}
+
+function triggerTestPush(text = 'Test push message from DevTools') {
+  log('PUSH', `Simulating Push event: "${text}"`);
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    try {
+      new Notification('NLPWA Push Alert', {
+        body: text,
+        icon: '/assets/offline-badge.svg',
+        badge: '/assets/offline-badge.svg',
+      });
+      log('PUSH', 'Dispatched system notification successfully.');
+    } catch {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.showNotification('NLPWA Push Alert', {
+          body: text,
+          icon: '/assets/offline-badge.svg',
+        });
+        log('PUSH', 'Dispatched Service Worker notification.');
+      }).catch((e) => log('PUSH', `Notification error: ${e.message}`));
+    }
+  } else {
+    log('PUSH', 'Notification permission not granted. Requesting permission now...');
+    requestNotifPermission().then((granted) => {
+      if (granted) triggerTestPush(text);
+    });
+  }
+}
+
+async function queueOfflineNote() {
+  const noteId = pendingOutbox.length + 1;
+  const note = {
+    id: Date.now(),
+    text: `Offline Note #${noteId} (${new Date().toLocaleTimeString()})`,
+    tag: 'test-tag-from-devtools',
+  };
+  pendingOutbox.push(note);
+  updateOutboxUI();
+  log('OUTBOX', `Queued offline action [${note.text}]`);
+
+  if ('serviceWorker' in navigator && 'SyncManager' in window) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.sync && typeof reg.sync.register === 'function') {
+        await reg.sync.register('test-tag-from-devtools');
+        log('SYNC', 'Registered background sync tag: "test-tag-from-devtools"');
+      }
+    } catch (e) {
+      log('SYNC', `Background sync notice: ${e.message}`);
+    }
+  } else {
+    log('SYNC', 'Background Sync API ready; outbox will also flush on network reconnection.');
+  }
+}
+
+function flushOutbox(reason = 'manual') {
+  if (pendingOutbox.length === 0) {
+    log('SYNC', 'Outbox is empty — nothing to synchronize.');
+    return;
+  }
+  const count = pendingOutbox.length;
+  log('SYNC', `Synchronizing ${count} queued outbox action(s) (trigger: ${reason}, tag: "test-tag-from-devtools")...`);
+  pendingOutbox = [];
+  updateOutboxUI();
+  log('SYNC', `Outbox synchronized successfully: ${count} item(s) sent.`);
+}
+
+function initNotifAndSync() {
+  updateNotifButtonUI();
+  updateOutboxUI();
+
+  document.getElementById('btnToggleNotif')?.addEventListener('click', () => {
+    requestNotifPermission();
+  });
+
+  document.getElementById('btnTestPush')?.addEventListener('click', () => {
+    triggerTestPush('Test push message from DevTools');
+  });
+
+  document.getElementById('btnCopyPushPayload')?.addEventListener('click', () => {
+    const payload = JSON.stringify({
+      title: 'DevTools Push',
+      body: 'Test push message from DevTools',
+      icon: '/assets/offline-badge.svg',
+    }, null, 2);
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(payload).then(() => {
+        log('PUSH', 'Copied valid JSON push payload to clipboard for DevTools.');
+      }).catch(() => {
+        log('PUSH', `DevTools JSON Payload: ${payload}`);
+      });
+    } else {
+      log('PUSH', `DevTools JSON Payload: ${payload}`);
+    }
+  });
+
+  document.getElementById('btnQueueOfflineAction')?.addEventListener('click', () => {
+    queueOfflineNote();
+  });
+
+  document.getElementById('btnFlushOutbox')?.addEventListener('click', () => {
+    flushOutbox('manual');
+  });
+
+  window.addEventListener('online', () => {
+    if (pendingOutbox.length > 0) {
+      flushOutbox('network reconnection');
+    }
+  });
+
+  navigator.serviceWorker?.addEventListener('message', (event) => {
+    if (event.data?.type === 'SYNC_EVENT' || event.data?.tag === 'test-tag-from-devtools') {
+      log('SYNC', 'Received background sync signal from Service Worker!');
+      flushOutbox('sw-sync-event');
+    }
+  });
+}
+
 // ── Startup & Event Binding ────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   initTabs();
   initDevSheet();
+  initNotifAndSync();
   initNLPWA();
 
   // Populate default views with initial loads

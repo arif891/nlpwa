@@ -198,9 +198,42 @@ body {
   border-color: var(--border-highlight);
 }
 
+.btn-notif-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-notif-toggle:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-highlight);
+}
+
+.btn-notif-toggle.granted {
+  border-color: var(--accent-emerald-border);
+  color: var(--accent-emerald);
+}
+
+.notif-icon {
+  font-size: 0.8rem;
+}
+
 .hud-icon {
   color: var(--accent-amber);
   font-size: 0.8rem;
+}
+
+.text-amber {
+  color: var(--accent-amber);
 }
 
 /* ── Update Banner ────────────────────────────────────────────────────────── */
@@ -928,6 +961,27 @@ body {
 .actions-buttons .btn-action {
   font-size: 0.75rem;
   padding: 0.35rem 0.65rem;
+}
+
+.devtools-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.devtools-hint code {
+  font-family: var(--font-mono);
+  color: var(--accent-sky);
+  background: rgba(14, 165, 233, 0.08);
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
 }
 
 .btn-sm {

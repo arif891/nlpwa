@@ -8,23 +8,23 @@
     },
     {
       "path": "/",
-      "hash": "0e21e8c3a358689dd0919fcd1dae8912",
-      "size": 9946
+      "hash": "d66b6b5e153df99687211bab1b55038e",
+      "size": 11265
     },
     {
       "path": "/index.html",
-      "hash": "0e21e8c3a358689dd0919fcd1dae8912",
-      "size": 9946
+      "hash": "d66b6b5e153df99687211bab1b55038e",
+      "size": 11265
     },
     {
       "path": "/styles.css",
-      "hash": "74f5f3bde6a4f4fa08c574a03d07ca7c",
-      "size": 21844
+      "hash": "d355d93329dbcf844b4bd591b2da4ad5",
+      "size": 22949
     },
     {
       "path": "/app.js",
-      "hash": "000d2e6645bbeeaba74638441583593d",
-      "size": 18565
+      "hash": "27ec63a50a72fa0e0d4055a043b02a7c",
+      "size": 24282
     },
     {
       "path": "/client.js",

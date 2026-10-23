@@ -285,6 +285,25 @@ test('channel: update check filters by release channel', async () => {
   assert.equal(result.channelMismatch, true);
 });
 
+test('channel: persisted channel in IndexedDB overrides static config', async () => {
+  const server = makeServer('1.0.0', v1Files);
+  fakeSelf();
+  setupEnv(server.fetch, { channel: 'stable' });
+
+  await precacheFiles();
+
+  // Persist client subscription to 'beta' in IndexedDB
+  await writeMeta('/_nlpwa/channel.json', { channel: 'beta' });
+
+  // Server publishes beta channel release
+  server.set('2.0.0-beta', v2Files);
+  server.channel = 'beta';
+
+  const result = await checkForUpdate();
+  assert.equal(result.channelMismatch, undefined);
+  assert.equal(result.updated, true);
+});
+
 test('probation: 2 consecutive failures trigger rollback; single failure does not', async () => {
   const server = makeServer('1.0.0', v1Files);
   fakeSelf();

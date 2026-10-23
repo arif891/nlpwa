@@ -226,8 +226,9 @@ async function _doUpdateCheck({ force = false } = {}) {
     return { updated: false, blocked: true, version: serverVersion };
   }
 
-  // Check release channel filter
-  const activeChannel = config.channel || (await readMeta('/_nlpwa/channel.json'))?.channel;
+  // Check release channel filter: persisted client subscription in IndexedDB overrides static config
+  const persistedChannel = (await readMeta('/_nlpwa/channel.json'))?.channel;
+  const activeChannel = persistedChannel !== undefined ? persistedChannel : config.channel;
   if (!force && activeChannel && versionRes?.channel && activeChannel !== versionRes.channel) {
     logger.log(`[NLPWA] Skipping release channel "${versionRes.channel}" (configured channel: "${activeChannel}").`);
     return { updated: false, channelMismatch: true };

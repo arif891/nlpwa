@@ -19,6 +19,7 @@ import {
 } from '../cache/store.js';
 import { compare } from '../../shared/version.js';
 import { getLatestSharedData } from '../features/share-target.js';
+import { setChannel } from '../config/index.js';
 
 /**
  * Service Worker postMessage event handler.
@@ -152,6 +153,8 @@ export function handleMessage(config) {
             const pinStatus = getClientPinStatus(clientId, { activeCache: active?.cache });
             const rollbackHistory = (await readMeta('/_nlpwa/rollback-history.json')) || [];
             const updateStatus = await getUpdateStatus();
+            const persistedChannel = (await readMeta('/_nlpwa/channel.json'))?.channel;
+            const channel = persistedChannel !== undefined ? persistedChannel : (config.channel || null);
 
             reply(MESSAGE_TYPES.DIAGNOSTICS_INFO, {
               active: active ? {
@@ -172,7 +175,7 @@ export function handleMessage(config) {
               storage,
               rollbackHistory,
               updateStatus,
-              channel: config.channel || (await readMeta('/_nlpwa/channel.json'))?.channel || null,
+              channel,
             });
           } catch (err) {
             reply(MESSAGE_TYPES.DIAGNOSTICS_INFO, null, err);
@@ -350,7 +353,7 @@ export function handleMessage(config) {
         event.waitUntil((async () => {
           try {
             const channel = event.data?.channel || null;
-            config.channel = channel;
+            setChannel(channel);
             await writeMeta('/_nlpwa/channel.json', { channel });
             reply(MESSAGE_TYPES.CHANNEL_INFO, { channel });
           } catch (err) {

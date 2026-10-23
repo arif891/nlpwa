@@ -267,4 +267,37 @@ describe('Runtime Bugfixes & Hardening', () => {
     assert.ok('client' in diag);
     assert.equal(typeof diag.client.isLeader, 'boolean');
   });
+
+  test('SET_CHANNEL handler does not mutate frozen config and persists channel to meta', async () => {
+    const { handleMessage } = await import('../src/sw/events/message.js');
+    const { initConfig, getConfig } = await import('../src/sw/config/index.js');
+    const { readMeta } = await import('../src/sw/cache/store.js');
+    const { MESSAGE_TYPES } = await import('../src/shared/constants.js');
+
+    const config = initConfig({ version: '1.0.0', channel: 'stable' });
+    assert.ok(Object.isFrozen(config));
+
+    const onMessage = handleMessage(config);
+    let replyPayload = null;
+
+    await new Promise((resolve) => {
+      const event = {
+        data: { type: MESSAGE_TYPES.SET_CHANNEL, channel: 'beta', requestId: 'req-1' },
+        waitUntil: (promise) => promise.then(resolve),
+        ports: [{
+          postMessage: (payload) => {
+            replyPayload = payload;
+          },
+        }],
+      };
+      onMessage(event);
+    });
+
+    assert.equal(replyPayload?.error, undefined);
+    assert.deepEqual(replyPayload?.data, { channel: 'beta' });
+    assert.equal(getConfig().channel, 'beta');
+
+    const meta = await readMeta('/_nlpwa/channel.json');
+    assert.deepEqual(meta, { channel: 'beta' });
+  });
 });

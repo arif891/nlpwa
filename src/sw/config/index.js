@@ -114,6 +114,23 @@ export function updateActiveConfig(runtimeConfig = {}) {
   return _config;
 }
 
+/**
+ * Update the active release channel in-memory without mutating frozen config.
+ *
+ * @param {string|null} channel
+ * @returns {typeof DEFAULTS}
+ */
+export function setChannel(channel) {
+  if (!_config) {
+    initConfig();
+  }
+  _config = Object.freeze({
+    ..._config,
+    channel: channel || null,
+  });
+  return _config;
+}
+
 let _configReadyPromise = null;
 
 /**

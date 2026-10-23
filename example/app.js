@@ -111,9 +111,53 @@ async function testStrategy(endpoint, expectedStrategy) {
   }
 }
 
+// ── Version Badge Management ───────────────────────────────────────────────
+async function updateAppVersion() {
+  const versionEl = document.getElementById('appVersion') || document.querySelector('.version-badge');
+  if (!versionEl) return;
+
+  try {
+    if (typeof NLPWAClient !== 'undefined') {
+      if (NLPWAClient.getVersion) {
+        const info = await NLPWAClient.getVersion();
+        if (info?.activeVersion) {
+          versionEl.textContent = `v${info.activeVersion}`;
+          return;
+        }
+      }
+      if (NLPWAClient.getState) {
+        const state = NLPWAClient.getState();
+        if (state?.activeVersion || state?.version) {
+          versionEl.textContent = `v${state.activeVersion || state.version}`;
+          return;
+        }
+      }
+    }
+
+    const res = await fetch('/api/update/version.json').catch(() => null);
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data?.version) {
+        versionEl.textContent = `v${data.version}`;
+      }
+    }
+  } catch {}
+}
+
 // ── PWA & SW Initialization ────────────────────────────────────────────────
 async function initNLPWA() {
   updateNetworkStatus();
+  updateAppVersion();
+
+  if (typeof NLPWAClient !== 'undefined' && NLPWAClient.subscribe) {
+    NLPWAClient.subscribe((state) => {
+      const ver = state?.activeVersion || state?.version;
+      if (ver) {
+        const versionEl = document.getElementById('appVersion') || document.querySelector('.version-badge');
+        if (versionEl) versionEl.textContent = `v${ver}`;
+      }
+    });
+  }
 
   if (!('serviceWorker' in navigator)) {
     log('WARN', 'Service Workers are not supported in this browser environment');
@@ -145,6 +189,7 @@ async function initNLPWA() {
     document.getElementById('swStatus').textContent = 'Active & Controlled';
     document.getElementById('metricScope').textContent = registration.scope.replace(window.location.origin, '');
     log('SW', `Service Worker active at scope: ${registration.scope}`);
+    await updateAppVersion();
   } catch (err) {
     document.getElementById('swStatus').textContent = 'Registration Failed';
     log('ERR', `Service Worker registration failed: ${err.message}`);

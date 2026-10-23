@@ -8,13 +8,13 @@
     },
     {
       "path": "/",
-      "hash": "0d5935fe2be52a31faa15f52f5508363",
-      "size": 9199
+      "hash": "41e83be69ffd7f0d37337bbade47dc36",
+      "size": 9215
     },
     {
       "path": "/index.html",
-      "hash": "0d5935fe2be52a31faa15f52f5508363",
-      "size": 9199
+      "hash": "41e83be69ffd7f0d37337bbade47dc36",
+      "size": 9215
     },
     {
       "path": "/styles.css",
@@ -23,8 +23,8 @@
     },
     {
       "path": "/app.js",
-      "hash": "f8f55dd01c2d46497cf5c7372c672abf",
-      "size": 9055
+      "hash": "87dda834af4d4f7af78de3b33a88da8f",
+      "size": 10596
     },
     {
       "path": "/client.js",

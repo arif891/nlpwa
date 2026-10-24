@@ -216,6 +216,7 @@ export async function rollbackToFallback(reason = '', { ttlMs = 24 * 60 * 60 * 1
       cache: fallbackCacheName,
       version: fallbackVersion,
       swVersion: active.swVersion,
+      snapshotPath: getSnapshotPath(),
     });
 
     // 3. Reload config from restored cache

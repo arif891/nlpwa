@@ -40,7 +40,7 @@ async function broadcast(message) {
  * @returns {Promise<boolean>} True if a minVersion was present and enforced
  */
 async function enforceMinVersion(source, { active = null, alreadyEnforced = false, targetVersion = null } = {}) {
-  const minVersion = source?.minVersion || source?.minSupportedVersion || (typeof source === 'string' ? source : null);
+  const minVersion = source?.minVersion || (typeof source === 'string' ? source : null);
   if (!minVersion) return false;
 
   await setMinVersion(minVersion);
@@ -59,6 +59,36 @@ async function enforceMinVersion(source, { active = null, alreadyEnforced = fals
   }
 
   return true;
+}
+
+/**
+ * Check if target release is eligible for update based on release channel and rollout percentage.
+ *
+ * @param {Object} source - Version response or manifest object
+ * @param {string} targetVersion - Target app version
+ * @param {Object} [options]
+ * @param {boolean} [options.force]
+ * @param {string|null} [options.activeChannel]
+ * @returns {Promise<{ eligible: boolean, result?: Object }>}
+ */
+async function checkReleaseEligibility(source, targetVersion, { force = false, activeChannel = null } = {}) {
+  if (!force && activeChannel && source?.channel && activeChannel !== source.channel) {
+    logger.log(`[NLPWA] Skipping release channel "${source.channel}" (configured channel: "${activeChannel}").`);
+    return { eligible: false, result: { updated: false, channelMismatch: true } };
+  }
+
+  if (!force && typeof source?.rolloutPercent === 'number') {
+    const pct = source.rolloutPercent;
+    if (pct >= 0 && pct < 100) {
+      const cohort = await getRolloutCohort(targetVersion);
+      if (cohort >= pct) {
+        logger.log(`[NLPWA] Client cohort (${cohort}) excluded from phased rollout of v${targetVersion} (${pct}%).`);
+        return { eligible: false, result: { updated: false, rolloutExcluded: true, rolloutPercent: pct } };
+      }
+    }
+  }
+
+  return { eligible: true };
 }
 
 let _activeCheckPromise = null;
@@ -282,21 +312,9 @@ async function _doUpdateCheck({ force = false } = {}) {
   // Check release channel filter: persisted client subscription in IndexedDB overrides static config
   const persistedChannel = (await readMeta('/_nlpwa/channel.json'))?.channel;
   const activeChannel = persistedChannel !== undefined ? persistedChannel : config.channel;
-  if (!force && activeChannel && versionRes?.channel && activeChannel !== versionRes.channel) {
-    logger.log(`[NLPWA] Skipping release channel "${versionRes.channel}" (configured channel: "${activeChannel}").`);
-    return { updated: false, channelMismatch: true };
-  }
-
-  // Check phased rollout percentage
-  if (!force && typeof versionRes?.rolloutPercent === 'number') {
-    const pct = versionRes.rolloutPercent;
-    if (pct >= 0 && pct < 100) {
-      const cohort = await getRolloutCohort(serverVersion);
-      if (cohort >= pct) {
-        logger.log(`[NLPWA] Client cohort (${cohort}) excluded from phased rollout of v${serverVersion} (${pct}%).`);
-        return { updated: false, rolloutExcluded: true, rolloutPercent: pct };
-      }
-    }
+  const tier1Eligibility = await checkReleaseEligibility(versionRes, serverVersion, { force, activeChannel });
+  if (!tier1Eligibility.eligible) {
+    return tier1Eligibility.result;
   }
 
   // A complete update is already staged and waiting for the next navigation, and the server confirms it.
@@ -396,21 +414,10 @@ async function _doUpdateCheck({ force = false } = {}) {
     return { updated: false, blocked: true, version: serverManifest.version };
   }
 
-  if (!force && activeChannel && serverManifest.channel && activeChannel !== serverManifest.channel) {
-    logger.log(`[NLPWA] Skipping manifest release channel "${serverManifest.channel}" (configured channel: "${activeChannel}").`);
-    return { updated: false, channelMismatch: true };
-  }
-
-  // Check phased rollout percentage from Tier 2 manifest
-  if (!force && typeof serverManifest.rolloutPercent === 'number') {
-    const pct = serverManifest.rolloutPercent;
-    if (pct >= 0 && pct < 100) {
-      const cohort = await getRolloutCohort(serverManifest.version);
-      if (cohort >= pct) {
-        logger.log(`[NLPWA] Client cohort (${cohort}) excluded from phased rollout of v${serverManifest.version} (${pct}%).`);
-        return { updated: false, rolloutExcluded: true, rolloutPercent: pct };
-      }
-    }
+  // Check release channel and phased rollout percentage from Tier 2 manifest
+  const tier2Eligibility = await checkReleaseEligibility(serverManifest, serverManifest.version, { force, activeChannel });
+  if (!tier2Eligibility.eligible) {
+    return tier2Eligibility.result;
   }
 
   // Check minimum supported version from Tier 2 manifest

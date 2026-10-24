@@ -37,7 +37,6 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'version',
   'appVersion',
   'minVersion',
-  'minSupportedVersion',
   'configPath',
   'updateAPI',
   'verifyHashes',
@@ -262,6 +261,35 @@ export function validateConfig(config) {
         (typeof routePattern !== 'object' || routePattern === null)
       ) {
         errors.push(`config.routes[${i}].match (or pattern) must be a string or URLPattern object`);
+      } else if (typeof URLPattern !== 'undefined') {
+        try {
+          if (typeof routePattern === 'string') {
+            if (routePattern.startsWith('http://') || routePattern.startsWith('https://')) {
+              new URLPattern(routePattern);
+            } else if (routePattern.startsWith('//')) {
+              new URLPattern('https:' + routePattern);
+            } else if (route.origin === '*') {
+              const pathname = routePattern.startsWith('/') ? routePattern : '/' + routePattern;
+              new URLPattern({ pathname, protocol: '*', hostname: '*', port: '*' });
+            } else if (route.origin) {
+              new URLPattern(routePattern, route.origin);
+            } else {
+              new URLPattern(routePattern, 'http://localhost');
+            }
+          } else if (typeof routePattern === 'object' && routePattern !== null && !(routePattern instanceof URLPattern)) {
+            if (route.origin === '*') {
+              new URLPattern({ protocol: '*', hostname: '*', port: '*', ...routePattern });
+            } else if (route.origin) {
+              new URLPattern({ baseURL: route.origin, ...routePattern });
+            } else if (!routePattern.baseURL && !routePattern.hostname) {
+              new URLPattern({ baseURL: 'http://localhost', ...routePattern });
+            } else {
+              new URLPattern(routePattern);
+            }
+          }
+        } catch (patErr) {
+          errors.push(`config.routes[${i}].match (or pattern) "${String(routePattern)}" is invalid: ${patErr?.message || patErr}`);
+        }
       }
       if (!VALID_STRATEGIES.has(route.strategy)) {
         errors.push(

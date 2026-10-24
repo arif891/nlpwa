@@ -187,7 +187,7 @@ export function getShouldThrow(options) {
  * @returns {string}
  */
 export function resolveFallbackUrl(options = {}) {
-  return options.offlineFallback ?? options.navigationFallback ?? getConfig().offlineFallback ?? getConfig().navigationFallback ?? '/index.html';
+  return options.offlineFallback ?? getConfig().offlineFallback ?? '/index.html';
 }
 
 /**

@@ -169,8 +169,6 @@ export interface NLPWAConfig {
    * are non-monotonic content digests and are ignored for minVersion comparison.
    */
   minVersion?: string;
-  /** Minimum supported version alias (same semantics as minVersion) */
-  minSupportedVersion?: string;
   /** Active release channel (e.g. 'stable', 'beta', 'canary') */
   channel?: string;
   /** Blacklisted/revoked versions that will be rejected or trigger emergency rollback if active */

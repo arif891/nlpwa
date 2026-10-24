@@ -109,7 +109,9 @@ export function attachDebugPanel({ position = 'bottom-right' } = {}) {
         if (applyBtn) applyBtn.style.display = 'none';
         if (indicator) indicator.style.background = '#22c55e';
       }
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] Debug overlay updateDisplay error:', err?.message || err);
+    }
   }
 
   updateDisplay();

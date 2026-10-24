@@ -109,6 +109,24 @@ export const DEFAULTS = {
   skipVerifyGlobs: [],
 
   /**
+   * Maximum total update download delta in bytes allowed before staging is blocked.
+   * Default: 0 (unlimited)
+   */
+  maxUpdateBytes: 0,
+
+  /**
+   * Maximum update download delta allowed on cellular/metered connections.
+   * Default: 0 (unlimited)
+   */
+  wifiOnlyThresholdBytes: 0,
+
+  /**
+   * Whether to defer update staging when navigator.connection.saveData is enabled.
+   * Default: false
+   */
+  respectSaveData: false,
+
+  /**
    * Base public path for assets and API endpoints (e.g. '/my-app/' for subpaths).
    * Default: ''
    */

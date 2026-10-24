@@ -8,7 +8,9 @@ function notifyShareListeners(data) {
   for (const listener of _shareListeners) {
     try {
       listener(data);
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] Share listener callback threw:', err?.message || err);
+    }
   }
 }
 
@@ -36,9 +38,13 @@ function initShareListener() {
         const shareId = params.get('shareId') || params.get('nlpwa_share_id') || undefined;
         getSharedData(shareId).then((data) => {
           if (data) notifyShareListeners(data);
-        }).catch(() => {});
+        }).catch((err) => {
+          console.debug?.('[NLPWA] Error fetching initial shared data:', err?.message || err);
+        });
       }
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] Share redirect query parse error:', err?.message || err);
+    }
   }
 }
 
@@ -53,7 +59,8 @@ export async function getSharedData(shareId) {
     const payload = shareId ? { shareId } : {};
     const response = await requestFromSW(SHARE_MESSAGE_TYPES.GET_SHARED_DATA, payload);
     return response || null;
-  } catch {
+  } catch (err) {
+    console.debug?.('[NLPWA] Failed to get shared data from SW:', err?.message || err);
     return null;
   }
 }

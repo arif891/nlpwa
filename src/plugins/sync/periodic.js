@@ -80,7 +80,9 @@ function getLastRun(tag) {
     try {
       const val = localStorage.getItem(`${PERIODIC_SYNC_CONSTANTS.STORAGE_KEY_PREFIX}${tag}`);
       return val ? parseInt(val, 10) : 0;
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] localStorage access blocked in getLastRun:', err?.message || err);
+    }
   }
   return 0;
 }
@@ -95,7 +97,9 @@ function setLastRun(tag, timestamp) {
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.setItem(`${PERIODIC_SYNC_CONSTANTS.STORAGE_KEY_PREFIX}${tag}`, String(timestamp));
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] localStorage access blocked in setLastRun:', err?.message || err);
+    }
   }
 }
 
@@ -241,7 +245,9 @@ export async function unregisterPeriodicSync(tag, options = {}) {
         await reg.periodicSync.unregister(tag);
         nativeSuccess = true;
       }
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] Failed to unregister native periodicSync tag:', tag, err?.message || err);
+    }
   }
 
   const hadFallback = activeFallbacks.has(tag);
@@ -269,7 +275,9 @@ export async function getPeriodicSyncTags(options = {}) {
           tags.add(t);
         }
       }
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] Failed to query native periodicSync tags:', err?.message || err);
+    }
   }
 
   return Array.from(tags);

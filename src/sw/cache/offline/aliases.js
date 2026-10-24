@@ -1,5 +1,6 @@
 import { getConfig } from '../../config/index.js';
 import { cleanTrackingParams } from '../keys.js';
+import { logger } from '../../logger.js';
 
 /**
  * Match a request against a cache with standard HTML, clean URLs, directory index, and base path aliases.
@@ -31,7 +32,9 @@ export async function matchWithAliases(cache, request, matchOptions, base, confi
   try {
     const fallbackBase = typeof self !== 'undefined' && self.location ? self.location.href : 'https://example.com';
     parsedUrl = new URL(cleanedUrl, fallbackBase);
-  } catch {}
+  } catch (err) {
+    logger.debug('[NLPWA] Failed to parse URL for aliases:', cleanedUrl, err?.message || err);
+  }
 
   if (!parsedUrl) return undefined;
 

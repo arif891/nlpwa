@@ -51,7 +51,9 @@ function tryLoadLocalEnv(targetDir) {
           }
         }
       }
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Could not parse .env file:', err?.message || err);
+    }
   }
 }
 
@@ -102,7 +104,9 @@ export async function cmdUpdate(args) {
   if (extractedSigningKey) {
     try {
       derivedPublicKey = derivePublicKey(extractedSigningKey);
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Failed to derive public key from signing key:', err?.message || err);
+    }
   }
 
   // If signing key is present but config lacks publicKey, auto-derive and sync it
@@ -262,7 +266,7 @@ export async function cmdUpdate(args) {
   const sequence = rawConfig.sequence !== undefined
     ? Number(rawConfig.sequence)
     : (extractedSigningKey ? Date.now() : undefined);
-  const minVer = rawConfig.minVersion || rawConfig.minSupportedVersion;
+  const minVer = rawConfig.minVersion;
   const blockedVersions = Array.isArray(rawConfig.blockedVersions) ? rawConfig.blockedVersions : undefined;
   const channel = rawConfig.channel;
   const rolloutPercent = rawConfig.rolloutPercent !== undefined ? Number(rawConfig.rolloutPercent) : undefined;

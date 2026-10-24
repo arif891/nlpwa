@@ -46,7 +46,9 @@ export async function handleStagingBackgroundFetchSuccess(event) {
       try {
         const u = new URL(targetPath, 'http://localhost');
         if (f.path === u.pathname || resolvePathWithBase(f.path, config.base) === u.pathname) return true;
-      } catch {}
+      } catch (err) {
+        logger.debug('[NLPWA] Failed to parse target URL in bg-fetch check:', err?.message || err);
+      }
       return false;
     });
 

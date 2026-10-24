@@ -54,7 +54,11 @@ export function openDB(dbName, version = 1, onUpgrade) {
       request.onsuccess = () => {
         const db = request.result;
         db.onversionchange = () => {
-          try { db.close(); } catch {}
+          try {
+            db.close();
+          } catch (err) {
+            console.debug?.('[NLPWA] Error closing IndexedDB on versionchange:', err?.message || err);
+          }
           _dbCache.delete(cacheKey);
         };
         resolve(db);

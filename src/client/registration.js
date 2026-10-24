@@ -51,7 +51,11 @@ export async function register(swUrl = '/sw.js', options = {}) {
   // If another register() call is in progress, wait for it to complete
   // so any created listeners can be cleaned up cleanly without leaking
   if (_inFlightRegisterPromise) {
-    try { await _inFlightRegisterPromise; } catch {}
+    try {
+      await _inFlightRegisterPromise;
+    } catch (err) {
+      logger.debug('[NLPWA] In-flight register promise rejected:', err?.message || err);
+    }
     if (options._auto && _isRegisteredOrRegistering) {
       return null;
     }
@@ -61,7 +65,11 @@ export async function register(swUrl = '/sw.js', options = {}) {
     _isRegisteredOrRegistering = true;
 
     if (_activeUnsubscribe) {
-      try { _activeUnsubscribe(); } catch {}
+      try {
+        _activeUnsubscribe();
+      } catch (err) {
+        logger.debug('[NLPWA] Error running active unsubscribe:', err?.message || err);
+      }
       _activeUnsubscribe = null;
     }
 
@@ -210,7 +218,9 @@ export async function register(swUrl = '/sw.js', options = {}) {
               }
             }
           }
-        } catch {}
+        } catch (err) {
+          logger.debug('[NLPWA] Error reading reload throttle record from sessionStorage:', err?.message || err);
+        }
 
         if (canReload) {
           logger.warn(`[NLPWA] Active or pinned version is below minimum supported version (${data?.minVersion}). Reloading application.`);
@@ -297,10 +307,18 @@ export async function register(swUrl = '/sw.js', options = {}) {
 export async function unregister(scope) {
   _isRegisteredOrRegistering = false;
   if (_inFlightRegisterPromise) {
-    try { await _inFlightRegisterPromise; } catch {}
+    try {
+      await _inFlightRegisterPromise;
+    } catch (err) {
+      logger.debug('[NLPWA] In-flight register promise rejected during unregister:', err?.message || err);
+    }
   }
   if (_activeUnsubscribe) {
-    try { _activeUnsubscribe(); } catch {}
+    try {
+      _activeUnsubscribe();
+    } catch (err) {
+      logger.debug('[NLPWA] Error unsubscribing during unregister:', err?.message || err);
+    }
     _activeUnsubscribe = null;
   }
 

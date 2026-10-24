@@ -12,7 +12,8 @@ function getEffectiveConfig(options = {}) {
   }
   try {
     return getConfig() || {};
-  } catch {
+  } catch (err) {
+    logger.debug('Config load fallback:', err?.message || err);
     return (typeof self !== 'undefined' && self.__NLPWA_CONFIG__) ? self.__NLPWA_CONFIG__ : {};
   }
 }
@@ -43,7 +44,9 @@ export async function resolveTargetCache(request, options = {}) {
   try {
     const origin = (typeof self !== 'undefined' && self.location) ? self.location.origin : 'http://localhost';
     parsedUrl = new URL(rawUrl, origin);
-  } catch {}
+  } catch (err) {
+    logger.debug('Failed to parse request URL in bg-fetch routing:', err?.message || err);
+  }
 
   // 1. Is it a manifest/precache file from info.json?
   if (parsedUrl && isManifestFile(parsedUrl, config)) {
@@ -53,7 +56,9 @@ export async function resolveTargetCache(request, options = {}) {
       if (activeCache) {
         return { cache: activeCache, cacheName: offlinePrefix };
       }
-    } catch {}
+    } catch (err) {
+      logger.debug('Failed to open active cache, falling back to prefix:', err?.message || err);
+    }
     return {
       cache: await caches.open(offlinePrefix),
       cacheName: offlinePrefix,
@@ -135,7 +140,9 @@ export async function handleBackgroundFetchSuccess(event, options = {}) {
               } catch {
                 responseData = text;
               }
-            } catch {}
+            } catch (err) {
+              logger.debug('Failed to read response body text for upload result:', err?.message || err);
+            }
 
             uploadResults.push({
               url: rawUrl,

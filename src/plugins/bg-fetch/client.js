@@ -39,15 +39,21 @@ export class BackgroundFetchClient {
 
         if (data.type === BG_FETCH_MESSAGE_TYPES.BG_FETCH_SUCCESS) {
           for (const fn of this.successListeners) {
-            try { fn(data); } catch {}
+            try { fn(data); } catch (err) {
+              console.debug?.('[NLPWA:BgFetch] Success listener threw:', err?.message || err);
+            }
           }
         } else if (data.type === BG_FETCH_MESSAGE_TYPES.BG_FETCH_FAIL) {
           for (const fn of this.failListeners) {
-            try { fn(data); } catch {}
+            try { fn(data); } catch (err) {
+              console.debug?.('[NLPWA:BgFetch] Fail listener threw:', err?.message || err);
+            }
           }
         } else if (data.type === BG_FETCH_MESSAGE_TYPES.BG_FETCH_ABORT) {
           for (const fn of this.abortListeners) {
-            try { fn(data); } catch {}
+            try { fn(data); } catch (err) {
+              console.debug?.('[NLPWA:BgFetch] Abort listener threw:', err?.message || err);
+            }
           }
         }
       });
@@ -258,7 +264,9 @@ export class BackgroundFetchClient {
           uploadTotal,
           percent,
         });
-      } catch {}
+      } catch (err) {
+        console.debug?.('[NLPWA:BgFetch] Progress callback threw:', err?.message || err);
+      }
     };
 
     registration.addEventListener?.('progress', handler);
@@ -268,7 +276,9 @@ export class BackgroundFetchClient {
     return () => {
       try {
         registration.removeEventListener?.('progress', handler);
-      } catch {}
+      } catch (err) {
+        console.debug?.('[NLPWA:BgFetch] Error removing progress listener:', err?.message || err);
+      }
     };
   }
 

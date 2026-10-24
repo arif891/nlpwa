@@ -39,7 +39,9 @@ export function isUserEditing({ checkDirty = true } = {}) {
       if (document.querySelector('[data-dirty="true"], [data-unsaved="true"]')) {
         return true;
       }
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] DOM query error in isFormDirty:', err?.message || err);
+    }
   }
 
   return false;

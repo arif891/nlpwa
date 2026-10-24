@@ -365,7 +365,7 @@ NLPWA includes an intelligent cleanup manager for the dynamic `runtime` cache:
 | SW vs. App Versioning | Separated (SW manual, App content-hash derived) | App updates don't cause browser byte-level SW reinstalls. Identical rebuilds produce identical hashes, eliminating watch loops and false update alerts |
 | Dynamic Config | `config.js` → `config.json` in `offline` cache | Route and strategy changes update OTA without touching SW code |
 | File Tracking Scope | Offline files (`config.precache`) + `config.json` only | Runtime assets are cached lazily; keeps manifest tiny & focused |
-| Two-Tier Update API | `/version.json` (check) + `/info.json` (manifest) | Polling costs ~20 bytes instead of pulling full file trees |
+| Two-Tier Update API | `/api/update/version.json` (check) + `/api/update/info.json` (manifest) | Polling costs ~20 bytes instead of pulling full file trees |
 | Cache layout | `nlpwa-meta` + `offline@<version>-<id>` + `runtime` | Atomic active pointer ensures zero mixed-version states; old caches pruned on commit |
 | Manifest storage | Cache snapshot at `/_nlpwa/snapshot.json` | Survives SW restarts, marks cache complete, no IndexedDB required |
 | Diff computation | Client-side (SW) | Server stays stateless; no complex delta calculations |

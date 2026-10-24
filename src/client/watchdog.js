@@ -154,7 +154,9 @@ export function isFirstPartyError(eventOrError) {
           return false;
         }
       }
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] URL parsing error in isFirstPartyError:', err?.message || err);
+    }
   }
 
   const stack = eventOrError.error?.stack || eventOrError.stack || '';

@@ -88,7 +88,9 @@ function notifySubscribers() {
   for (const listener of _subscribers) {
     try {
       listener(current);
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] Subscriber callback threw:', err?.message || err);
+    }
   }
 }
 
@@ -114,7 +116,9 @@ export function subscribe(listener) {
 
   try {
     listener(getState());
-  } catch {}
+  } catch (err) {
+    console.debug?.('[NLPWA] Immediate subscriber invocation threw:', err?.message || err);
+  }
 
   return () => {
     _subscribers.delete(listener);
@@ -221,7 +225,9 @@ if (typeof window !== 'undefined') {
       if (Object.keys(patch).length > 0) {
         setState(patch);
       }
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] Failed to query initial state from SW:', err?.message || err);
+    }
   };
 
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
@@ -243,13 +249,17 @@ export async function subscribeChannel(channel) {
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.setItem('nlpwa_channel', channel);
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] localStorage access blocked in subscribeChannel:', err?.message || err);
+    }
   }
   setState({ channel });
   try {
     const { sendToSW } = await import('./messaging.js');
     await sendToSW({ type: 'SET_CHANNEL', channel });
-  } catch {}
+  } catch (err) {
+    console.debug?.('[NLPWA] Failed to broadcast SET_CHANNEL to SW:', err?.message || err);
+  }
   return channel;
 }
 
@@ -263,7 +273,9 @@ export function getChannel() {
   if (typeof localStorage !== 'undefined') {
     try {
       return localStorage.getItem('nlpwa_channel') || null;
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] localStorage access blocked in getChannel:', err?.message || err);
+    }
   }
   return null;
 }

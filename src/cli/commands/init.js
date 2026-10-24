@@ -21,7 +21,9 @@ function resolveAppName(targetDir, explicitName) {
           .replace(/[-_]+/g, ' ')
           .replace(/\b\w/g, (ch) => ch.toUpperCase());
       }
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Could not parse package.json for project name:', err?.message || err);
+    }
   }
   const dirName = basename(targetDir);
   if (dirName && dirName !== '.' && dirName !== '/') {
@@ -208,7 +210,9 @@ ${signingConfigFields}  precache: [
           appendFileSync(gitignorePath, '\n# NLPWA Signing Keys\n.env.nlpwa\n', 'utf8');
           console.log(`  ${c.green}+${c.reset} Added .env.nlpwa to ${relative(process.cwd(), gitignorePath) || '.gitignore'}`);
         }
-      } catch {}
+      } catch (err) {
+        if (process.env.DEBUG) console.debug('[NLPWA] Could not update .gitignore:', err?.message || err);
+      }
     }
   }
 

@@ -25,9 +25,6 @@ export function getManifestSignPayload(manifest) {
   if (manifest.minVersion !== undefined && manifest.minVersion !== null) {
     canonicalObj.minVersion = String(manifest.minVersion);
   }
-  if (manifest.minSupportedVersion !== undefined && manifest.minSupportedVersion !== null) {
-    canonicalObj.minSupportedVersion = String(manifest.minSupportedVersion);
-  }
   if (Array.isArray(manifest.blockedVersions)) {
     canonicalObj.blockedVersions = [...manifest.blockedVersions].map(String).sort();
   }

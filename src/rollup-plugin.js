@@ -80,7 +80,9 @@ export function nlpwaPlugin(options = {}) {
               contentHash = computeManifestHash(files, targetConfig || {});
               cachedContentHash = contentHash;
             }
-          } catch {}
+          } catch (err) {
+            if (process.env.DEBUG) console.debug('[NLPWA] Could not compute preliminary content hash in rollup plugin:', err?.message || err);
+          }
         }
         return `export const APP_VERSION = ${JSON.stringify(targetVersion)};\nexport const BASE_VERSION = ${JSON.stringify(targetVersion)};\nexport const CONTENT_HASH = ${JSON.stringify(contentHash)};\nexport default APP_VERSION;\n`;
       }

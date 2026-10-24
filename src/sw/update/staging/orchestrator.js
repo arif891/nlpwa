@@ -38,9 +38,9 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
   const files = manifest.files.filter((f) => isSafePath(f?.path));
   const activeHashes = new Map((activeSnapshot?.files ?? []).map((f) => [f.path, f.hash]));
 
-  const respectSaveData = config.staging?.respectSaveData ?? config.respectSaveData ?? false;
-  const maxUpdateBytes = config.staging?.maxUpdateBytes ?? config.maxUpdateBytes ?? 0;
-  const wifiOnlyThresholdBytes = config.staging?.wifiOnlyThresholdBytes ?? config.wifiOnlyThresholdBytes ?? 0;
+  const respectSaveData = config.respectSaveData ?? false;
+  const maxUpdateBytes = config.maxUpdateBytes ?? 0;
+  const wifiOnlyThresholdBytes = config.wifiOnlyThresholdBytes ?? 0;
 
   const conn = typeof navigator !== 'undefined' ? navigator?.connection : null;
   if (respectSaveData && conn?.saveData === true) {

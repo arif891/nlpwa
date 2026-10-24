@@ -8,6 +8,8 @@
  * @param {Response} response
  * @returns {Promise<Response>}
  */
+import { logger } from '../logger.js';
+
 export async function createRangeResponse(request, response) {
   if (!request?.headers || typeof request.headers.get !== 'function') {
     return response;
@@ -128,16 +130,21 @@ export async function createRangeResponse(request, response) {
           } finally {
             try {
               activeReader?.releaseLock();
-            } catch {}
+            } catch (err) {
+              logger.debug('[NLPWA] Error releasing reader lock in range slice:', err?.message || err);
+            }
           }
         },
         async cancel() {
           try {
             await activeReader?.cancel();
-          } catch {}
+          } catch (err) {
+            logger.debug('[NLPWA] Error cancelling reader in range slice:', err?.message || err);
+          }
         },
       });
-    } catch {
+    } catch (err) {
+      logger.debug('[NLPWA] Failed to construct ReadableStream for range request; falling back to memory slice:', err?.message || err);
       stream = null;
     }
 

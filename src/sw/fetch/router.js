@@ -18,6 +18,7 @@ const STRATEGY_FN = {
 };
 
 import { getActiveSnapshotPaths } from '../cache/store.js';
+import { logger } from '../logger.js';
 
 const _routePatternCache = new WeakMap();
 const _stringPatternCache = new Map();
@@ -90,7 +91,8 @@ export function compileRoutePattern(routeOrPattern, defaultOrigin = 'http://loca
       }
       _stringPatternCache.set(cacheKey, pattern);
     }
-  } catch {
+  } catch (err) {
+    logger.debug('[NLPWA] Failed to compile route pattern:', err?.message || err);
     pattern = null;
   }
 

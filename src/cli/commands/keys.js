@@ -96,7 +96,9 @@ export async function cmdGenerateKeys(args) {
           console.warn(`  ${c.yellow}  Please add to your config manually: ${c.cyan}publicKey: '${rawPublicBase64}'${c.reset}\n`);
         }
       }
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Could not sync source config public key:', err?.message || err);
+    }
   }
 
 

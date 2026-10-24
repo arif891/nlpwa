@@ -38,7 +38,9 @@ if (typeof window !== 'undefined') {
     for (const listener of _installedListeners) {
       try {
         listener(event);
-      } catch {}
+      } catch (err) {
+        console.debug?.('[NLPWA] onInstalled listener callback threw:', err?.message || err);
+      }
     }
   });
 
@@ -49,7 +51,9 @@ if (typeof window !== 'undefined') {
       _isInstalled = e.matches;
       notifyListeners();
     });
-  } catch {}
+  } catch (err) {
+    console.debug?.('[NLPWA] matchMedia(display-mode) unsupported or error:', err?.message || err);
+  }
 }
 
 function notifyListeners() {
@@ -57,7 +61,9 @@ function notifyListeners() {
   for (const listener of _listeners) {
     try {
       listener(info);
-    } catch {}
+    } catch (err) {
+      console.debug?.('[NLPWA] onInstallable listener callback threw:', err?.message || err);
+    }
   }
 }
 
@@ -108,7 +114,9 @@ export function onInstallable(callback) {
       ...getInstallInfo(),
       prompt: promptInstall,
     });
-  } catch {}
+  } catch (err) {
+    console.debug?.('[NLPWA] Immediate onInstallable invocation threw:', err?.message || err);
+  }
 
   return () => {
     _listeners.delete(callback);

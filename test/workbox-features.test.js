@@ -320,7 +320,6 @@ test('config schema: validateConfig accepts newly added route and top-level opti
     ...DEFAULTS,
     version: '1.0.0',
     minVersion: '1.0.0',
-    minSupportedVersion: '1.0.0',
     cacheKeyWillBeUsed: () => {},
     onPush: () => {},
     onNotificationClick: () => {},

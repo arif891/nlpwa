@@ -36,10 +36,12 @@ export async function fetchServerVersion() {
         _lastVersionETag = persisted.etag;
         _lastVersionData = persisted.data;
       }
-    } catch {}
+    } catch (err) {
+      logger.debug('[NLPWA] Failed to read version ETag from meta:', err?.message || err);
+    }
   }
 
-  const baseTimeout = endpoints.timeoutMs ?? config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
+  const baseTimeout = endpoints.timeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && baseTimeout > 0
     ? AbortSignal.timeout(baseTimeout)
     : undefined;
@@ -60,7 +62,7 @@ export async function fetchServerVersion() {
       ...(_lastVersionData || {}),
       notModified: true,
       version: _lastVersionData?.version || undefined,
-      minVersion: _lastVersionData?.minVersion || _lastVersionData?.minSupportedVersion || undefined,
+      minVersion: _lastVersionData?.minVersion || undefined,
       rolloutPercent: _lastVersionData?.rolloutPercent,
       blockedVersions: _lastVersionData?.blockedVersions,
       channel: _lastVersionData?.channel,
@@ -101,7 +103,7 @@ export async function fetchServerInfo() {
   const endpoints = getUpdateEndpoints();
   const infoEndpoint = endpoints.infoEndpoint;
 
-  const baseTimeout = endpoints.timeoutMs ?? config.updateTimeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
+  const baseTimeout = endpoints.timeoutMs ?? config.updateAPI?.timeoutMs ?? 15000;
   const timeoutMs = baseTimeout > 0 ? baseTimeout * 2 : 0;
   const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' && timeoutMs > 0
     ? AbortSignal.timeout(timeoutMs)

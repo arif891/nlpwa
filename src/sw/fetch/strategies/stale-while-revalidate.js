@@ -56,11 +56,13 @@ export async function staleWhileRevalidate(request, event, options = {}) {
           if (typeof options.onRevalidated === 'function') {
             try {
               options.onRevalidated({ request, response, cachedResponse: cached, event });
-            } catch {}
+            } catch (err) {
+              logger.debug('[NLPWA] onRevalidated callback threw:', err?.message || err);
+            }
           }
           return response;
-        } catch {
-          // offline during revalidation is fine
+        } catch (err) {
+          logger.debug('[NLPWA] Background revalidation failed (offline/network error):', err?.message || err);
         }
       })();
       if (event && typeof event.waitUntil === 'function') event.waitUntil(revalidate);

@@ -15,7 +15,9 @@ export async function cmdStatus(args) {
   if (configFile) {
     try {
       sourceConfig = await loadConfig(configFile);
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Could not load source config:', err?.message || err);
+    }
   }
 
   const rawConfigPath = sourceConfig?.configPath || '/api/update/config.json';
@@ -29,7 +31,9 @@ export async function cmdStatus(args) {
   if (existsSync(configJsonPath)) {
     try {
       activeConfig = JSON.parse(readFileSync(configJsonPath, 'utf8'));
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Could not parse config.json:', err?.message || err);
+    }
   }
 
   const { versionEndpoint, infoEndpoint } = resolveUpdateEndpoints(activeConfig ?? sourceConfig ?? {});
@@ -42,12 +46,16 @@ export async function cmdStatus(args) {
   if (existsSync(versionOut)) {
     try {
       versionData = JSON.parse(readFileSync(versionOut, 'utf8'));
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Could not parse version.json:', err?.message || err);
+    }
   }
   if (existsSync(infoOut)) {
     try {
       infoData = JSON.parse(readFileSync(infoOut, 'utf8'));
-    } catch {}
+    } catch (err) {
+      if (process.env.DEBUG) console.debug('[NLPWA] Could not parse info.json:', err?.message || err);
+    }
   }
 
   console.log(`  ${c.dim}Source Config         :${c.reset} ${configFile ? c.green + configFile + c.reset : c.yellow + 'not found' + c.reset}`);

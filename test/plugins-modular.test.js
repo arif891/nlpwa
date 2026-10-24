@@ -89,7 +89,7 @@ test('share plugin: ShareTargetPlugin intercepts share requests and stores data'
 
   assert.ok(response instanceof Response);
   assert.equal(response.status, 303);
-  assert.equal(response.headers.get('Location'), 'http://localhost:3000/app?shared=1');
+  assert.match(response.headers.get('Location'), /^http:\/\/localhost:3000\/app\?shared=1&shareId=[\w-]+/);
 
   // Verify getLatestSharedData consumes from queue
   const latest = await getLatestSharedData();

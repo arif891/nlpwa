@@ -28,7 +28,7 @@ export async function fetchVerified({
   if (isLarge && typeof self !== 'undefined' && self.registration?.backgroundFetch) {
     try {
       const hashPart = expected ? `:${expected.slice(0, 16)}` : '';
-      const bgId = `nlpwa-bg:${encodeURIComponent(path)}${hashPart}`;
+      const bgId = `nlpwa-stage:${encodeURIComponent(path)}${hashPart}`;
       let bgRegistration = await self.registration.backgroundFetch.get(bgId);
       if (!bgRegistration) {
         bgRegistration = await self.registration.backgroundFetch.fetch(bgId, [path], {

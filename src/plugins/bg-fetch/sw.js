@@ -91,6 +91,14 @@ export async function resolveTargetCache(request, options = {}) {
  */
 export async function handleBackgroundFetchSuccess(event, options = {}) {
   const bgFetch = event.registration;
+  if (!bgFetch) return;
+
+  // Staging background fetches use prefix 'nlpwa-stage:' and are handled separately by the updater.
+  // Ignore them here so they never pollute the active live cache.
+  if (bgFetch.id?.startsWith('nlpwa-stage:')) {
+    return;
+  }
+
   try {
     const records = await bgFetch.matchAll();
 

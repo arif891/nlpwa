@@ -220,7 +220,9 @@ export async function handleShareTarget(event, config = {}) {
     logger.warn('[NLPWA] Share target handling error:', err?.message || err);
   }
 
-  const targetUrl = new URL(redirectUrl, request.url).href;
+  const redirectUri = new URL(redirectUrl, request.url);
+  redirectUri.searchParams.set('shareId', shareId);
+  const targetUrl = redirectUri.href;
   return Response.redirect(targetUrl, 303);
 }
 

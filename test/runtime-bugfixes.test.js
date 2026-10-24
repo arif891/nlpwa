@@ -186,7 +186,7 @@ describe('Runtime Bugfixes & Hardening', () => {
     const res = await performFetch(shareReq, null, {}, [plugin]);
     assert.equal(res instanceof Response, true);
     assert.equal(res.status, 303);
-    assert.equal(res.headers.get('Location'), 'https://example.com/?shared=1');
+    assert.match(res.headers.get('Location'), /^https:\/\/example\.com\/\?shared=1&shareId=[\w-]+/);
   });
 
   test('P2: nlpwa add includes sync, share, badge, and bg-fetch', () => {
@@ -349,5 +349,43 @@ describe('Runtime Bugfixes & Hardening', () => {
     await setActive({ cache: 'offline@test-snap', version: '1.0.0' });
     const active = await getActive();
     assert.equal(active?.cache, 'offline@test-snap');
+  });
+
+  test('staging background fetch isolates to staged cache and does not pollute active cache', async () => {
+    const { handleStagingBackgroundFetchSuccess } = await import('../src/sw/events/bg-fetch.js');
+    const { handleBackgroundFetchSuccess } = await import('../src/plugins/bg-fetch/sw.js');
+    const { setStaged, setActive, clearActive, clearStaged } = await import('../src/sw/cache/store.js');
+
+    await clearActive();
+    await clearStaged();
+
+    const activeCache = await caches.open('offline@active-v1');
+    const stagedCache = await caches.open('offline@staged-v2');
+
+    await setActive({ cache: 'offline@active-v1', version: '1.0.0' });
+    await setStaged({ cache: 'offline@staged-v2', version: '2.0.0', complete: false });
+
+    const mockEvent = {
+      registration: {
+        id: 'nlpwa-stage:%2Fassets%2Flarge-file.bin',
+        matchAll: async () => [
+          {
+            request: new Request('https://example.com/assets/large-file.bin'),
+            responseReady: Promise.resolve(new Response('large-file-content', { status: 200 })),
+          },
+        ],
+      },
+    };
+
+    // 1. bg-fetch plugin ignores nlpwa-stage: and does not write to active cache
+    await handleBackgroundFetchSuccess(mockEvent);
+    const activeMatch = await activeCache.match('https://example.com/assets/large-file.bin');
+    assert.ok(!activeMatch, 'Active live cache must not be modified by staging background fetch');
+
+    // 2. handleStagingBackgroundFetchSuccess writes directly to staged cache
+    await handleStagingBackgroundFetchSuccess(mockEvent);
+    const stagedMatch = await stagedCache.match('https://example.com/assets/large-file.bin');
+    assert.ok(stagedMatch, 'Staged cache must contain the completed background fetch file');
+    assert.equal(await stagedMatch.text(), 'large-file-content');
   });
 });

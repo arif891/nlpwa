@@ -200,7 +200,7 @@ test('share target: handleShareTarget caches data and redirects with 303', async
 
   const response = await handleShareTarget(event, config);
   assert.equal(response.status, 303);
-  assert.equal(response.headers.get('Location'), 'https://example.com/?shared=1');
+  assert.match(response.headers.get('Location'), /^https:\/\/example\.com\/\?shared=1&shareId=[\w-]+/);
 
   // Verify data can be retrieved and is cleared upon retrieval
   const shared = await getLatestSharedData();

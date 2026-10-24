@@ -7,6 +7,7 @@ import {
   handlePush,
   handleNotificationClick,
   handleSync,
+  handleStagingBackgroundFetchSuccess,
 } from './events/index.js';
 
 /**
@@ -25,4 +26,9 @@ export function initSW(userConfig = {}) {
   self.addEventListener('periodicsync', handleSync);
   self.addEventListener('push', handlePush(config));
   self.addEventListener('notificationclick', handleNotificationClick(config));
+  self.addEventListener('backgroundfetchsuccess', (event) => {
+    if (event.registration?.id?.startsWith('nlpwa-stage:')) {
+      event.waitUntil(handleStagingBackgroundFetchSuccess(event));
+    }
+  });
 }

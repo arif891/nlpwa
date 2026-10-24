@@ -363,7 +363,12 @@ describe('Runtime Bugfixes & Hardening', () => {
     const stagedCache = await caches.open('offline@staged-v2');
 
     await setActive({ cache: 'offline@active-v1', version: '1.0.0' });
-    await setStaged({ cache: 'offline@staged-v2', version: '2.0.0', complete: false });
+    await setStaged({
+      cache: 'offline@staged-v2',
+      version: '2.0.0',
+      complete: false,
+      files: [{ path: '/assets/large-file.bin', hash: '' }],
+    });
 
     const mockEvent = {
       registration: {
@@ -387,5 +392,121 @@ describe('Runtime Bugfixes & Hardening', () => {
     const stagedMatch = await stagedCache.match('https://example.com/assets/large-file.bin');
     assert.ok(stagedMatch, 'Staged cache must contain the completed background fetch file');
     assert.equal(await stagedMatch.text(), 'large-file-content');
+  });
+
+  test('staging background fetch verifies digest before put when file size <= maxVerifyBytes', async () => {
+    const { handleStagingBackgroundFetchSuccess } = await import('../src/sw/events/bg-fetch.js');
+    const { setStaged, clearStaged } = await import('../src/sw/cache/store.js');
+    const { sha256Hex } = await import('../src/shared/hash.js');
+
+    await clearStaged();
+    const stagedCache = await caches.open('offline@staged-verify');
+
+    const expectedContent = 'verified-large-content';
+    const validHash = await sha256Hex(new TextEncoder().encode(expectedContent));
+    const invalidHash = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+    // 1. With invalid hash mismatch in strict mode, record must NOT be written to cache
+    let aborted = false;
+    await setStaged({
+      cache: 'offline@staged-verify',
+      version: '2.0.0',
+      complete: false,
+      files: [{ path: '/assets/verified.bin', hash: invalidHash, size: 10 * 1024 * 1024 }],
+    });
+
+    const failingEvent = {
+      registration: {
+        id: `nlpwa-stage:%2Fassets%2Fverified.bin:${invalidHash.slice(0, 16)}`,
+        abort: async () => { aborted = true; },
+        matchAll: async () => [
+          {
+            request: new Request('https://example.com/assets/verified.bin'),
+            responseReady: Promise.resolve(new Response(expectedContent, { status: 200 })),
+          },
+        ],
+      },
+    };
+
+    await handleStagingBackgroundFetchSuccess(failingEvent);
+    assert.ok(aborted, 'Registration must be aborted on hash mismatch');
+    const unverifiedMatch = await stagedCache.match('https://example.com/assets/verified.bin');
+    assert.ok(!unverifiedMatch, 'Mismatched file must not be put into staged cache');
+
+    // 2. With valid matching hash, record is verified and stored in staged cache
+    await setStaged({
+      cache: 'offline@staged-verify',
+      version: '2.0.0',
+      complete: false,
+      files: [{ path: '/assets/verified.bin', hash: validHash, size: 10 * 1024 * 1024 }],
+    });
+
+    const successEvent = {
+      registration: {
+        id: `nlpwa-stage:%2Fassets%2Fverified.bin:${validHash.slice(0, 16)}`,
+        matchAll: async () => [
+          {
+            request: new Request('https://example.com/assets/verified.bin'),
+            responseReady: Promise.resolve(new Response(expectedContent, { status: 200 })),
+          },
+        ],
+      },
+    };
+
+    await handleStagingBackgroundFetchSuccess(successEvent);
+    const verifiedMatch = await stagedCache.match('https://example.com/assets/verified.bin');
+    assert.ok(verifiedMatch, 'Verified file must be stored in staged cache');
+    assert.equal(await verifiedMatch.text(), expectedContent);
+  });
+
+  test('staging background fetch rejects stale download when ID hash prefix differs from staged manifest', async () => {
+    const { handleStagingBackgroundFetchSuccess } = await import('../src/sw/events/bg-fetch.js');
+    const { setStaged, clearStaged } = await import('../src/sw/cache/store.js');
+
+    await clearStaged();
+    const stagedCache = await caches.open('offline@staged-stale');
+
+    const newVersionHash = 'bbbbbbbbbbbbbbbb1234567890abcdef1234567890abcdef1234567890abcdef';
+    const oldVersionHash = 'aaaaaaaaaaaaaaaa1234567890abcdef1234567890abcdef1234567890abcdef';
+
+    await setStaged({
+      cache: 'offline@staged-stale',
+      version: '3.0.0',
+      complete: false,
+      files: [{ path: '/assets/model.bin', hash: newVersionHash, size: 50 * 1024 * 1024 }],
+    });
+
+    let aborted = false;
+    const staleEvent = {
+      registration: {
+        // ID embeds old version hash prefix
+        id: `nlpwa-stage:%2Fassets%2Fmodel.bin:${oldVersionHash.slice(0, 16)}`,
+        abort: async () => { aborted = true; },
+        matchAll: async () => [
+          {
+            request: new Request('https://example.com/assets/model.bin'),
+            responseReady: Promise.resolve(new Response('old-model-weights', { status: 200 })),
+          },
+        ],
+      },
+    };
+
+    await handleStagingBackgroundFetchSuccess(staleEvent);
+    assert.ok(aborted, 'Stale download registration must be aborted');
+    const staleMatch = await stagedCache.match('https://example.com/assets/model.bin');
+    assert.ok(!staleMatch, 'Stale release file must NOT be written into newer staged cache');
+  });
+
+  test('checkForUpdate coalesces concurrent check requests into sequential passes', async () => {
+    const { checkForUpdate, resetUpdateCheckState } = await import('../src/sw/update/index.js');
+    resetUpdateCheckState();
+
+    // Launch two checks concurrently
+    const p1 = checkForUpdate();
+    const p2 = checkForUpdate({ force: true });
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    assert.ok(r1 !== undefined);
+    assert.ok(r2 !== undefined);
   });
 });

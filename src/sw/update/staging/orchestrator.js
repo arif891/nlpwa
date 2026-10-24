@@ -97,8 +97,14 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       cache: `${config.caches.offline}@${manifest.version}-${Date.now().toString(36)}`,
       version: manifest.version,
       swVersion: config.version,
+      files,
       complete: false,
       retryCount: 0,
+    };
+  } else {
+    staged = {
+      ...staged,
+      files,
     };
   }
 

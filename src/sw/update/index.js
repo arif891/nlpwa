@@ -14,7 +14,7 @@ import { verifyManifestSignature } from '../../shared/crypto.js';
 
 export {
   setUpdateStatus, getUpdateStatus, getCurrentStatus, isCommitDeferred, setCommitDeferred,
-  rollbackToFallback,
+  rollbackToFallback, resetUpdateCheckState,
 };
 
 /**
@@ -61,6 +61,18 @@ async function enforceMinVersion(source, { active = null, alreadyEnforced = fals
   return true;
 }
 
+let _activeCheckPromise = null;
+let _hasQueuedCheck = false;
+let _queuedCheckForce = false;
+let _queuedResolvers = [];
+
+function resetUpdateCheckState() {
+  _activeCheckPromise = null;
+  _hasQueuedCheck = false;
+  _queuedCheckForce = false;
+  _queuedResolvers = [];
+}
+
 /**
  * Run a complete two-tier update check cycle:
  *
@@ -75,12 +87,50 @@ async function enforceMinVersion(source, { active = null, alreadyEnforced = fals
  * On a first install there is nothing to protect, so the staged cache is
  * switched in right away and no banner is shown.
  *
- * Safe to call concurrently: a shared lock lets only one run proceed.
+ * Safe to call concurrently: a shared lock and coalescing queue ensure
+ * subsequent checks (e.g. concurrent large file completions) are never missed.
  *
  * @returns {Promise<{ updated: boolean, version?: string }>}
  */
 export async function checkForUpdate(options = {}) {
-  return await runUpdateCheck(options);
+  const force = Boolean(options.force);
+  if (_activeCheckPromise) {
+    _hasQueuedCheck = true;
+    if (force) _queuedCheckForce = true;
+    return new Promise((resolve, reject) => {
+      _queuedResolvers.push({ resolve, reject });
+    });
+  }
+
+  _activeCheckPromise = (async () => {
+    try {
+      let result = await runUpdateCheck({ force });
+      while (_hasQueuedCheck) {
+        _hasQueuedCheck = false;
+        const nextForce = _queuedCheckForce;
+        _queuedCheckForce = false;
+        const resolvers = _queuedResolvers;
+        _queuedResolvers = [];
+        try {
+          const nextResult = await runUpdateCheck({ force: nextForce });
+          resolvers.forEach((r) => r.resolve(nextResult));
+          result = nextResult;
+        } catch (err) {
+          resolvers.forEach((r) => r.reject(err));
+        }
+      }
+      return result;
+    } finally {
+      _activeCheckPromise = null;
+      if (_queuedResolvers.length > 0) {
+        const remaining = _queuedResolvers;
+        _queuedResolvers = [];
+        remaining.forEach((r) => r.resolve({ updated: false }));
+      }
+    }
+  })();
+
+  return _activeCheckPromise;
 }
 
 async function runUpdateCheck({ force = false } = {}) {
@@ -490,5 +540,5 @@ async function _doUpdateCheck({ force = false } = {}) {
   }, () => {
     logger.log('[NLPWA] Staging already in progress, skipping.');
     return { updated: false };
-  });
+  }, { wait: force, timeoutMs: 10000 });
 }

@@ -14,7 +14,7 @@
     "url": "https://github.com/arif891/nlpwa/issues"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "main": "./out/client.esm.js",
   "module": "./out/client.esm.js",

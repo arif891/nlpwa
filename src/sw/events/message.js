@@ -301,7 +301,7 @@ export function handleMessage(config) {
       case MESSAGE_TYPES.GET_SHARED_DATA:
         event.waitUntil((async () => {
           try {
-            const data = await getLatestSharedData();
+            const data = await getLatestSharedData(event.data?.shareId);
             reply(MESSAGE_TYPES.SHARED_DATA, data);
           } catch (err) {
             reply(MESSAGE_TYPES.SHARED_DATA, null, err);

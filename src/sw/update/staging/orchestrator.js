@@ -191,6 +191,7 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     }
   };
 
+  const inFlightBgFetches = [];
   await mapConcurrent(files, FETCH_CONCURRENCY, async ({ path, hash, size, skipVerify }) => {
     const fetchUrl = resolvePathWithBase(path, config.base);
     try {
@@ -238,6 +239,11 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
       stats.fetched++;
       notifyProgress(path);
     } catch (err) {
+      if (err?.isBackgroundFetchPending) {
+        inFlightBgFetches.push(path);
+        logger.log(`[NLPWA] Asset ${fetchUrl} is currently downloading in background via Background Fetch.`);
+        return;
+      }
       failed.push(path);
       failedDetails[path] = err.message;
       logger.warn(`[NLPWA] Staging failed: ${fetchUrl} - ${err.message}`);
@@ -249,6 +255,27 @@ export async function stageUpdate(manifest, { activeSnapshot = null, forceRefetc
     progressTimeout = null;
   }
   latestProgressPayload = null;
+
+  // If assets are actively downloading in the background via native Background Fetch and no hard failures occurred:
+  if (inFlightBgFetches.length > 0 && failed.length === 0) {
+    logger.log(
+      `[NLPWA] Staging v${manifest.version} in progress via Background Fetch: ` +
+      `${inFlightBgFetches.length} file(s) downloading (${inFlightBgFetches.join(', ')}). Active version remains live.`
+    );
+    await setStaged({
+      ...staged,
+      pendingBackgroundFetches: inFlightBgFetches,
+      failedFiles: [],
+      failedDetails: {},
+      nextRetryAt: null,
+      complete: false,
+    });
+    return {
+      status: 'downloading-background',
+      pendingBackgroundFetches: inFlightBgFetches,
+      stats,
+    };
+  }
 
   const retryCount = failed.length ? staged.retryCount + 1 : 0;
 

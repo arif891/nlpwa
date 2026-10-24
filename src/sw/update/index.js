@@ -428,6 +428,17 @@ async function _doUpdateCheck({ force = false } = {}) {
       };
     }
 
+    if (result.status === 'downloading-background') {
+      setUpdateStatus('staging');
+      logger.log(`[NLPWA] Staging continuing in background via Background Fetch (${result.pendingBackgroundFetches.length} file(s) downloading).`);
+      return {
+        updated: false,
+        downloading: true,
+        pendingBackgroundFetches: result.pendingBackgroundFetches,
+        version: serverManifest.version,
+      };
+    }
+
     if (result.status === 'incomplete') {
       setUpdateStatus('idle');
       const errorCode = result.hasHashMismatch

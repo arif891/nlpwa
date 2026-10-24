@@ -21,10 +21,6 @@ export async function fetchVerified({
   skipVerify = false,
   timeoutMs = DEFAULT_STAGING_FETCH_TIMEOUT_MS,
 } = {}) {
-  const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-    ? AbortSignal.timeout(timeoutMs)
-    : undefined;
-
   let response = null;
   const isLarge = (fileSize && fileSize > largeFileThresholdBytes);
 
@@ -42,21 +38,41 @@ export async function fetchVerified({
       }
       const record = await bgRegistration.match(path);
       if (record) {
+        let timer = null;
         const bgRes = await Promise.race([
           record.responseReady,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Background Fetch timeout')), timeoutMs)),
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Background Fetch timeout')), timeoutMs);
+          }),
         ]).catch(() => null);
+        if (timer) clearTimeout(timer);
+
         if (bgRes && bgRes.ok) {
           response = bgRes;
           logger.log(`[NLPWA] Downloaded ${path} via Background Fetch.`);
+        } else if (bgRegistration.result === '' || !bgRegistration.result) {
+          // The background download is still in progress natively in the browser/OS.
+          // Do not fail or penalize update with failure backoff.
+          const pendingErr = new Error(`Background Fetch download in progress for ${path}`);
+          pendingErr.code = 'BACKGROUND_FETCH_PENDING';
+          pendingErr.isBackgroundFetchPending = true;
+          pendingErr.bgId = bgId;
+          throw pendingErr;
         }
       }
     } catch (bgErr) {
+      if (bgErr?.isBackgroundFetchPending) {
+        throw bgErr;
+      }
       logger.debug('[NLPWA] Background Fetch failed or unavailable; falling back to fetch():', bgErr?.message || bgErr);
     }
   }
 
   if (!response) {
+    // Crucial: create a fresh AbortSignal with timeoutMs so the fallback fetch does not inherit an expired timer
+    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(timeoutMs)
+      : undefined;
     response = await fetch(path, { cache: 'no-store', signal });
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

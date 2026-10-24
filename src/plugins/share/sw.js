@@ -225,20 +225,34 @@ export async function handleShareTarget(event, config = {}) {
 }
 
 /**
- * Retrieve and consume the next shared data item from the FIFO queue.
+ * Retrieve and consume the next shared data item from the FIFO queue (or a specific shareId).
  *
+ * @param {string} [targetShareId] Optional specific share ID to retrieve and consume
  * @returns {Promise<Object|null>}
  */
-export async function getLatestSharedData() {
+export async function getLatestSharedData(targetShareId = null) {
   if (typeof caches === 'undefined') return null;
 
   try {
     const cache = await caches.open(SHARE_CACHE_NAME);
     const shareId = await withShareLock(async () => {
       const queue = await getShareQueue(cache);
-      if (!queue || queue.length === 0) return null;
-      const id = queue.shift();
-      await saveShareQueue(cache, queue);
+      if (!queue || queue.length === 0) {
+        return targetShareId || null;
+      }
+      let id = null;
+      if (targetShareId) {
+        const idx = queue.indexOf(targetShareId);
+        if (idx !== -1) {
+          id = queue.splice(idx, 1)[0];
+          await saveShareQueue(cache, queue);
+        } else {
+          id = targetShareId;
+        }
+      } else {
+        id = queue.shift();
+        await saveShareQueue(cache, queue);
+      }
       return id;
     });
     if (!shareId) return null;

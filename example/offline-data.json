@@ -1,6 +1,0 @@
-{
-  "title": "Offline Emergency Handbook",
-  "strategy": "cache-only",
-  "version": "1.0",
-  "content": "This payload is stored strictly in cache and is available even with completely severed network connectivity."
-}

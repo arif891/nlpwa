@@ -1,273 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="NLPWA native-like PWA framework showcase featuring delta updates, offline navigation, and dev HUD.">
-  <meta name="theme-color" content="#09090b">
-  <title>NLPWA — Native-like PWA Showcase</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" type="image/svg+xml" href="/assets/offline-badge.svg">
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <!-- Top Navigation Bar -->
-  <header class="app-header">
-    <div class="header-inner">
-      <div class="brand">
-        <img src="/assets/offline-badge.svg" alt="NLPWA Logo" class="brand-icon">
-        <div>
-          <h1 class="brand-title">NLPWA Engine</h1>
-          <div class="brand-subtitle">Offline-First Reader & Framework Showcase</div>
-        </div>
-      </div>
-      <div class="header-status">
-        <span class="status-badge version-badge" id="appVersion">v1.0.0</span>
-        <span class="status-badge" id="connectionStatus">
-          <span class="status-dot" id="connectionDot"></span>
-          <span id="connectionLabel">Online</span>
-        </span>
-        <button class="btn-notif-toggle" id="btnToggleNotif" title="Enable Desktop Push Notifications">
-          <span class="notif-icon">🔔</span>
-          <span id="notifStatusLabel">Alerts</span>
-        </button>
-        <button class="btn-hud-toggle" id="btnToggleHud" title="Toggle Developer HUD">
-          <span class="hud-icon">⚡</span>
-          <span>Dev HUD</span>
-        </button>
-      </div>
-    </div>
-  </header>
 
-  <!-- Floating Update Ready Banner -->
-  <div class="update-banner" id="updateBanner">
-    <div class="update-info">
-      <span class="update-icon">⚡</span>
-      <div class="update-text">
-        <h4>New Version Ready (<span id="targetVersion">1.0.1</span>)</h4>
-        <p>Hashed delta staged in background cache. Zero interruption until you refresh.</p>
-      </div>
-    </div>
-    <button class="btn-update" id="btnApplyUpdate">Apply & Reload</button>
-  </div>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NLPWA Showcase App</title>
+    <link rel="manifest" href="/assets/other/manifest.webmanifest">
+    <link rel="shortcut icon" href="/assets/icon/logo.png" type="image/png">
 
-  <!-- Main Application Container -->
-  <main class="app-container">
-    <!-- Tab Navigation Bar -->
-    <nav class="app-tabs" role="tablist">
-      <button class="tab-btn active" data-tab="feed" role="tab" id="tabFeed">
-        <span class="tab-icon">📰</span>
-        <span>News Feed</span>
-        <span class="tab-badge">SWR</span>
-      </button>
-      <button class="tab-btn" data-tab="handbook" role="tab" id="tabHandbook">
-        <span class="tab-icon">📘</span>
-        <span>Handbook</span>
-        <span class="tab-badge">Cache-Only</span>
-      </button>
-      <button class="tab-btn" data-tab="profile" role="tab" id="tabProfile">
-        <span class="tab-icon">👤</span>
-        <span>Profile & Theme</span>
-        <span class="tab-badge">Net-First</span>
-      </button>
-      <button class="tab-btn" data-tab="live" role="tab" id="tabLive">
-        <span class="tab-icon">⏱️</span>
-        <span>Live Sync</span>
-        <span class="tab-badge">Network</span>
-      </button>
-    </nav>
+    <link rel="stylesheet" href="/assets/css/app.css">
+  </head>
 
-    <!-- Tab 1: News Feed -->
-    <section class="tab-pane active" id="paneFeed" role="tabpanel">
-      <div class="pane-header">
-        <div>
-          <h2 class="pane-title">Developer Feed</h2>
-          <p class="pane-desc">Served with <code>stale-while-revalidate</code> — instant cached reads with silent background revalidation.</p>
-        </div>
-        <button class="btn-action" id="btnRefreshFeed">
-          <span>↻ Refresh Feed</span>
-        </button>
-      </div>
-      <div class="articles-grid" id="feedContainer">
-        <!-- Rendered via JS -->
-      </div>
-    </section>
 
-    <!-- Tab 2: Offline Handbook -->
-    <section class="tab-pane" id="paneHandbook" role="tabpanel">
-      <div class="pane-header">
-        <div>
-          <h2 class="pane-title">Offline Emergency Handbook</h2>
-          <p class="pane-desc">Served strictly via <code>cache-only</code> — guaranteed instant access with zero network reliance.</p>
-        </div>
-        <button class="btn-action" id="btnRefreshHandbook">
-          <span>↻ Reload Handbook</span>
-        </button>
-      </div>
-      <div class="handbook-container" id="handbookContainer">
-        <!-- Rendered via JS -->
-      </div>
-    </section>
+  <body>
 
-    <!-- Tab 3: Profile & Theme -->
-    <section class="tab-pane" id="paneProfile" role="tabpanel">
-      <div class="pane-header">
-        <div>
-          <h2 class="pane-title">User Profile & Theme Configuration</h2>
-          <p class="pane-desc">User data via <code>network-first</code> (offline fallback) and theme tokens via <code>cache-first</code>.</p>
-        </div>
-        <div class="pane-actions">
-          <button class="btn-action" id="btnRefreshProfile"><span>Fetch Profile</span></button>
-          <button class="btn-action" id="btnRefreshTheme"><span>Load Theme</span></button>
-        </div>
-      </div>
-      <div class="profile-layout">
-        <div class="profile-card" id="profileContainer">
-          <!-- Rendered via JS -->
-        </div>
-        <div class="theme-card" id="themeContainer">
-          <!-- Rendered via JS -->
-        </div>
-      </div>
-    </section>
+    <header class="header">
+      <svg class="logo" viewBox="0 0 594 400">
+        <path d="M0 400V0H78.8951L277.276 258.286V0H355.6V400H282.422L78.3234 133.143V400H0Z" />
+        <path d="M291.569 400V0H375.038V326.286H593.428V400H291.569Z" />
+        <path d="M499.097 2.72478e-05H594V305.143H499.097V2.72478e-05Z" />
+      </svg>
 
-    <!-- Tab 4: Live Edge Sync -->
-    <section class="tab-pane" id="paneLive" role="tabpanel">
-      <div class="pane-header">
-        <div>
-          <h2 class="pane-title">Real-Time Edge Clock</h2>
-          <p class="pane-desc">Served via <code>network-only</code> — bypasses all caches to ensure fresh data directly from origin.</p>
-        </div>
-        <button class="btn-action" id="btnRefreshLive">
-          <span>Sync Now</span>
-        </button>
+      <div class="links-wrapper">
+        <a class="link btn active" href="#tab-1">Tab 1</a>
+        <a class="link btn" href="#tab-2">Tab 2</a>
+        <a class="link btn" href="#tab-3">Tab 3</a>
       </div>
-      <div class="live-clock-card" id="clockContainer">
-        <!-- Rendered via JS -->
-      </div>
-    </section>
-  </main>
+    </header>
 
-  <!-- ── Floating Dev HUD Bottom Sheet ──────────────────────────────────────── -->
-  <aside class="dev-sheet" id="devSheet">
-    <!-- Sheet Bar Header -->
-    <div class="sheet-header" id="sheetHeader">
-      <div class="sheet-title-group">
-        <span class="sheet-icon">⚡</span>
-        <span class="sheet-title">NLPWA Engine Inspector</span>
-        <span class="sheet-pill" id="hudStatusPill">Active</span>
+    <div class="window-wrapper">
+      <div class="window" id="tab-1">
+        <layout>
+          <div class="card card-1">
+            <div class="header">
+              <h1 class="heading">heading</h1>
+
+              <span class="other-text">Other</span>
+            </div>
+          </div>
+          <div class="card card-2">
+            <div class="header">
+              <h1 class="heading">heading</h1>
+            </div>
+          </div>
+          <div class="card card-3">
+            <div class="header">
+              <h1 class="heading">heading</h1>
+            </div>
+          </div>
+          <div class="card card-4">
+            <div class="header">
+              <h1 class="heading">heading</h1>
+            </div>
+          </div>
+        </layout>
       </div>
-      <div class="sheet-kpis">
-        <div class="kpi-mini">
-          <span class="kpi-mini-label">SW:</span>
-          <span class="kpi-mini-value" id="swStatus">Connecting...</span>
-        </div>
-        <div class="kpi-mini">
-          <span class="kpi-mini-label">Requests:</span>
-          <span class="kpi-mini-value" id="metricRequests">0</span>
-        </div>
-        <div class="kpi-mini">
-          <span class="kpi-mini-label">Hit Rate:</span>
-          <span class="kpi-mini-value text-emerald" id="metricHitRate">100%</span>
-        </div>
-        <div class="kpi-mini">
-          <span class="kpi-mini-label">Scope:</span>
-          <span class="kpi-mini-value text-sky" id="metricScope">/</span>
-        </div>
-        <div class="kpi-mini">
-          <span class="kpi-mini-label">Outbox:</span>
-          <span class="kpi-mini-value text-amber" id="metricOutbox">0</span>
-        </div>
+      <div class="window" id="tab-2">
+
       </div>
-      <div class="sheet-actions">
-        <button class="btn-sheet-toggle" id="btnSheetToggle" aria-label="Toggle Sheet View">↕</button>
+      <div class="window" id="tab-3">
+
       </div>
     </div>
 
-    <!-- Sheet Body / Inspector Content -->
-    <div class="sheet-body" id="sheetBody">
-      <!-- Strategy Triggers Ribbon -->
-      <div class="strategy-ribbon">
-        <span class="ribbon-label">Quick Test:</span>
-        <button class="btn-test" id="btnTestFeed">stale-while-revalidate</button>
-        <button class="btn-test" id="btnTestTheme">cache-first</button>
-        <button class="btn-test" id="btnTestProfile">network-first</button>
-        <button class="btn-test" id="btnTestLive">network-only</button>
-        <button class="btn-test" id="btnTestOffline">cache-only</button>
-      </div>
+    <!-- <script src="/assets/js/client.js"></script> -->
+    <script src="/assets/js/app.js"></script>
+  </body>
 
-      <div class="sheet-grid">
-        <!-- Response Inspector -->
-        <div class="inspector-card" id="inspector">
-          <div class="section-header">
-            <h3 class="section-title">Response Header & Payload Inspector</h3>
-            <span class="status-badge" id="inspectCacheStatus">offline-cache</span>
-          </div>
-          <div class="inspector-meta">
-            <div class="meta-item">
-              <span class="meta-label">Request URI</span>
-              <span class="meta-value" id="inspectEndpoint">/api/feed.json</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">HTTP Status</span>
-              <span class="meta-value" id="inspectStatus">200 OK</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Latency</span>
-              <span class="meta-value" id="inspectLatency">2ms</span>
-            </div>
-          </div>
-          <pre class="code-preview" id="inspectBody">// Click any "Test Strategy" button or tab action to inspect live payload & cache headers</pre>
-        </div>
-
-        <!-- Controls & Telemetry Column -->
-        <div class="sheet-sidebar">
-          <!-- DevTools Push & Background Sync Card -->
-          <div class="actions-card">
-            <div class="actions-details">
-              <h4>DevTools Push & Sync</h4>
-              <p>Test default DevTools events & offline background outbox.</p>
-            </div>
-            <div class="actions-buttons">
-              <button class="btn-action" id="btnTestPush">🔔 Test Push</button>
-              <button class="btn-action" id="btnCopyPushPayload">📋 Copy Push JSON</button>
-              <button class="btn-action" id="btnQueueOfflineAction">📥 Queue Note</button>
-              <button class="btn-action" id="btnFlushOutbox">↻ Sync Outbox</button>
-            </div>
-            <div class="devtools-hint">
-              <span>Push: <code>{"title": "...", "body": "..."}</code></span>
-              <span>Sync Tag: <code>test-tag-from-devtools</code></span>
-            </div>
-          </div>
-
-          <!-- OTA Controls -->
-          <div class="actions-card">
-            <div class="actions-details">
-              <h4>OTA Delta Updates</h4>
-              <p>Simulate two-tier checks & atomic staging.</p>
-            </div>
-            <div class="actions-buttons">
-              <button class="btn-action" id="btnCheckUpdate">Check For Update</button>
-              <button class="btn-action btn-primary" id="btnSimulateUpdate">Simulate v1.0.1 Release</button>
-            </div>
-          </div>
-
-          <!-- Console Event Stream -->
-          <div class="console-card">
-            <div class="section-header">
-              <h4 class="section-title">Live Telemetry</h4>
-              <button class="btn-sm" id="btnClearLog">Clear</button>
-            </div>
-            <div class="log-stream" id="logStream"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </aside>
-
-  <!-- NLPWA Client Script -->
-  <script src="/client.js"></script>
-  <!-- Main Application Logic -->
-  <script src="/app.js"></script>
-</body>
 </html>

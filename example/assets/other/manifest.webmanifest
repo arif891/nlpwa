@@ -4,13 +4,14 @@
   "description": "Native-like PWA demonstration with OTA delta updates and intelligent caching strategies",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0b0f19",
-  "theme_color": "#8b5cf6",
+  "display_override": ["window-controls-overlay"],
+  "background_color": "#000",
+  "theme_color": "#000",
   "icons": [
     {
-      "src": "/assets/offline-badge.svg",
+      "src": "/assets/icon/logo.png",
       "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

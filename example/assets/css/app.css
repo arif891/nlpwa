@@ -21,7 +21,7 @@
     --surface-color-2: #000;
 
     --text-color: #fff;
-    --text-mutated-color: #b4b4b4;
+    --text-muted-color: #b4b4b4;
 
     --green-color: #84ffbd;
     --blue-color: #7ce3ff;
@@ -30,7 +30,7 @@
 
 
     --font-family-sans: 'Red Hat Display', sans-serif;
-    --font-family-mono: 'Red Hat Display', monospace;
+    --font-family-mono: 'Red Hat Mono', monospace;
 
 
     --font-size-base: 1rem;
@@ -147,7 +147,7 @@ body {
                     }
 
                     .other-text {
-                        color: var(--text-mutated-color);
+                        color: var(--text-muted-color);
                         text-box: trim-start cap alphabetic;
                         font-weight: 600;
                     }

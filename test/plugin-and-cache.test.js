@@ -306,37 +306,22 @@ test('ensureConfigReady: synchronizes and reflects new config after loadConfigFr
   assert.equal(nextReady?.customField, 'updated');
 });
 
-test('resolveStrategy: bypasses Vite dev server and HMR URLs only when dev: true or devBypass: true', () => {
+test('resolveStrategy: resolves configured routes correctly', () => {
   globalThis.self = { location: { origin: 'http://localhost:5173' } };
 
-  // 1. In dev mode (dev: true), Vite internals are bypassed to network
   initConfig({
-    dev: true,
-    routes: [{ match: '**', strategy: 'cache-first' }],
+    routes: [
+      { match: '/api/**', strategy: 'network-only' },
+      { match: '**', strategy: 'cache-first' },
+    ],
     defaultStrategy: 'cache-first',
   });
 
-  const viteClient = resolveStrategy(new Request('http://localhost:5173/@vite/client'));
-  const viteFs = resolveStrategy(new Request('http://localhost:5173/@fs/node_modules/vite.js'));
-  const viteHmr = resolveStrategy(new Request('http://localhost:5173/src/App.jsx.hot-update.json'));
-  const viteImport = resolveStrategy(new Request('http://localhost:5173/src/main.js?import'));
+  const apiRoute = resolveStrategy(new Request('http://localhost:5173/api/users'));
+  assert.equal(apiRoute.strategy, 'network-only');
 
-  assert.equal(viteClient.strategy, 'network-only');
-  assert.equal(viteFs.strategy, 'network-only');
-  assert.equal(viteHmr.strategy, 'network-only');
-  assert.equal(viteImport.strategy, 'network-only');
   const appRoute = resolveStrategy(new Request('http://localhost:5173/assets/style.css'));
   assert.equal(appRoute.strategy, 'cache-first');
-
-  // 2. In production mode (dev: false), Vite bypass is disabled and URLs follow normal routes
-  initConfig({
-    dev: false,
-    routes: [{ match: '**', strategy: 'cache-first' }],
-    defaultStrategy: 'cache-first',
-  });
-  const prodViteClient = resolveStrategy(new Request('http://localhost:5173/@vite/client'));
-  // Does not bypass to network-only; resolved by standard configured route
-  assert.equal(prodViteClient.strategy, 'cache-first');
 });
 
 test('updateActiveConfig: enforces same-origin trust boundary by locking verifyHashes, caches, and snapshotCachePath', () => {

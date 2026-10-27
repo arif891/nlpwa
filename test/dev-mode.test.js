@@ -171,22 +171,15 @@ describe('Dev Mode & UI Design Support', () => {
     assert.strictEqual(swRegistered, false);
   });
 
-  test('SW router: routes Vite and dev-check requests to network-only when config.dev = true', () => {
+  test('SW router: routes dev-check config query to network-only', () => {
     const swConfig = initConfig({
       version: '1.0.0',
-      dev: true,
       routes: [
         { match: '/api/**', strategy: 'cache-first' },
       ],
       updateAPI: { version: '/v', info: '/i' },
     });
 
-    // 1. Vite internal requests are routed to network-only
-    const viteReq = new Request('http://localhost:3000/@vite/client');
-    const viteHandler = resolveStrategy(viteReq, swConfig.routes);
-    assert.strictEqual(viteHandler.strategy, 'network-only');
-
-    // 2. Dev-check config query is routed to network-only
     const devCheckReq = new Request('http://localhost:3000/api/update/config.json?nlpwa_dev=1');
     const devCheckHandler = resolveStrategy(devCheckReq, swConfig.routes);
     assert.strictEqual(devCheckHandler.strategy, 'network-only');

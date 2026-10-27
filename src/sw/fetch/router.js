@@ -270,22 +270,7 @@ export function resolveStrategy(request) {
     ? requestUrl.origin === self.location.origin
     : true;
 
-  // Dev-only bypass: when dev: true or devBypass: true, route Vite internal requests
-  // and HMR updates directly to network instead of caching or intercepting them.
   const config = getConfig();
-  if (config.dev || config.devBypass) {
-    if (
-      requestUrl.pathname.startsWith('/@vite/') ||
-      requestUrl.pathname.startsWith('/@fs/') ||
-      requestUrl.pathname.includes('/.vite/') ||
-      requestUrl.pathname.endsWith('.hot-update.json') ||
-      requestUrl.searchParams.has('import')
-    ) {
-      const handler = (req, event) => networkOnly(req, event);
-      handler.strategy = 'network-only';
-      return handler;
-    }
-  }
 
   // Non-GET requests (mutations) are routed through network-only with plugin hooks
   if (request.method !== 'GET') {

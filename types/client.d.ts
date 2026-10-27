@@ -138,6 +138,8 @@ export interface RegisterOptions {
   periodicSync?: boolean;
   /** Request persistent storage via navigator.storage.persist() (default: false) */
   persistentStorage?: boolean;
+  /** Development & UI design mode: unregisters Service Worker, clears caches, and skips registration (default: false) */
+  dev?: boolean;
 }
 
 export interface RegistrationHandle {
@@ -159,6 +161,16 @@ export function register(swUrl?: string, options?: RegisterOptions): Promise<Reg
  * @param scope Optional scope of registration to unregister
  */
 export function unregister(scope?: string): Promise<boolean>;
+
+/**
+ * Check if development / UI design mode is active (via window.NLPWA_DEV, <script data-dev>, or config).
+ */
+export function isDevMode(script?: HTMLScriptElement | null, options?: { dev?: boolean }): Promise<boolean>;
+
+/**
+ * Enforce development mode: unregister all active Service Workers and clear caches.
+ */
+export function enforceDevMode(): Promise<boolean>;
 
 /**
  * Register a handler to be called when the SW signals an update is ready.
@@ -610,6 +622,8 @@ export interface NLPWAClientAPI {
   onLeaderChange: typeof onLeaderChange;
   getDiagnostics: typeof getDiagnostics;
   getPinStatus: typeof getPinStatus;
+  isDevMode: typeof isDevMode;
+  enforceDevMode: typeof enforceDevMode;
 }
 
 export declare const nlpwa: NLPWAClientAPI;

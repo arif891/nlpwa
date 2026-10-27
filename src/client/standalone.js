@@ -14,6 +14,7 @@
  */
 export * from './index.js';
 import { register, resolveDefaultSwUrl } from './registration.js';
+import { isDevMode, enforceDevMode } from './dev-mode.js';
 import { logger } from './logger.js';
 
 // Synchronously capture document.currentScript at module evaluation time
@@ -36,8 +37,20 @@ function autoRegister() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return;
   }
-  const tryRegister = () => {
+  const tryRegister = async () => {
     const script = findClientScript();
+
+    // Check if dev mode is enabled via data-dev="true", window.NLPWA_DEV, or config
+    try {
+      const devActive = await isDevMode(script);
+      if (devActive) {
+        await enforceDevMode();
+        return;
+      }
+    } catch (err) {
+      logger.debug('[NLPWA] Dev mode check error:', err?.message || err);
+    }
+
     if (script) {
       const autoAttr = script.getAttribute?.('data-auto-register');
       const hasNoAuto = typeof script.hasAttribute === 'function'

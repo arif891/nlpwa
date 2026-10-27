@@ -62,6 +62,18 @@ export async function register(swUrl = '/sw.js', options = {}) {
   }
 
   const executeRegister = async () => {
+    if (
+      options.dev === true ||
+      options.dev === 'true' ||
+      options.dev === 1 ||
+      (typeof window !== 'undefined' && (window.NLPWA_DEV === true || window.NLPWA_DEV === 'true' || window.NLPWA_DEV === 1)) ||
+      (typeof window !== 'undefined' && window.NLPWA_CONFIG && (window.NLPWA_CONFIG.dev === true || window.NLPWA_CONFIG.dev === 'true'))
+    ) {
+      logger.info('[NLPWA] Dev mode: Service Worker registration bypassed.');
+      await unregister(options.scope);
+      return null;
+    }
+
     _isRegisteredOrRegistering = true;
 
     if (_activeUnsubscribe) {
@@ -328,13 +340,40 @@ export async function unregister(scope) {
     return false;
   }
   try {
-    const registration = scope
-      ? await navigator.serviceWorker.getRegistration(scope)
-      : await navigator.serviceWorker.getRegistration();
-    if (registration) {
-      return await registration.unregister();
+    let unregSuccess = false;
+    if (scope) {
+      const registration = await navigator.serviceWorker.getRegistration(scope);
+      if (registration) {
+        unregSuccess = await registration.unregister();
+      }
+    } else if (typeof navigator.serviceWorker.getRegistrations === 'function') {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        const ok = await reg.unregister();
+        if (ok) unregSuccess = true;
+      }
+      if (!unregSuccess && typeof navigator.serviceWorker.getRegistration === 'function') {
+        const single = await navigator.serviceWorker.getRegistration();
+        if (single) {
+          unregSuccess = await single.unregister();
+        }
+      }
+    } else if (typeof navigator.serviceWorker.getRegistration === 'function') {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        unregSuccess = await registration.unregister();
+      }
     }
-    return false;
+    // Also purge caches in dev/unregistered state to ensure fresh assets
+    if (typeof caches !== 'undefined') {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      } catch (err) {
+        logger.debug('[NLPWA] Cache cleanup error during unregister:', err?.message || err);
+      }
+    }
+    return unregSuccess;
   } catch {
     return false;
   }

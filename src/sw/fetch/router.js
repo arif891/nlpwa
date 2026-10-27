@@ -297,6 +297,17 @@ export function resolveStrategy(request) {
     return handler;
   }
 
+  // When checking for dev mode config or live update config, allow network bypass
+  const configPath = config.configPath || '/api/update/config.json';
+  if (
+    requestUrl.pathname === configPath &&
+    (requestUrl.searchParams.has('nlpwa_dev') || request.headers.get('x-nlpwa-dev-check') === '1' || request.cache === 'no-store')
+  ) {
+    const handler = (req, event) => networkOnly(req, event);
+    handler.strategy = 'network-only';
+    return handler;
+  }
+
   // Built-in non-overridable rule: Precached / manifest files are ALWAYS served
   // from the active offline cache (cache-first). This guarantees that online
   // requests never bypass the staged cache or produce mixed old/new files.

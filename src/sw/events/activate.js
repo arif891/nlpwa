@@ -58,6 +58,10 @@ export function handleActivate(config) {
         await loadConfigFromCache().catch((err) => {
           logger.debug('[NLPWA] Failed to load config from cache on activation:', err?.message || err);
         });
+        if (config.dev === true && self.registration) {
+          logger.info('[NLPWA] Dev mode active in config. Unregistering active SW...');
+          await self.registration.unregister().catch(() => {});
+        }
       })()
     );
   };

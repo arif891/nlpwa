@@ -245,7 +245,7 @@ export interface NLPWAConfig {
   clearRuntimeOnUpdate?: boolean;
   /** Whether to cache opaque cross-origin responses in runtime cache (default: false) */
   cacheOpaque?: boolean;
-  /** Enable development mode (bypasses Vite dev server and HMR requests directly to network). Default: false */
+  /** Development & UI design mode: unregisters Service Worker, clears caches, and prevents auto-registration. Default: false */
   dev?: boolean;
   /** Explicitly bypass Vite dev server and HMR requests directly to network. Default: false */
   devBypass?: boolean;

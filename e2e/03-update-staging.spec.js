@@ -12,15 +12,16 @@ test.describe('03 - Over-The-Air (OTA) Delta Updates and Staging', () => {
     const initialPointer = await getActivePointer(page);
     expect(initialPointer.version).toBe('1.0.0');
 
-    // 1. Simulate server release of v1.0.1 (POST /api/simulate-bump)
-    const bumpPromise = page.waitForResponse((res) => res.url().includes('/api/simulate-bump'));
-    await page.click('#btnSimulateUpdate');
+    // 1. Switch to updates tab and simulate release bump
+    await page.click('a[href="#updates"]');
+    const bumpPromise = page.waitForResponse((res) => res.url().includes('/api/update/bump') || res.url().includes('/api/simulate-bump'));
+    await page.locator('#btn-bump-version').click({ force: true });
     await bumpPromise;
 
-    // 2. Client triggers CHECK_UPDATE; wait for UPDATE_READY banner
-    const banner = page.locator('#updateBanner');
-    await expect(banner).toHaveClass(/show/, { timeout: 10_000 });
-    await expect(page.locator('#targetVersion')).toHaveText('1.0.1');
+    // 2. Client triggers update check; wait for staging and ready state
+    await expect(page.locator('#ota-staged-version')).toHaveText('v1.0.1', { timeout: 10_000 });
+    await expect(page.locator('#ota-status-badge')).toHaveText('READY', { timeout: 10_000 });
+    await expect(page.locator('#btn-apply-update')).toHaveText('Apply v1.0.1');
 
     // 3. Staging occurred into an isolated staging cache
     const caches = await getCacheNames(page);

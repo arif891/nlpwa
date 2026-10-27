@@ -9,17 +9,20 @@ test.describe('07 - Client Version Pinning & Isolation', () => {
   });
 
   test('tab remains pinned to boot version even after new version commits in another tab', async ({ context, page }) => {
-    // 1. Verify initial tab pin state on v1.0.0
-    const pinInfo1 = await page.evaluate(async () => {
-      return await window.NLPWAClient.nlpwa.getPinStatus();
-    });
+    // 1. Verify initial tab pin state settles to PINNED on v1.0.0
+    await expect.poll(async () => {
+      const pin = await page.evaluate(() => window.NLPWAClient.nlpwa.getPinStatus());
+      return pin?.state;
+    }, { timeout: 7000 }).toBe('PINNED');
+
+    const pinInfo1 = await page.evaluate(() => window.NLPWAClient.nlpwa.getPinStatus());
     expect(pinInfo1).toBeTruthy();
-    expect(pinInfo1.state).toBe('PINNED');
     expect(pinInfo1.version).toBe('1.0.0');
 
     // 2. Stage update to 1.0.1
-    await page.click('#btnSimulateUpdate');
-    await expect(page.locator('#updateBanner')).toHaveClass(/show/, { timeout: 10_000 });
+    await page.click('a[href="#updates"]');
+    await page.locator('#btn-bump-version').click({ force: true });
+    await expect(page.locator('#ota-staged-version')).toHaveText('v1.0.1', { timeout: 10_000 });
 
     // 3. Open Tab 2 to commit the staged version
     const page2 = await context.newPage();

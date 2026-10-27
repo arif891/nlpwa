@@ -14,7 +14,8 @@ test.describe('01 - Initial Install and Precaching', () => {
 
     // 1. Wait for SW to activate and control page
     await waitForActiveSW(page);
-    await expect(page.locator('#swStatus')).toHaveText('Active & Controlled');
+    await expect(page.locator('#status-version')).toHaveText('v1.0.0');
+    await expect(page.locator('#status-state')).toHaveText(/Offline ready|Up to date/);
 
     // 2. Check CacheStorage entries
     const cacheNames = await getCacheNames(page);
@@ -43,10 +44,13 @@ test.describe('01 - Initial Install and Precaching', () => {
       });
     });
 
-    await page.click('#btnCheckUpdate');
+    // Switch to Updates tab
+    await page.click('a[href="#updates"]');
+    await page.locator('#btn-check-update').click({ force: true });
 
     const result = await noUpdatePromise;
     expect(result.version).toBe('1.0.0');
-    await expect(page.locator('#updateBanner')).not.toHaveClass(/show/);
+    await expect(page.locator('#ota-staged-version')).toHaveText('None');
+    await expect(page.locator('#ota-status-badge')).toHaveText('IDLE');
   });
 });

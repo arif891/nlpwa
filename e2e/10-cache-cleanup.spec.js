@@ -10,10 +10,12 @@ test.describe('10 - Cache Quotas & Runtime Cleanup', () => {
 
   test('getCacheInfo retrieves storage metrics and cleanupRuntimeCache evicts entries', async ({ page }) => {
     // 1. Populate runtime cache with multiple requests
-    await page.click('#btnTestFeed');
-    await page.waitForTimeout(100);
-    await page.click('#btnTestProfile');
-    await page.waitForTimeout(100);
+    await page.evaluate(() => Promise.all([
+      fetch('/demo/cache-first.json'),
+      fetch('/demo/swr.json'),
+      fetch('/demo/network-first.json')
+    ]));
+    await page.waitForTimeout(200);
 
     // 2. Query cache info
     const cacheInfo = await page.evaluate(async () => {

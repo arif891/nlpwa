@@ -9,26 +9,35 @@ test.describe('02 - Caching Strategies & X-Cache-Status', () => {
   });
 
   test('cache-first: serves from cache with instant response', async ({ page }) => {
-    await page.click('#btnTestTheme'); // /assets/theme.json
-    await expect(page.locator('#inspectEndpoint')).toHaveText('/assets/theme.json');
-    await expect(page.locator('#inspectStatus')).toContainText('200');
-    await expect(page.locator('#inspectCacheStatus')).toHaveText(/offline-cache|runtime-cache/);
+    await page.click('#strategy-tabs button[data-id="cache-first"]');
+    // First request populates cache
+    await page.click('#test-form button[type="submit"]');
+    await page.waitForTimeout(150);
+
+    // Second request serves from cache
+    await page.click('#test-form button[type="submit"]');
+
+    await expect(page.locator('#viewport')).toContainText('/demo/cache-first.json');
+    await expect(page.locator('#viewport')).toContainText(/runtime-cache|offline-cache/);
   });
 
   test('network-only: bypasses cache entirely and tags status', async ({ page }) => {
-    await page.click('#btnTestLive'); // /api/live/time.json
-    await expect(page.locator('#inspectEndpoint')).toHaveText('/api/live/time.json');
-    await expect(page.locator('#inspectCacheStatus')).toHaveText('network');
+    await page.click('#strategy-tabs button[data-id="network-only"]');
+    await page.click('#test-form button[type="submit"]');
+
+    await expect(page.locator('#viewport')).toContainText('/demo/network-only.json');
+    await expect(page.locator('#viewport')).toContainText('200 network');
   });
 
   test('stale-while-revalidate: returns cached content and revalidates', async ({ page }) => {
+    await page.click('#strategy-tabs button[data-id="swr"]');
     // First request populates runtime cache
-    await page.click('#btnTestFeed');
-    await page.waitForTimeout(150);
+    await page.click('#test-form button[type="submit"]');
+    await page.waitForTimeout(200);
 
     // Second request should serve from cache
-    await page.click('#btnTestFeed');
-    await expect(page.locator('#inspectCacheStatus')).toHaveText(/stale|runtime-cache/);
+    await page.click('#test-form button[type="submit"]');
+    await expect(page.locator('#viewport')).toContainText(/stale|runtime-cache/);
   });
 
   test('atomicity rule: app shell and precached assets always serve from active offline cache', async ({ page }) => {

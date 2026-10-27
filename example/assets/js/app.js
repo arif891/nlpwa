@@ -4,6 +4,7 @@
     const $ = (selector, root = document) => root.querySelector(selector);
     const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
     const client = window.NLPWAClient;
+    window.nlpwa = client;
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const STRATEGIES = [
@@ -122,6 +123,15 @@
         try {
             const res = await fetch('/api/update/info.json');
             const info = await res.json();
+            if (info.version && !status.version) {
+                status.version = info.version;
+            }
+            if (client && typeof client.getVersion === 'function') {
+                const v = await client.getVersion().catch(() => null);
+                if (v?.activeVersion || v?.version) {
+                    status.version = v.activeVersion || v.version;
+                }
+            }
             const paths = (info.files || []).map((f) => f.path);
             const names = await offlineCacheNames();
             let cached = 0;
@@ -430,13 +440,13 @@
     });
 
     /* ---------- Updates Tab ---------- */
-    const otaStatusBadge = $('#ota-status-badge');
-    const otaActiveVersion = $('#ota-active-version');
-    const otaServerVersion = $('#ota-server-version');
-    const otaStagedVersion = $('#ota-staged-version');
-    const otaProgressBox = $('#ota-progress-box');
-    const otaProgressText = $('#ota-progress-text');
-    const otaProgressFill = $('#ota-progress-fill');
+    let otaStatusBadge = $('#ota-status-badge');
+    let otaActiveVersion = $('#ota-active-version');
+    let otaServerVersion = $('#ota-server-version');
+    let otaStagedVersion = $('#ota-staged-version');
+    let otaProgressBox = $('#ota-progress-box');
+    let otaProgressText = $('#ota-progress-text');
+    let otaProgressFill = $('#ota-progress-fill');
 
     const btnCheckUpdate = $('#btn-check-update');
     const btnBumpVersion = $('#btn-bump-version');
@@ -462,41 +472,47 @@
     let currentDirty = false;
 
     function renderUpdates(s) {
-        if (!otaStatusBadge) return;
+        const badge = $('#ota-status-badge');
+        if (!badge) return;
+        const activeVerEl = $('#ota-active-version');
+        const stagedVerEl = $('#ota-staged-version');
+        const progressBox = $('#ota-progress-box');
+        const progressText = $('#ota-progress-text');
+        const progressFill = $('#ota-progress-fill');
+        const applyBtn = $('#btn-apply-update');
+
         const activeVer = s?.activeVersion || s?.version || status.version || '1.0.0';
         const stagedVer = s?.stagedVersion || null;
         const updateStatus = s?.updateStatus || 'idle';
         const progress = s?.stagingProgress || null;
 
-        otaActiveVersion.textContent = `v${activeVer}`;
-        otaStagedVersion.textContent = stagedVer ? `v${stagedVer}` : 'None';
+        if (activeVerEl) activeVerEl.textContent = `v${activeVer}`;
+        if (stagedVerEl) stagedVerEl.textContent = stagedVer ? `v${stagedVer}` : 'None';
 
-        otaStatusBadge.textContent = updateStatus.toUpperCase();
-        otaStatusBadge.className = 'badge';
+        badge.textContent = updateStatus.toUpperCase();
+        badge.className = 'badge';
         if (updateStatus === 'checking' || updateStatus === 'staging') {
-            otaStatusBadge.classList.add('is-' + updateStatus);
+            badge.classList.add('is-' + updateStatus);
         } else if (updateStatus === 'ready' || stagedVer) {
-            otaStatusBadge.classList.add('is-ready');
+            badge.classList.add('is-ready');
         } else if (updateStatus === 'failed') {
-            otaStatusBadge.classList.add('is-failed');
+            badge.classList.add('is-failed');
         } else {
-            otaStatusBadge.classList.add('is-muted');
+            badge.classList.add('is-muted');
         }
 
-        if (updateStatus === 'staging' && progress) {
-            otaProgressBox.hidden = false;
+        if (updateStatus === 'staging' && progress && progressBox) {
+            progressBox.hidden = false;
             const pct = Math.round(progress.percent || 0);
-            otaProgressText.textContent = `${pct}% (${progress.loaded || 0}/${progress.total || 0} files)`;
-            otaProgressFill.style.width = `${pct}%`;
-        } else {
-            otaProgressBox.hidden = true;
+            if (progressText) progressText.textContent = `${pct}% (${progress.loaded || 0}/${progress.total || 0} files)`;
+            if (progressFill) progressFill.style.width = `${pct}%`;
+        } else if (progressBox) {
+            progressBox.hidden = true;
         }
 
-        btnApplyUpdate.disabled = !stagedVer;
-        if (stagedVer) {
-            btnApplyUpdate.textContent = `Apply v${stagedVer}`;
-        } else {
-            btnApplyUpdate.textContent = 'Apply Staged Update';
+        if (applyBtn) {
+            applyBtn.disabled = !stagedVer;
+            applyBtn.textContent = stagedVer ? `Apply v${stagedVer}` : 'Apply Staged Update';
         }
     }
 

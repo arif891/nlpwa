@@ -10,18 +10,18 @@ test.describe('04 - Atomic Version Commit & Tab Coordination', () => {
 
   test('clicking Apply & Reload flips active pointer and cleans up old cache', async ({ page }) => {
     // Stage update to 1.0.1
-    await page.click('#btnSimulateUpdate');
-    await expect(page.locator('#updateBanner')).toHaveClass(/show/, { timeout: 10_000 });
+    await page.click('a[href="#updates"]');
+    await page.locator('#btn-bump-version').click({ force: true });
+    await expect(page.locator('#ota-staged-version')).toHaveText('v1.0.1', { timeout: 10_000 });
 
     const cachesBefore = await getCacheNames(page);
     const oldCache = cachesBefore.find((c) => c.startsWith('offline@1.0.0'));
     expect(oldCache).toBeTruthy();
 
-    // Click "Apply & Reload"
-    await page.click('#btnApplyUpdate');
-
-    // Page reloads into new version
-    await page.waitForNavigation();
+    // Click "Apply Update"
+    const reloadPromise = page.waitForEvent('load');
+    await page.locator('#btn-apply-update').click({ force: true });
+    await reloadPromise;
     await waitForActiveSW(page);
 
     // Active pointer is now 1.0.1
@@ -36,8 +36,9 @@ test.describe('04 - Atomic Version Commit & Tab Coordination', () => {
 
   test('navigation in a second tab commits staged version before serving page', async ({ context, page }) => {
     // Stage update in Tab 1
-    await page.click('#btnSimulateUpdate');
-    await expect(page.locator('#updateBanner')).toHaveClass(/show/, { timeout: 10_000 });
+    await page.click('a[href="#updates"]');
+    await page.locator('#btn-bump-version').click({ force: true });
+    await expect(page.locator('#ota-staged-version')).toHaveText('v1.0.1', { timeout: 10_000 });
 
     // Open Tab 2 (navigation request)
     const page2 = await context.newPage();

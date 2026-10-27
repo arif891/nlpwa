@@ -28,7 +28,11 @@ describe('Runtime Bugfixes & Hardening', () => {
 
   after(() => {
     if (existsSync(testDistDir)) {
-      rmSync(testDistDir, { recursive: true, force: true });
+      try {
+        rmSync(testDistDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      } catch {
+        // Ignore transient Windows file lock errors on teardown
+      }
     }
   });
 

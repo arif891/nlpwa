@@ -32,6 +32,7 @@ initSW({
 ```javascript
 export default {
   version: '1.0.0',
+  dev: false, // Set to true during UI design/styling to bypass SW and flush caches
   updateAPI: {
     version: '/api/update/version.json',
     info:    '/api/update/info.json',

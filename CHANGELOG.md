@@ -2,6 +2,31 @@
 
 All notable changes to `nlpwa` will be documented in this file.
 
+## [0.2.3] - 2026-10-28
+
+### Features & Developer Experience
+- **Development & UI Design Mode**:
+  - Added first-class `dev: true` option in `nlpwa.config.js`, `register('/sw.js', { dev: true })`, `<script data-dev="true">`, and `window.NLPWA_DEV = true`.
+  - When enabled, the Client SDK bypasses registration, unregisters existing Service Workers under the scope, and flushes CacheStorage stores so styles, HTML, and assets update live with zero caching interference.
+  - Added `isDevMode()` and `enforceDevMode()` client SDK exports with multi-source detection (options, DOM attributes, globals, and remote config probing).
+  - Implemented automatic recovery: toggling Dev Mode off cleanly re-registers the Service Worker on next load without manual cache or worker eviction.
+- **Framework-Agnostic SW Core**:
+  - Removed all hardcoded bundler-specific paths (`/@vite/`, `/@fs/`, `.hot-update.json`) from `src/sw/fetch/router.js`, ensuring pure framework neutrality across Vite, Webpack, Turbopack, and vanilla setups.
+
+### Serverless & Edge Deployments
+- **Zero-Collision Manifest Routing**:
+  - Added `api/update/manifest.js` and `vercel.json` rewrites to eliminate static file shadowing under reserved `/api/*` routes on Vercel and similar serverless platforms.
+- **Multi-Container Simulated Version Synchronization**:
+  - Implemented cookie-based version synchronization (`nlpwa_version` cookie) in `/api/update/bump` and `/api/update/reset` for simulated OTA update testing across isolated serverless lambda containers.
+- **Controlled Deployment Pipelines**:
+  - Added `"git": { "deploymentEnabled": false }` configuration support in `vercel.json` to prevent automatic build triggers on Git push and support manual Vercel Deploy Hooks (`curl -X POST <hook-url>`) and CLI deployments (`vercel --prod`).
+
+### Bug Fixes & Showcase UI Improvements
+- **Deferred Tab Activation on Initial Load**: Fixed temporal dead zone (TDZ) `ReferenceError: Cannot access 'manifestViewport' before initialization` on direct hash navigation (e.g. `/#updates`) in `example/app.js`.
+- **Manifest Dev Probe Accuracy**: Fixed issue in `/api/update/manifest.js` where `?nlpwa_dev=1` probe query mistakenly forced `data.dev = true`.
+- **Fluid CSS Property Transitions**: Added CSS `@property` registered custom properties (`--status-mid`, `--status-end`, `--bar`) for smooth color gradients and gauge glow transitions.
+- **In-Place Strategy Bar Animation**: Refactored `renderBars()` in `example/app.js` to update existing DOM elements in place rather than replacing children, enabling continuous height and background color CSS transitions.
+
 ## [0.2.2] - 2026-10-23
 
 ### Security Hardening & Update Pipeline Resilience

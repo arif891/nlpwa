@@ -30,6 +30,9 @@ register('/sw.js', {
   periodicSync: true,
   focusThrottleMs: 60 * 60 * 1000,
   pollIntervalMs: 60 * 60 * 1000,
+
+  // Development & UI Design Mode
+  dev: false,
 });
 ```
 
@@ -37,6 +40,7 @@ register('/sw.js', {
 
 | Option | Type | Default | Description |
 |---|---|---|---|
+| `dev` | `boolean` | `false` | When `true`, unregisters the Service Worker, flushes CacheStorage, and bypasses registration to allow live reloading and styling without cached assets. |
 | `onUpdateReady` | `Function` | — | Called with `{ version }` when a new update has been fully staged in an isolated delta cache and verified against hashes. |
 | `onNoUpdate` | `Function` | — | Called with `{ version }` when a version check confirms the app is already up to date. |
 | `onUpdateFailed` | `Function` | — | Called with `{ version, failed, failedDetails, error, errorCode, quotaExceeded, retryCount, nextRetryAt, persistent, hasHashMismatch }` when update staging fails. |
@@ -72,13 +76,69 @@ To explicitly configure the Service Worker path, custom scope, or disable auto-r
 
 <!-- Disable auto-registration (e.g. for purely manual register() calls) -->
 <script src="/client.js" data-auto-register="false"></script>
+
+<!-- Enable Development / UI Design Mode -->
+<script src="/client.js" data-dev="true"></script>
 ```
 
 Alternatively, set runtime globals prior to script load:
 ```javascript
 window.NLPWA_SW_URL = '/custom/sw.js';
 window.NLPWA_SW_SCOPE = '/my-app/';
+window.NLPWA_DEV = true; // Enables Development Mode
 ```
+
+---
+
+## Development & UI Design Mode
+
+When developing or iterating on UI designs, styling, or CSS animations, active Service Workers and cached assets can prevent immediate visibility of changes. NLPWA provides first-class Dev Mode support to completely bypass caching without requiring manual DevTools manipulation.
+
+### Enabling Dev Mode
+
+Dev Mode can be enabled in any of four ways (evaluated in order):
+1. **Explicit registration option**:
+   ```javascript
+   import { register } from 'nlpwa/client';
+   register('/sw.js', { dev: true });
+   ```
+2. **Script tag attribute**:
+   ```html
+   <script src="/client.js" data-dev="true"></script>
+   ```
+3. **Global runtime flag**:
+   ```javascript
+   window.NLPWA_DEV = true;
+   // or
+   window.NLPWA_CONFIG = { dev: true };
+   ```
+4. **Deployed configuration**:
+   `dev: true` in `nlpwa.config.js` (emitted to `/api/update/config.json`).
+
+### Dev Mode Behavior
+When Dev Mode is detected:
+- Existing Service Worker registrations for the current scope are immediately unregistered via `registration.unregister()`.
+- Active CacheStorage stores (`offline`, `runtime`, `meta`) are completely flushed via `caches.delete()`.
+- Service Worker registration is skipped, allowing all HTTP requests and asset updates to hit the network or local dev server directly.
+- Full support for Vite, Webpack, and bundler Hot Module Replacement (HMR).
+
+### Dev Mode Helpers
+The Client SDK exports helper functions for checking and enforcing Dev Mode:
+
+```javascript
+import { isDevMode, enforceDevMode } from 'nlpwa/client';
+
+// Check if dev mode is currently active (checks options, DOM, globals, and probes config):
+const devActive = await isDevMode({ dev: false });
+
+// Programmatically enforce dev mode (unregisters SW and wipes caches):
+if (devActive) {
+  await enforceDevMode();
+}
+```
+
+### Automatic Recovery
+When Dev Mode is deactivated (e.g. removing `data-dev="true"` or setting `dev: false`), the SDK automatically restores normal Service Worker registration on the next page visit with no stale residue.
 
 ---
 

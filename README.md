@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/nlpwa.svg?color=0284c7&style=flat-square)](https://www.npmjs.com/package/nlpwa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Zero Runtime Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-success.svg?style=flat-square)](https://github.com/arif891/nlpwa)
-[![Tests Passing](https://img.shields.io/badge/tests-391%20passing-brightgreen.svg?style=flat-square)](https://github.com/arif891/nlpwa)
+[![Tests Passing](https://img.shields.io/badge/tests-399%20passing-brightgreen.svg?style=flat-square)](https://github.com/arif891/nlpwa)
 [![Standalone SW Size](https://img.shields.io/badge/standalone%20SW-~26%20KB%20gz-informational.svg?style=flat-square)](https://github.com/arif891/nlpwa)
 [![Client SDK Size](https://img.shields.io/badge/client%20SDK-~10%20KB%20gz-informational.svg?style=flat-square)](https://github.com/arif891/nlpwa)
 
@@ -52,6 +52,8 @@ This generates:
 - **Health-Gated Boot Rollbacks**: If a newly deployed version crashes or fails to mark healthy, the Service Worker automatically rolls back to the previous fallback version.
 - **Canary & Phased Rollouts**: Target canary cohorts via `rolloutPercent: 20`, isolate release `channel` (`stable`/`beta`), or revoke bad releases origin-wide via `blockedVersions`.
 - **Precache Atomicity Guarantee**: App shell files in `config.precache` are strictly cache-first. Staging deltas never mutate active tabs mid-session.
+- **Development & UI Design Mode**: Friction-free UI styling and HMR with `dev: true`, `<script data-dev="true">`, or `window.NLPWA_DEV = true`. Automatically unregisters SWs, wipes caches, and seamlessly recovers when toggled back off.
+- **Serverless & Edge Ready**: Zero-collision manifest routing for Vercel, Netlify, and Cloudflare Pages with simulated multi-instance coherence and deploy-hook controls.
 - **Modular Native OS Plugins**: Drop-in plugins for Web Push (`nlpwa/push`), Background Sync (`nlpwa/sync`), Periodic Sync (`nlpwa/sync/periodic`), App Badging (`nlpwa/badge`), Web Share Target (`nlpwa/share`), and Background Fetch (`nlpwa/bg-fetch`).
 
 ---

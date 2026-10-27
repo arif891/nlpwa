@@ -10,7 +10,7 @@ It is available as both an ES module (`import { register } from 'nlpwa/client'`)
 
 The Client SDK documentation is organized into modular guides:
 
-- 📋 [**Registration & Updates (`REGISTRATION.md`)**](REGISTRATION.md) — Service Worker initialization, update check triggers, staging progress observation, and atomic commit activation.
+- 📋 [**Registration & Updates (`REGISTRATION.md`)**](REGISTRATION.md) — Service Worker initialization, development/UI design mode, update check triggers, staging progress observation, and atomic commit activation.
 - 🔄 [**Multi-Tab Coherence & Pinning (`COHERENCE.md`)**](COHERENCE.md) — Multi-tab consensus, tab leader election, version pinning, and dirty form reload guards.
 - 📊 [**Reactive State & Diagnostics (`STATE.md`)**](STATE.md) — Unified reactive state store (`getState()`, `subscribe()`), boot watchdog, multi-boot probation, and `diagnostics()`.
 - 💾 [**Storage Quotas & Cleanup (`STORAGE.md`)**](STORAGE.md) — Cache storage quotas, persistent storage permissions, and on-demand LRU runtime cache cleanup.
@@ -40,11 +40,15 @@ The Client SDK documentation is organized into modular guides:
 </div>
 ```
 
-> **Note on Service Worker Placement (`data-sw`):**
+> **Note on Service Worker Placement & Dev Mode (`data-sw`, `data-dev`):**
 > When using the drop-in `/client.js` bundle, it automatically registers `/sw.js` at the application root.
 > To prevent fragile directory guessing that can accidentally restrict your Service Worker scope, specify any custom Service Worker location or scope explicitly via `data-sw` and `data-scope` (or `window.NLPWA_SW_URL` and `window.NLPWA_SW_SCOPE`):
 > ```html
 > <script src="/static/js/client.js" data-sw="/custom/sw.js" data-scope="/"></script>
+> ```
+> To enable Development / UI Design mode (unregisters SW and flushes caches for live CSS/UI editing):
+> ```html
+> <script src="/client.js" data-dev="true"></script>
 > ```
 > To disable auto-registration entirely (e.g. if you prefer manual registration):
 > ```html

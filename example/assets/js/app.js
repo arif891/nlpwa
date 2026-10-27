@@ -101,9 +101,6 @@
         });
     }, { passive: true });
 
-    const startIndex = Math.max(0, links.findIndex((link) => link.hash === location.hash));
-    activateTab(startIndex);
-    goToTab(startIndex, false);
     addEventListener('resize', () => goToTab(links.findIndex((l) => l.classList.contains('active')), false));
 
     /* ---------- Status card ---------- */
@@ -1063,4 +1060,8 @@
     updatePinStatus();
     renderStorage();
     renderPlugins();
+
+    const startIndex = Math.max(0, links.findIndex((link) => link.hash === location.hash));
+    activateTab(startIndex);
+    goToTab(startIndex, false);
 })();

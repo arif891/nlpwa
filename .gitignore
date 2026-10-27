@@ -14,3 +14,4 @@
 /types-gen
 
 .vercel
+example/package-lock.json

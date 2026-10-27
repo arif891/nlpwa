@@ -64,28 +64,18 @@ export default function handler(req, res) {
       }
 
       if (data) {
-        // Sync dev mode flag if nlpwa.config.js has dev: true or process.env.NLPWA_DEV is set
-        let isDev = Boolean(data.dev);
-        if (!isDev) {
-          if (process.env.NLPWA_DEV === 'true' || process.env.NLPWA_DEV === '1') {
-            isDev = true;
-          } else {
-            try {
-              const nlpwaConfigFile = resolve(__dirname, '../../nlpwa.config.js');
-              if (existsSync(nlpwaConfigFile)) {
-                const src = readFileSync(nlpwaConfigFile, 'utf8');
-                if (/\bdev\s*:\s*true\b/.test(src)) {
-                  isDev = true;
-                }
-              }
-            } catch {}
+        // Sync dev mode flag if nlpwa.config.js has dev: true
+        try {
+          const nlpwaConfigFile = resolve(__dirname, '../../nlpwa.config.js');
+          if (existsSync(nlpwaConfigFile)) {
+            const src = readFileSync(nlpwaConfigFile, 'utf8');
+            if (/\bdev\s*:\s*true\b/.test(src)) {
+              data.dev = true;
+            } else if (data.dev) {
+              delete data.dev;
+            }
           }
-        }
-        if (isDev) {
-          data.dev = true;
-        } else if (data.dev) {
-          delete data.dev;
-        }
+        } catch {}
         return res.status(200).json(data);
       }
     } catch {}

@@ -50,6 +50,18 @@
     {
       "source": "/api/live/time.json",
       "destination": "/api/live/time"
+    },
+    {
+      "source": "/api/update/version.json",
+      "destination": "/api/update/manifest?file=version.json"
+    },
+    {
+      "source": "/api/update/info.json",
+      "destination": "/api/update/manifest?file=info.json"
+    },
+    {
+      "source": "/api/update/config.json",
+      "destination": "/api/update/manifest?file=config.json"
     }
   ]
 }

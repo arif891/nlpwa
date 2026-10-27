@@ -108,7 +108,7 @@ body {
                 calc(env(titlebar-area-x, 0px) + var(--padding)));
         padding-right: max(var(--edge-offset-x),
                 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + var(--padding)));
-        background: linear-gradient(var(--bg-color) 60%, transparent);
+        background: linear-gradient(var(--bg-color), transparent);
         -webkit-app-region: drag;
         app-region: drag;
 
@@ -870,6 +870,10 @@ body {
     cursor: default;
     background: var(--surface-color-3);
     color: var(--text-muted-color);
+
+    @media (width >= 800px) {
+        display: none;
+    }
 }
 
 /* When width < 800px: hide header tabs, keep install button, show floating icon tab switcher */

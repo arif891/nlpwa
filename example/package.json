@@ -1,0 +1,10 @@
+{
+  "name": "nlpwa-showcase",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive showcase and live test harness for the NLPWA framework",
+  "scripts": {
+    "dev": "node server.js"
+  }
+}

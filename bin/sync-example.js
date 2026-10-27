@@ -14,6 +14,16 @@ async function main() {
       }
     }
 
+    if (existsSync('out/plugins')) {
+      const { mkdirSync, readdirSync } = await import('node:fs');
+      mkdirSync('example/plugins', { recursive: true });
+      for (const file of readdirSync('out/plugins')) {
+        if (file.endsWith('.client.js') || file.endsWith('.client.esm.js')) {
+          copyFileSync(`out/plugins/${file}`, `example/plugins/${file}`);
+        }
+      }
+    }
+
     await cmdUpdate({
       config: 'example/nlpwa.config.js',
       dir: 'example',

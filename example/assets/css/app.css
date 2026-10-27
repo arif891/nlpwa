@@ -159,6 +159,8 @@ body {
     }
 
     .window-wrapper {
+        width: 100vw;
+        contain: paint;
         height: 100dvh;
         max-height: 100%;
         max-width: 100%;

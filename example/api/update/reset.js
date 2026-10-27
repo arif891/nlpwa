@@ -11,20 +11,22 @@ const TMP_CONFIG = '/tmp/nlpwa-config.json';
 export default function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  // Clear cookie across all environments
+  res.setHeader('Set-Cookie', 'nlpwa_version=; Path=/; Max-Age=0; SameSite=Lax');
 
   if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // Unlink /tmp files if they exist
     for (const f of [TMP_VER, TMP_INFO, TMP_CONFIG]) {
       if (existsSync(f)) {
         try { unlinkSync(f); } catch {}
       }
     }
 
-    // Attempt to reset local disk files if writable (e.g., local development)
     try {
       const versionFile = resolve(__dirname, 'version.json');
       const infoFile = resolve(__dirname, 'info.json');
@@ -52,9 +54,7 @@ export default function handler(req, res) {
           writeFileSync(infoFile, JSON.stringify(info, null, 2), 'utf8');
         }
       }
-    } catch {
-      // Read-only filesystem in Vercel Serverless environment is expected
-    }
+    } catch {}
 
     return res.status(200).json({
       success: true,

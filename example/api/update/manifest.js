@@ -1,12 +1,19 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const TMP_VER = '/tmp/nlpwa-version.json';
 const TMP_INFO = '/tmp/nlpwa-info.json';
 const TMP_CONFIG = '/tmp/nlpwa-config.json';
+
+function getCookieVersion(req) {
+  const cookie = req.headers?.cookie || '';
+  const match = cookie.match(/(?:^|;\s*)nlpwa_version=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
 
 export default function handler(req, res) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -22,8 +29,13 @@ export default function handler(req, res) {
     }
   }
 
+  const cookieVer = getCookieVersion(req);
+
   // 1. Version check endpoint
   if (file === 'version.json') {
+    if (cookieVer) {
+      return res.status(200).json({ version: cookieVer });
+    }
     try {
       if (existsSync(TMP_VER)) {
         return res.status(200).send(readFileSync(TMP_VER, 'utf8'));
@@ -39,15 +51,30 @@ export default function handler(req, res) {
   // 2. Info / manifest endpoint
   if (file === 'info.json') {
     try {
+      let infoData = null;
       if (existsSync(TMP_INFO)) {
-        return res.status(200).send(readFileSync(TMP_INFO, 'utf8'));
+        infoData = JSON.parse(readFileSync(TMP_INFO, 'utf8'));
+      } else {
+        const f = resolve(__dirname, 'info.json');
+        if (existsSync(f)) {
+          infoData = JSON.parse(readFileSync(f, 'utf8'));
+        }
       }
-      const f = resolve(__dirname, 'info.json');
-      if (existsSync(f)) {
-        return res.status(200).send(readFileSync(f, 'utf8'));
+      if (infoData) {
+        if (cookieVer) {
+          infoData.version = cookieVer;
+          // Calculate dynamic hash for config.json under this version
+          const cfgStr = JSON.stringify({ version: cookieVer }, null, 2);
+          const cfgHash = createHash('sha256').update(cfgStr).digest('hex').slice(0, 32);
+          if (infoData.files && infoData.files.length > 0) {
+            const entry = infoData.files.find(f => f.path === '/api/update/config.json') || infoData.files[0];
+            entry.hash = cfgHash;
+          }
+        }
+        return res.status(200).json(infoData);
       }
     } catch {}
-    return res.status(200).json({ version: '1.0.0', files: [] });
+    return res.status(200).json({ version: cookieVer || '1.0.0', files: [] });
   }
 
   // 3. Config endpoint (config.json)
@@ -64,6 +91,9 @@ export default function handler(req, res) {
       }
 
       if (data) {
+        if (cookieVer) {
+          data.version = cookieVer;
+        }
         // Sync dev mode flag if nlpwa.config.js has dev: true
         try {
           const nlpwaConfigFile = resolve(__dirname, '../../nlpwa.config.js');
@@ -79,7 +109,7 @@ export default function handler(req, res) {
         return res.status(200).json(data);
       }
     } catch {}
-    return res.status(200).json({ version: '1.0.0' });
+    return res.status(200).json({ version: cookieVer || '1.0.0' });
   }
 
   return res.status(404).json({ error: 'Not found' });

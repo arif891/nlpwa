@@ -585,6 +585,7 @@
             const res = await fetch('/api/update/bump', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
+                document.cookie = `nlpwa_version=${data.version}; path=/; max-age=86400; SameSite=Lax`;
                 pinStatusMsg.textContent = `Published release v${data.version}! Checking for delta updates…`;
                 await fetchServerVersion();
                 await renderManifest();
@@ -615,6 +616,7 @@
             const res = await fetch('/api/update/reset', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
+                document.cookie = 'nlpwa_version=; path=/; max-age=0; SameSite=Lax';
                 pinStatusMsg.textContent = 'Reset server to v1.0.0 successfully.';
                 await fetchServerVersion();
                 await renderManifest();

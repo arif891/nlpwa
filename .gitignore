@@ -12,3 +12,5 @@
 .env.nlpwa
 
 /types-gen
+
+.vercel

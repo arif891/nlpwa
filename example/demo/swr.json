@@ -1,0 +1,4 @@
+{
+  "strategy": "swr",
+  "note": "Answers from the cache straight away, then refreshes it in the background."
+}

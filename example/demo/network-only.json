@@ -1,0 +1,4 @@
+{
+  "strategy": "network-only",
+  "note": "Never cached. Fails when the connection is gone."
+}

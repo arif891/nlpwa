@@ -1,0 +1,4 @@
+{
+  "strategy": "cache-only",
+  "note": "Only ever answered from the cache. Missing entries return 503."
+}

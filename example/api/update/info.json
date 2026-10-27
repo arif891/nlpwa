@@ -3,53 +3,73 @@
   "files": [
     {
       "path": "/api/update/config.json",
-      "hash": "14703cac50950d771ffc34924a70c774",
-      "size": 842
+      "hash": "2e4761d8e57e953e6e0bcaeb53193c1d",
+      "size": 1245
     },
     {
       "path": "/",
-      "hash": "d66b6b5e153df99687211bab1b55038e",
-      "size": 11265
+      "hash": "9939406ecfe80704dd27cb3c4f0dded3",
+      "size": 5412
     },
     {
       "path": "/index.html",
-      "hash": "d66b6b5e153df99687211bab1b55038e",
-      "size": 11265
+      "hash": "9939406ecfe80704dd27cb3c4f0dded3",
+      "size": 5412
     },
     {
-      "path": "/styles.css",
-      "hash": "d355d93329dbcf844b4bd591b2da4ad5",
-      "size": 22949
+      "path": "/assets/css/app.css",
+      "hash": "0131870c3b3b1bfca835068e8aea7dc7",
+      "size": 13670
     },
     {
-      "path": "/app.js",
-      "hash": "27ec63a50a72fa0e0d4055a043b02a7c",
-      "size": 24282
+      "path": "/assets/js/app.js",
+      "hash": "44870f09c838d47a090a52378e6a3f48",
+      "size": 16595
     },
     {
-      "path": "/client.js",
+      "path": "/assets/js/client.js",
       "hash": "9862d09376c95d0ef131a7921e459e73",
       "size": 35417
     },
     {
-      "path": "/manifest.webmanifest",
-      "hash": "73b071cbbd6ac2563741297aaf141fd1",
-      "size": 445
+      "path": "/assets/font/Red_Hat_Display/Red_Hat_Display_regular_variable_v20.woff2",
+      "hash": "91ff3d764cb7e66ac5c3814f1bb3227e",
+      "size": 40296
     },
     {
-      "path": "/offline-data.json",
-      "hash": "74511ca1125b84521ce3afd030016e4d",
-      "size": 217
+      "path": "/assets/font/Red_Hat_Mono/Red_Hat_Mono_regular_variable_v15.woff2",
+      "hash": "cd087814396e3fdf539834425d1631f0",
+      "size": 29492
     },
     {
-      "path": "/assets/offline-badge.svg",
-      "hash": "2d0f83384d69ac502cea7f9b5aa68ff0",
-      "size": 898
+      "path": "/assets/icon/logo.svg",
+      "hash": "05d4ad64bc6e8b8cd6699c8580006cfa",
+      "size": 291
     },
     {
-      "path": "/assets/theme.json",
-      "hash": "edda2af4adca694fc24dd4f75e4c6977",
-      "size": 292
+      "path": "/assets/icon/icon-192.png",
+      "hash": "d68c1350348c1ccfb397f3f6f5e665fd",
+      "size": 8022
+    },
+    {
+      "path": "/assets/icon/icon-512.png",
+      "hash": "fb9872dbe69222f43ab92d62b089818a",
+      "size": 11592
+    },
+    {
+      "path": "/assets/icon/favicon.ico",
+      "hash": "b997fdd8a72afe42da45dcbad52981f2",
+      "size": 2249
+    },
+    {
+      "path": "/assets/other/manifest.webmanifest",
+      "hash": "bbeb0326c287bfd73f942a5c4b2d561a",
+      "size": 843
+    },
+    {
+      "path": "/demo/cache-only.json",
+      "hash": "42245346549d24f07996429ab81c3412",
+      "size": 107
     }
   ]
 }

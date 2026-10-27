@@ -1,0 +1,4 @@
+{
+  "strategy": "network-first",
+  "note": "Always tries the network first. Falls back to the cache when offline."
+}

@@ -1,0 +1,4 @@
+{
+  "strategy": "cache-first",
+  "note": "Served from the cache when it is there. Goes to the network only on a miss."
+}

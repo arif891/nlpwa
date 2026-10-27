@@ -3,10 +3,12 @@
 
   <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
     <title>NLPWA Showcase App</title>
     <link rel="manifest" href="/assets/other/manifest.webmanifest">
-    <link rel="shortcut icon" href="/assets/icon/logo.png" type="image/png">
+    <link rel="icon" href="/assets/icon/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="/assets/icon/apple-touch-icon.png">
 
     <link rel="stylesheet" href="/assets/css/app.css">
   </head>
@@ -15,55 +17,121 @@
   <body>
 
     <header class="header">
-      <svg class="logo" viewBox="0 0 594 400">
+      <svg class="logo" viewBox="0 0 594 400" role="img" aria-label="NLPWA">
         <path d="M0 400V0H78.8951L277.276 258.286V0H355.6V400H282.422L78.3234 133.143V400H0Z" />
         <path d="M291.569 400V0H375.038V326.286H593.428V400H291.569Z" />
         <path d="M499.097 2.72478e-05H594V305.143H499.097V2.72478e-05Z" />
       </svg>
 
-      <div class="links-wrapper">
-        <a class="link btn active" href="#tab-1">Tab 1</a>
-        <a class="link btn" href="#tab-2">Tab 2</a>
-        <a class="link btn" href="#tab-3">Tab 3</a>
+      <div class="nav-group">
+        <button class="btn install" type="button" hidden>Install app</button>
+
+        <nav class="links-wrapper" aria-label="Sections">
+          <a class="link btn active" href="#playground" aria-current="page">Playground</a>
+          <a class="link btn" href="#updates">Updates</a>
+          <a class="link btn" href="#storage">Storage</a>
+        </nav>
       </div>
     </header>
 
     <div class="window-wrapper">
-      <div class="window" id="tab-1">
-        <layout>
-          <div class="card card-1">
-            <div class="header">
-              <h1 class="heading">heading</h1>
 
-              <span class="other-text">Other</span>
-            </div>
-          </div>
-          <div class="card card-2">
-            <div class="header">
-              <h1 class="heading">heading</h1>
-            </div>
-          </div>
-          <div class="card card-3">
-            <div class="header">
-              <h1 class="heading">heading</h1>
-            </div>
-          </div>
-          <div class="card card-4">
-            <div class="header">
-              <h1 class="heading">heading</h1>
-            </div>
-          </div>
-        </layout>
-      </div>
-      <div class="window" id="tab-2">
+      <!-- Playground -->
+      <section class="window" id="playground" aria-label="Playground">
+        <main class="layout">
 
-      </div>
-      <div class="window" id="tab-3">
+          <div class="card card-1" data-state="installing" id="status">
+            <div class="header">
+              <h1 class="heading">Status</h1>
+              <span class="other-text" id="status-version">v—</span>
+            </div>
 
-      </div>
+            <div class="gauge" role="meter" aria-label="Files cached for offline use" aria-valuemin="0" aria-valuemax="100"
+              aria-valuenow="0">
+              <svg viewBox="0 0 200 104" aria-hidden="true">
+                <path class="gauge-track" pathLength="100" d="M10 104A90 90 0 0 1 190 104" />
+                <path class="gauge-fill" pathLength="100" d="M10 104A90 90 0 0 1 190 104" />
+              </svg>
+              <div class="gauge-readout">
+                <span class="gauge-value" id="status-value">0/0</span>
+                <span class="gauge-label">Files cached</span>
+                <span class="gauge-state" id="status-state" aria-live="polite">Installing</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card card-2" id="strategy">
+            <div class="header">
+              <h1 class="heading">Strategy</h1>
+              <span class="other-text conn" id="conn" data-online="true">Online</span>
+            </div>
+
+            <div class="bars" id="bars" role="img" aria-label="Response time for each strategy"></div>
+            <p class="hint" id="bars-hint">Run a test to see response times. Switch to offline in DevTools to compare.</p>
+          </div>
+
+          <div class="card card-3" id="console">
+            <div class="header">
+              <h1 class="heading">Console</h1>
+            </div>
+
+            <div class="toolbar">
+              <div class="seg" role="group" aria-label="Console view" id="console-tabs">
+                <button type="button" aria-pressed="true" data-view="log">Log</button>
+                <button type="button" aria-pressed="false" data-view="cache">Cache</button>
+                <button type="button" aria-pressed="false" data-view="config">Config</button>
+              </div>
+              <button class="btn primary" type="button" id="console-action">Clear</button>
+            </div>
+
+            <div class="viewport" id="viewport" tabindex="0" aria-label="Console output" aria-live="polite"></div>
+          </div>
+
+          <div class="card card-4" id="test">
+            <div class="header">
+              <h1 class="heading">Test</h1>
+            </div>
+
+            <div class="seg" role="group" aria-label="Fetch strategy" id="strategy-tabs"></div>
+
+            <form class="field" id="test-form" autocomplete="off">
+              <label class="sr-only" for="test-url">URL to fetch</label>
+              <input id="test-url" name="url" type="text" inputmode="url" spellcheck="false" value="/demo/cache-first.json">
+              <button class="btn primary" type="submit">Fetch</button>
+            </form>
+            <p class="hint" id="test-hint"></p>
+          </div>
+
+        </main>
+      </section>
+
+      <!-- Updates -->
+      <section class="window" id="updates" aria-label="Updates">
+        <main class="layout">
+          <div class="card card-wide">
+            <div class="header">
+              <h1 class="heading">Updates</h1>
+            </div>
+            <p class="hint">Coming next: publish a new version and watch only the changed files download.</p>
+          </div>
+        </main>
+      </section>
+
+      <!-- Storage -->
+      <section class="window" id="storage" aria-label="Storage">
+        <main class="layout">
+          <div class="card card-wide">
+            <div class="header">
+              <h1 class="heading">Storage</h1>
+            </div>
+            <p class="hint">Coming next: see what is saved on this device and clean it up.</p>
+          </div>
+        </main>
+      </section>
+
     </div>
 
-    <!-- <script src="/assets/js/client.js"></script> -->
+    <script src="/assets/js/client.js"></script>
     <script src="/assets/js/app.js"></script>
   </body>
 

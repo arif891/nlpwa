@@ -7,8 +7,11 @@ async function main() {
     if (existsSync('out/sw.js') && existsSync('example/sw.js')) {
       copyFileSync('out/sw.js', 'example/sw.js');
     }
-    if (existsSync('out/client.js') && existsSync('example/client.js')) {
-      copyFileSync('out/client.js', 'example/client.js');
+    // client.js lives under assets/js in the redesigned example; keep the old location working too.
+    for (const target of ['example/assets/js/client.js', 'example/client.js']) {
+      if (existsSync('out/client.js') && existsSync(target)) {
+        copyFileSync('out/client.js', target);
+      }
     }
 
     await cmdUpdate({

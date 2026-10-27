@@ -245,24 +245,52 @@
     const ghostHeights = [62, 38, 52, 30, 44];
 
     function renderBars() {
-        bars.replaceChildren();
         const measured = Object.values(state.results).map((r) => r.ms);
         const max = Math.max(40, ...measured);
+        const existingBars = bars.children;
 
-        STRATEGIES.forEach((strategy, i) => {
-            const result = state.results[strategy.id];
-            const bar = el('div', 'bar');
-            bar.dataset.kind = result ? result.kind : 'idle';
+        if (existingBars.length === STRATEGIES.length) {
+            // Update in place so CSS transitions animate height & color
+            STRATEGIES.forEach((strategy, i) => {
+                const result = state.results[strategy.id];
+                const bar = existingBars[i];
+                bar.dataset.kind = result ? result.kind : 'idle';
 
-            const height = result ? Math.max(8, Math.round((result.ms / max) * 82)) : ghostHeights[i];
-            const track = el('div', 'bar-track');
-            track.style.setProperty('--h', `${height}%`);
-            track.append(el('div', 'bar-fill'));
-            if (result) track.append(el('span', 'bar-value', result.kind === 'fail' ? 'failed' : `${result.ms} ms`));
+                const height = result ? Math.max(8, Math.round((result.ms / max) * 82)) : ghostHeights[i];
+                const track = bar.firstElementChild;
+                if (track) {
+                    track.style.setProperty('--h', `${height}%`);
+                    let valEl = track.querySelector('.bar-value');
+                    if (result) {
+                        const valText = result.kind === 'fail' ? 'failed' : `${result.ms} ms`;
+                        if (!valEl) {
+                            valEl = el('span', 'bar-value', valText);
+                            track.append(valEl);
+                        } else {
+                            valEl.textContent = valText;
+                        }
+                    } else if (valEl) {
+                        valEl.remove();
+                    }
+                }
+            });
+        } else {
+            bars.replaceChildren();
+            STRATEGIES.forEach((strategy, i) => {
+                const result = state.results[strategy.id];
+                const bar = el('div', 'bar');
+                bar.dataset.kind = result ? result.kind : 'idle';
 
-            bar.append(track, el('span', 'bar-name', strategy.label));
-            bars.append(bar);
-        });
+                const height = result ? Math.max(8, Math.round((result.ms / max) * 82)) : ghostHeights[i];
+                const track = el('div', 'bar-track');
+                track.style.setProperty('--h', `${height}%`);
+                track.append(el('div', 'bar-fill'));
+                if (result) track.append(el('span', 'bar-value', result.kind === 'fail' ? 'failed' : `${result.ms} ms`));
+
+                bar.append(track, el('span', 'bar-name', strategy.label));
+                bars.append(bar);
+            });
+        }
 
         bars.setAttribute('aria-label', 'Response time for each strategy. ' + STRATEGIES.map((s) => {
             const r = state.results[s.id];

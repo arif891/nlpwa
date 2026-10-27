@@ -247,7 +247,7 @@ export interface NLPWAConfig {
   cacheOpaque?: boolean;
   /** Development & UI design mode: unregisters Service Worker, clears caches, and prevents auto-registration. Default: false */
   dev?: boolean;
-  /** Explicitly bypass Vite dev server and HMR requests directly to network. Default: false */
+  /** Development bypass mode flag. Default: false */
   devBypass?: boolean;
   /** Whether fetch failures should throw/reject instead of returning a synthetic 503 response */
   throwOnFailure?: boolean;

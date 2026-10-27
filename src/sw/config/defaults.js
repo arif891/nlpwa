@@ -191,12 +191,12 @@ export const DEFAULTS = {
   cleanURLs: true,
 
   /**
-   * Enable development mode (bypasses Vite internal and HMR requests to network).
+   * Enable development & UI design mode (unregisters Service Worker, clears caches, and disables auto-registration).
    * Default: false
    */
   dev: false,
 
-  /** Explicitly bypass Vite dev server and HMR requests to network. Default: false */
+  /** Development bypass mode flag. Default: false */
   devBypass: false,
 
   /** Log level: 'silent' | 'error' | 'warn' | 'info' | 'debug'. Default: 'info' */

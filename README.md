@@ -9,39 +9,46 @@
 
 A lightweight, zero-dependency Service Worker engine and client SDK that makes Progressive Web Apps feel truly native. It delivers **atomic over-the-air (OTA) delta updates**, **per-tab client version pinning**, **automated boot watchdog rollbacks**, and **modular native OS integrations** (Push, Sync, Badging, Share Target, Background Fetch).
 
+👉 **[Experience Live Showcase](https://nlpwa.vercel.app)** — Test live delta updates, tab version pinning, and offline caching in real time.
+
 ---
 
 ## ⚡ Quickstart in 60 Seconds
 
 ### 1. Install & Initialize
-Scaffold your service worker and default configuration into your project or build output directory:
+Scaffold your service worker and default configuration into your project or public directory:
 ```bash
-npm install nlpwa
-npx nlpwa init --dir ./public
+npm install -g nlpwa
+nlpwa init --dir ./public
 ```
 
-### 2. Register in Your App
-Import and register the client SDK in your main entrypoint:
+### 2. Configure Caching & Routes (`nlpwa.config.js`)
+The client SDK automatically registers the Service Worker on load with zero boilerplate. Define your app shell and route caching strategies:
 ```javascript
-import { register, onUpdateAvailable, applyUpdate } from 'nlpwa/client';
-
-register();
-
-onUpdateAvailable((info) => {
-  console.log(`Update v${info.version} staged in background!`);
-  // Optionally prompt user or call applyUpdate() to activate immediately
-});
+export default {
+  precache: [
+    '/',
+    '/index.html',
+    '/app.js',
+    '/styles.css',
+  ],
+  routes: [
+    { match: '/api/*',    strategy: 'network-first' },
+    { match: '/assets/*', strategy: 'cache-first' },
+    { match: '*',         strategy: 'stale-while-revalidate' },
+  ],
+};
 ```
 
 ### 3. Build & Deploy Updates
 Whenever you deploy a new build, generate hash-verified update manifests with the CLI:
 ```bash
-npx nlpwa update --dir ./dist
+nlpwa update --dir ./public
 ```
 This generates:
-- `dist/api/update/version.json` — Tier 1 lightweight ~20-byte check endpoint
-- `dist/api/update/info.json` — Tier 2 hash-verified file manifest
-- `dist/api/update/config.json` — Deployed runtime configuration
+- `public/api/update/version.json` — Tier 1 lightweight ~20-byte check endpoint
+- `public/api/update/info.json` — Tier 2 hash-verified file manifest
+- `public/api/update/config.json` — Deployed runtime configuration
 
 ---
 
@@ -104,14 +111,6 @@ Deep-dive architectural specifications, guides, and API references:
 
 ---
 
-## 🎮 Interactive Demo
-Explore the live interactive testbed demonstrating delta updates, tab pinning, and badging:
-```bash
-npm run example
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
----
-
 ## License
 [MIT](LICENSE)
+

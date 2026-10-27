@@ -46,6 +46,7 @@
     const wrapper = $('.window-wrapper');
     const panels = $$('.window');
     const links = $$('.links-wrapper .link');
+    const floatingTabs = $$('.floating-tabs .tab-item');
 
     function activateTab(index) {
         links.forEach((link, i) => {
@@ -53,19 +54,37 @@
             if (i === index) link.setAttribute('aria-current', 'page');
             else link.removeAttribute('aria-current');
         });
+        floatingTabs.forEach((tab, i) => {
+            tab.classList.toggle('active', i === index);
+            if (i === index) tab.setAttribute('aria-current', 'page');
+            else tab.removeAttribute('aria-current');
+        });
         panels.forEach((panel, i) => { panel.inert = i !== index; });
+        if (index === 1) {
+            fetchServerVersion();
+            renderManifest();
+            updatePinStatus();
+        } else if (index === 2) {
+            renderStorage();
+        } else if (index === 3) {
+            renderPlugins();
+        }
     }
 
     function goToTab(index, smooth) {
         wrapper.scrollTo({ left: index * wrapper.clientWidth, behavior: smooth && !reducedMotion ? 'smooth' : 'instant' });
     }
 
-    links.forEach((link, i) => {
-        link.addEventListener('click', (event) => {
+    [...links, ...floatingTabs].forEach((item) => {
+        item.addEventListener('click', (event) => {
             event.preventDefault();
-            history.replaceState(null, '', link.hash);
-            activateTab(i);
-            goToTab(i, true);
+            const targetHash = item.hash;
+            const targetIndex = panels.findIndex((p) => '#' + p.id === targetHash);
+            if (targetIndex >= 0) {
+                history.replaceState(null, '', targetHash);
+                activateTab(targetIndex);
+                goToTab(targetIndex, true);
+            }
         });
     });
 
@@ -171,20 +190,46 @@
 
     /* ---------- Client state (version, updates, install) ---------- */
     const installButton = $('.install');
+
+    function updateInstallButton(s) {
+        if (!installButton) return;
+        const installed = s?.isInstalled ?? client?.isInstalled?.() ?? false;
+        installButton.hidden = false;
+        if (installed) {
+            installButton.textContent = 'Installed';
+            installButton.disabled = true;
+            installButton.classList.add('is-installed');
+        } else {
+            installButton.textContent = 'Install app';
+            installButton.disabled = false;
+            installButton.classList.remove('is-installed');
+        }
+    }
+
     if (client) {
         client.subscribe((s) => {
             status.version = s.activeVersion || s.version || status.version;
             status.stagedVersion = s.stagedVersion || null;
             status.updateStatus = s.updateStatus;
             status.progress = s.stagingProgress;
-            installButton.hidden = !s.isInstallable || s.isInstalled;
+            updateInstallButton(s);
             renderStatus();
+            renderUpdates(s);
         });
-        installButton.addEventListener('click', () => client.promptInstall());
+        installButton.addEventListener('click', async () => {
+            if (installButton.disabled) return;
+            if (client && typeof client.promptInstall === 'function') {
+                const res = await client.promptInstall();
+                if (!res && !client.isInstallable()) {
+                    alert('To install this app on your device: open the browser menu (or share button) and select "Add to Home Screen" or "Install App".');
+                }
+            }
+        });
 
         navigator.serviceWorker?.ready.then(countCached);
         navigator.serviceWorker?.addEventListener('controllerchange', () => setTimeout(countCached, 500));
     }
+    updateInstallButton();
     countCached();
 
     /* ---------- Strategy bars ---------- */
@@ -384,8 +429,620 @@
         }
     });
 
+    /* ---------- Updates Tab ---------- */
+    const otaStatusBadge = $('#ota-status-badge');
+    const otaActiveVersion = $('#ota-active-version');
+    const otaServerVersion = $('#ota-server-version');
+    const otaStagedVersion = $('#ota-staged-version');
+    const otaProgressBox = $('#ota-progress-box');
+    const otaProgressText = $('#ota-progress-text');
+    const otaProgressFill = $('#ota-progress-fill');
+
+    const btnCheckUpdate = $('#btn-check-update');
+    const btnBumpVersion = $('#btn-bump-version');
+    const btnApplyUpdate = $('#btn-apply-update');
+    const btnResetVersion = $('#btn-reset-version');
+
+    const pinTabRole = $('#pin-tab-role');
+    const pinCacheName = $('#pin-cache-name');
+    const pinDirtyState = $('#pin-dirty-state');
+    const btnToggleDirty = $('#btn-toggle-dirty');
+    const btnCheckConsensus = $('#btn-check-consensus');
+    const pinStatusMsg = $('#pin-status-msg');
+
+    const watchdogState = $('#watchdog-state');
+    const btnMarkHealthy = $('#btn-mark-healthy');
+    const btnReportCrash = $('#btn-report-crash');
+    const btnTriggerRollback = $('#btn-trigger-rollback');
+    const watchdogMsg = $('#watchdog-msg');
+
+    const manifestViewport = $('#manifest-viewport');
+    const btnRefreshManifest = $('#btn-refresh-manifest');
+
+    let currentDirty = false;
+
+    function renderUpdates(s) {
+        if (!otaStatusBadge) return;
+        const activeVer = s?.activeVersion || s?.version || status.version || '1.0.0';
+        const stagedVer = s?.stagedVersion || null;
+        const updateStatus = s?.updateStatus || 'idle';
+        const progress = s?.stagingProgress || null;
+
+        otaActiveVersion.textContent = `v${activeVer}`;
+        otaStagedVersion.textContent = stagedVer ? `v${stagedVer}` : 'None';
+
+        otaStatusBadge.textContent = updateStatus.toUpperCase();
+        otaStatusBadge.className = 'badge';
+        if (updateStatus === 'checking' || updateStatus === 'staging') {
+            otaStatusBadge.classList.add('is-' + updateStatus);
+        } else if (updateStatus === 'ready' || stagedVer) {
+            otaStatusBadge.classList.add('is-ready');
+        } else if (updateStatus === 'failed') {
+            otaStatusBadge.classList.add('is-failed');
+        } else {
+            otaStatusBadge.classList.add('is-muted');
+        }
+
+        if (updateStatus === 'staging' && progress) {
+            otaProgressBox.hidden = false;
+            const pct = Math.round(progress.percent || 0);
+            otaProgressText.textContent = `${pct}% (${progress.loaded || 0}/${progress.total || 0} files)`;
+            otaProgressFill.style.width = `${pct}%`;
+        } else {
+            otaProgressBox.hidden = true;
+        }
+
+        btnApplyUpdate.disabled = !stagedVer;
+        if (stagedVer) {
+            btnApplyUpdate.textContent = `Apply v${stagedVer}`;
+        } else {
+            btnApplyUpdate.textContent = 'Apply Staged Update';
+        }
+    }
+
+    async function fetchServerVersion() {
+        try {
+            const res = await fetch('/api/update/version.json', { cache: 'no-cache' });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.version) {
+                    otaServerVersion.textContent = `v${data.version}`;
+                }
+            }
+        } catch {
+            otaServerVersion.textContent = 'v—';
+        }
+    }
+
+    async function renderManifest() {
+        if (!manifestViewport) return;
+        manifestViewport.replaceChildren(el('div', 'empty', 'Loading manifest…'));
+        try {
+            const res = await fetch('/api/update/info.json', { cache: 'no-cache' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const info = await res.json();
+            manifestViewport.replaceChildren();
+
+            const headerRow = el('div', 'group', `Manifest v${info.version || '—'} · ${(info.files || []).length} tracked files`);
+            manifestViewport.append(headerRow);
+
+            for (const file of (info.files || [])) {
+                const row = el('div', 'row');
+                const pathSpan = el('span', 'path', file.path);
+                const hashSpan = el('span', 'meta', file.hash ? file.hash.slice(0, 10) + '…' : '');
+                const sizeSpan = el('span', 'meta', file.size ? formatBytes(file.size) : '');
+                row.append(pathSpan, hashSpan, sizeSpan);
+                manifestViewport.append(row);
+            }
+        } catch (err) {
+            manifestViewport.replaceChildren(el('div', 'empty is-fail', `Failed to load manifest: ${err.message}`));
+        }
+    }
+
+    async function updatePinStatus() {
+        if (!client) return;
+        try {
+            const pin = await client.getPinStatus?.();
+            if (pin) {
+                pinCacheName.textContent = pin.cache || `offline@${pin.version || '1.0.0'}`;
+            }
+            if (typeof client.isLeader === 'function') {
+                const leader = await client.isLeader();
+                pinTabRole.textContent = leader ? 'Tab Leader' : 'Follower Tab';
+            }
+        } catch {}
+    }
+
+    btnCheckUpdate?.addEventListener('click', async () => {
+        pinStatusMsg.textContent = 'Checking for updates…';
+        await fetchServerVersion();
+        if (client) {
+            await client.requestUpdateCheck?.();
+        }
+        setTimeout(() => { pinStatusMsg.textContent = ''; }, 2500);
+    });
+
+    btnBumpVersion?.addEventListener('click', async () => {
+        btnBumpVersion.disabled = true;
+        pinStatusMsg.textContent = 'Releasing new version on server…';
+        try {
+            const res = await fetch('/api/update/bump', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                pinStatusMsg.textContent = `Published release v${data.version}! Checking for delta updates…`;
+                await fetchServerVersion();
+                await renderManifest();
+                if (client) {
+                    await client.requestUpdateCheck?.();
+                }
+            } else {
+                pinStatusMsg.textContent = `Bump error: ${data.error || 'failed'}`;
+            }
+        } catch (err) {
+            pinStatusMsg.textContent = `Server error: ${err.message}`;
+        } finally {
+            btnBumpVersion.disabled = false;
+            setTimeout(() => { if (pinStatusMsg.textContent.startsWith('Published')) pinStatusMsg.textContent = ''; }, 4000);
+        }
+    });
+
+    btnApplyUpdate?.addEventListener('click', async () => {
+        if (!client) return;
+        pinStatusMsg.textContent = 'Applying update atomically…';
+        await client.applyUpdate?.({ reload: true });
+    });
+
+    btnResetVersion?.addEventListener('click', async () => {
+        btnResetVersion.disabled = true;
+        pinStatusMsg.textContent = 'Resetting server to v1.0.0…';
+        try {
+            const res = await fetch('/api/update/reset', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                pinStatusMsg.textContent = 'Reset server to v1.0.0 successfully.';
+                await fetchServerVersion();
+                await renderManifest();
+                if (client) {
+                    await client.requestUpdateCheck?.();
+                }
+            }
+        } catch (err) {
+            pinStatusMsg.textContent = `Reset failed: ${err.message}`;
+        } finally {
+            btnResetVersion.disabled = false;
+            setTimeout(() => { pinStatusMsg.textContent = ''; }, 3000);
+        }
+    });
+
+    btnToggleDirty?.addEventListener('click', () => {
+        currentDirty = !currentDirty;
+        pinDirtyState.textContent = currentDirty ? 'Dirty (Guarded)' : 'Clean';
+        pinDirtyState.style.color = currentDirty ? 'var(--yellow-color)' : 'var(--text-color)';
+        if (client && typeof client.setDirty === 'function') {
+            client.setDirty(currentDirty);
+        }
+        pinStatusMsg.textContent = currentDirty
+            ? 'Tab marked DIRTY: background updates will defer reloading until form is saved.'
+            : 'Tab marked CLEAN: background updates can reload freely.';
+        setTimeout(() => { pinStatusMsg.textContent = ''; }, 3500);
+    });
+
+    btnCheckConsensus?.addEventListener('click', async () => {
+        if (!client) return;
+        try {
+            const diag = await client.getDiagnostics?.();
+            const consensus = diag?.client?.tabConsensus;
+            if (consensus?.hasDirtyTabs) {
+                pinStatusMsg.textContent = `Consensus: ${consensus.dirtyTabs.length} open tab(s) currently dirty.`;
+            } else {
+                pinStatusMsg.textContent = 'Consensus: All tabs are clean and eligible for update.';
+            }
+        } catch (err) {
+            pinStatusMsg.textContent = `Consensus check: ${err.message}`;
+        }
+        setTimeout(() => { pinStatusMsg.textContent = ''; }, 3500);
+    });
+
+    btnMarkHealthy?.addEventListener('click', async () => {
+        if (client && typeof client.markHealthy === 'function') {
+            await client.markHealthy();
+            watchdogState.textContent = 'Healthy (Graduated)';
+            watchdogMsg.textContent = 'Confirmed healthy boot! Watchdog probation boot count incremented.';
+            setTimeout(() => { watchdogMsg.textContent = ''; }, 3500);
+        }
+    });
+
+    btnReportCrash?.addEventListener('click', async () => {
+        if (client && typeof client.reportBootFailure === 'function') {
+            await client.reportBootFailure(new Error('Simulated application exception during startup.'));
+            watchdogState.textContent = 'Crash Reported';
+            watchdogMsg.textContent = 'Simulated boot crash reported to probation watchdog.';
+            setTimeout(() => { watchdogMsg.textContent = ''; }, 3500);
+        }
+    });
+
+    btnTriggerRollback?.addEventListener('click', async () => {
+        if (client && typeof client.rollback === 'function') {
+            watchdogMsg.textContent = 'Requesting emergency rollback to fallback cache…';
+            await client.rollback('User triggered manual emergency rollback');
+        }
+    });
+
+    btnRefreshManifest?.addEventListener('click', () => renderManifest());
+
+    /* ---------- Storage Tab ---------- */
+    const storagePercentUsed = $('#storage-percent-used');
+    const storageUsedBytes = $('#storage-used-bytes');
+    const storageTotalQuota = $('#storage-total-quota');
+    const storageRuntimeEntries = $('#storage-runtime-entries');
+    const storageQuotaFill = $('#storage-quota-fill');
+    const storagePersistBadge = $('#storage-persist-badge');
+    const storagePersistMsg = $('#storage-persist-msg');
+    const storageCleanupMsg = $('#storage-cleanup-msg');
+    const partitionsGrid = $('#partitions-grid');
+
+    const btnRequestPersist = $('#btn-request-persist');
+    const btnRefreshStorage = $('#btn-refresh-storage');
+    const btnLruCleanup = $('#btn-lru-cleanup');
+    const btnClearRuntime = $('#btn-clear-runtime');
+
+    async function renderStorage() {
+        try {
+            let usage = 0;
+            let quota = 0;
+            if (navigator.storage && navigator.storage.estimate) {
+                const est = await navigator.storage.estimate();
+                usage = est.usage || 0;
+                quota = est.quota || 0;
+            }
+
+            let cacheInfo = null;
+            if (client && typeof client.getCacheInfo === 'function') {
+                cacheInfo = await client.getCacheInfo().catch(() => null);
+                if (cacheInfo) {
+                    if (cacheInfo.usage) usage = cacheInfo.usage;
+                    if (cacheInfo.quota) quota = cacheInfo.quota;
+                }
+            }
+
+            const percent = quota > 0 ? ((usage / quota) * 100).toFixed(2) : '0';
+            storagePercentUsed.textContent = `${percent}% used`;
+            storageUsedBytes.textContent = formatBytes(usage);
+            storageTotalQuota.textContent = formatBytes(quota);
+            storageQuotaFill.style.width = `${Math.min(100, Math.max(1, Number(percent)))}%`;
+
+            // Persistent Storage Check
+            if (client && typeof client.isStoragePersistent === 'function') {
+                const isPersist = await client.isStoragePersistent();
+                storagePersistBadge.textContent = isPersist ? 'Persistent' : 'Best Effort';
+                storagePersistBadge.className = 'badge ' + (isPersist ? '' : 'is-muted');
+            }
+
+            // Partitions
+            partitionsGrid.replaceChildren();
+            const names = await caches.keys();
+            let totalRuntimeCount = 0;
+
+            for (const name of names) {
+                const cache = await caches.open(name);
+                const keys = await cache.keys();
+                const count = keys.length;
+                if (/^runtime/.test(name)) totalRuntimeCount += count;
+
+                const card = el('div', 'partition-card');
+                if (/^runtime/.test(name)) card.classList.add('is-runtime');
+                else if (/^staging/.test(name)) card.classList.add('is-staging');
+                else if (/fallback/.test(name)) card.classList.add('is-fallback');
+
+                card.append(
+                    el('span', 'partition-title', name),
+                    el('span', 'partition-meta', `${count} ${count === 1 ? 'cached resource' : 'cached resources'}`)
+                );
+                partitionsGrid.append(card);
+            }
+
+            storageRuntimeEntries.textContent = `${totalRuntimeCount} items`;
+        } catch (err) {
+            console.warn('[NLPWA] Storage render error:', err);
+        }
+    }
+
+    btnRequestPersist?.addEventListener('click', async () => {
+        if (!client) return;
+        try {
+            const granted = await client.requestPersistentStorage?.();
+            storagePersistBadge.textContent = granted ? 'Persistent' : 'Best Effort';
+            storagePersistBadge.className = 'badge ' + (granted ? '' : 'is-muted');
+            storagePersistMsg.textContent = granted
+                ? 'Persistent storage granted by browser!'
+                : 'Persistent storage permission not granted by browser.';
+        } catch (err) {
+            storagePersistMsg.textContent = `Error: ${err.message}`;
+        }
+        setTimeout(() => { storagePersistMsg.textContent = ''; }, 3500);
+    });
+
+    btnRefreshStorage?.addEventListener('click', () => renderStorage());
+
+    btnLruCleanup?.addEventListener('click', async () => {
+        if (!client) return;
+        try {
+            const res = await client.cleanupRuntimeCache?.({ maxEntries: 5 });
+            const evicted = res?.evictedCount ?? 0;
+            const freed = formatBytes(res?.freedBytes ?? 0);
+            storageCleanupMsg.textContent = `LRU cleanup complete: evicted ${evicted} items, freed ${freed}.`;
+            await renderStorage();
+        } catch (err) {
+            storageCleanupMsg.textContent = `Cleanup error: ${err.message}`;
+        }
+        setTimeout(() => { storageCleanupMsg.textContent = ''; }, 3500);
+    });
+
+    btnClearRuntime?.addEventListener('click', async () => {
+        try {
+            const names = (await caches.keys()).filter((n) => /^runtime/.test(n));
+            await Promise.all(names.map((n) => caches.delete(n)));
+            storageCleanupMsg.textContent = 'Cleared all runtime caches.';
+            await renderStorage();
+        } catch (err) {
+            storageCleanupMsg.textContent = `Clear error: ${err.message}`;
+        }
+        setTimeout(() => { storageCleanupMsg.textContent = ''; }, 3500);
+    });
+
+    /* ---------- Plugins Tab ---------- */
+    // Badging
+    const badgeSupportedBadge = $('#badge-supported-badge');
+    const badgeBubble = $('#badge-bubble');
+    const btnBadge1 = $('#btn-badge-1');
+    const btnBadge5 = $('#btn-badge-5');
+    const btnBadgeDot = $('#btn-badge-dot');
+    const btnBadgeClear = $('#btn-badge-clear');
+    const badgeStatusMsg = $('#badge-status-msg');
+
+    function updateBadgeUI(count) {
+        if (!badgeBubble) return;
+        if (typeof count === 'number' && count > 0) {
+            badgeBubble.hidden = false;
+            badgeBubble.classList.remove('is-dot');
+            badgeBubble.textContent = String(count);
+        } else if (count === 'dot') {
+            badgeBubble.hidden = false;
+            badgeBubble.classList.add('is-dot');
+            badgeBubble.textContent = '';
+        } else {
+            badgeBubble.hidden = true;
+            badgeBubble.textContent = '';
+        }
+    }
+
+    btnBadge1?.addEventListener('click', async () => {
+        updateBadgeUI(1);
+        if (client && typeof client.setAppBadge === 'function') {
+            await client.setAppBadge(1);
+        }
+        badgeStatusMsg.textContent = 'App badge count set to 1 (updated in OS dock/taskbar & preview).';
+        setTimeout(() => { badgeStatusMsg.textContent = ''; }, 3500);
+    });
+
+    btnBadge5?.addEventListener('click', async () => {
+        updateBadgeUI(5);
+        if (client && typeof client.setAppBadge === 'function') {
+            await client.setAppBadge(5);
+        }
+        badgeStatusMsg.textContent = 'App badge count set to 5.';
+        setTimeout(() => { badgeStatusMsg.textContent = ''; }, 3500);
+    });
+
+    btnBadgeDot?.addEventListener('click', async () => {
+        updateBadgeUI('dot');
+        if (client && typeof client.setAppBadge === 'function') {
+            await client.setAppBadge();
+        }
+        badgeStatusMsg.textContent = 'App badge set to dot (uncounted unread indicator).';
+        setTimeout(() => { badgeStatusMsg.textContent = ''; }, 3500);
+    });
+
+    btnBadgeClear?.addEventListener('click', async () => {
+        updateBadgeUI(0);
+        if (client && typeof client.clearAppBadge === 'function') {
+            await client.clearAppBadge();
+        }
+        badgeStatusMsg.textContent = 'App badge cleared.';
+        setTimeout(() => { badgeStatusMsg.textContent = ''; }, 3500);
+    });
+
+    // Background Sync
+    const syncOutboxCount = $('#sync-outbox-count');
+    const syncForm = $('#sync-form');
+    const syncNoteInput = $('#sync-note-input');
+    const btnSyncReplay = $('#btn-sync-replay');
+    const btnSyncClear = $('#btn-sync-clear');
+    const syncStatusMsg = $('#sync-status-msg');
+
+    function getSyncQueue() {
+        if (window.NLPWASyncClient?.SyncQueue) {
+            return new window.NLPWASyncClient.SyncQueue('notes');
+        }
+        return null;
+    }
+
+    async function updateSyncOutbox() {
+        const queue = getSyncQueue();
+        if (!queue) return;
+        try {
+            const items = await queue.getAll();
+            if (syncOutboxCount) {
+                syncOutboxCount.textContent = `Outbox: ${items.length} queued`;
+            }
+        } catch {}
+    }
+
+    syncForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = syncNoteInput.value.trim() || 'Test offline note';
+        const queue = getSyncQueue();
+        if (!queue) {
+            syncStatusMsg.textContent = 'SyncQueue client not available.';
+            return;
+        }
+
+        try {
+            await queue.push(new Request('/api/sync/note', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note: text, timestamp: Date.now() }),
+            }));
+            syncStatusMsg.textContent = `Queued "${text}" to sync outbox with automatic Idempotency-Key!`;
+            syncNoteInput.value = '';
+            await updateSyncOutbox();
+        } catch (err) {
+            syncStatusMsg.textContent = `Failed to queue: ${err.message}`;
+        }
+        setTimeout(() => { syncStatusMsg.textContent = ''; }, 4000);
+    });
+
+    btnSyncReplay?.addEventListener('click', async () => {
+        const queue = getSyncQueue();
+        if (!queue) return;
+        syncStatusMsg.textContent = 'Replaying queued mutations to server…';
+        try {
+            const res = await queue.replayAll({
+                onReplaySuccess: (item, resp) => console.log('[Sync] replayed note', item.id, resp.status),
+            });
+            syncStatusMsg.textContent = `Replay complete: ${res.successCount} replayed, ${res.remainingCount} remaining in outbox.`;
+            await updateSyncOutbox();
+        } catch (err) {
+            syncStatusMsg.textContent = `Replay error: ${err.message}`;
+        }
+        setTimeout(() => { syncStatusMsg.textContent = ''; }, 4000);
+    });
+
+    btnSyncClear?.addEventListener('click', async () => {
+        const queue = getSyncQueue();
+        if (!queue) return;
+        await queue.clear();
+        syncStatusMsg.textContent = 'Cleared sync outbox.';
+        await updateSyncOutbox();
+        setTimeout(() => { syncStatusMsg.textContent = ''; }, 3000);
+    });
+
+    // Web Push
+    const pushPermissionBadge = $('#push-permission-badge');
+    const btnPushRequest = $('#btn-push-request');
+    const btnPushTest = $('#btn-push-test');
+    const pushStatusMsg = $('#push-status-msg');
+
+    function updatePushPermission() {
+        if (!pushPermissionBadge) return;
+        const perm = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
+        pushPermissionBadge.textContent = perm.toUpperCase();
+        pushPermissionBadge.className = 'badge';
+        if (perm === 'granted') {
+            pushPermissionBadge.classList.add('is-ready');
+        } else if (perm === 'denied') {
+            pushPermissionBadge.classList.add('is-failed');
+        } else {
+            pushPermissionBadge.classList.add('is-muted');
+        }
+    }
+
+    btnPushRequest?.addEventListener('click', async () => {
+        if (typeof Notification === 'undefined') {
+            pushStatusMsg.textContent = 'Notifications not supported in this browser.';
+            return;
+        }
+        try {
+            const perm = await Notification.requestPermission();
+            updatePushPermission();
+            pushStatusMsg.textContent = `Notification permission: ${perm}`;
+        } catch (err) {
+            pushStatusMsg.textContent = `Permission error: ${err.message}`;
+        }
+        setTimeout(() => { pushStatusMsg.textContent = ''; }, 3500);
+    });
+
+    btnPushTest?.addEventListener('click', async () => {
+        if (typeof Notification === 'undefined') {
+            pushStatusMsg.textContent = 'Notifications not supported in this browser.';
+            return;
+        }
+        if (Notification.permission !== 'granted') {
+            pushStatusMsg.textContent = 'Please click "Request Permission" first.';
+            return;
+        }
+        try {
+            const reg = await navigator.serviceWorker?.ready;
+            if (reg?.showNotification) {
+                await reg.showNotification('NLPWA Engine', {
+                    body: 'Interactive Web Push demonstration. Action routing & app badging ready.',
+                    icon: '/assets/icon/icon-192.png',
+                    badge: '/assets/icon/favicon.ico',
+                    tag: 'nlpwa-showcase-push',
+                });
+                pushStatusMsg.textContent = 'Notification displayed!';
+            }
+        } catch (err) {
+            pushStatusMsg.textContent = `Notification error: ${err.message}`;
+        }
+        setTimeout(() => { pushStatusMsg.textContent = ''; }, 3500);
+    });
+
+    // Native OS (Share & Bg-Fetch)
+    const btnShareTrigger = $('#btn-share-trigger');
+    const btnBgfetchStatus = $('#btn-bgfetch-status');
+    const nativeStatusMsg = $('#native-status-msg');
+
+    btnShareTrigger?.addEventListener('click', async () => {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'NLPWA Showcase App',
+                    text: 'Native-like PWA Framework with delta updates & offline sync',
+                    url: window.location.origin,
+                });
+                nativeStatusMsg.textContent = 'Native share sheet launched successfully!';
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    nativeStatusMsg.textContent = `Share error: ${err.message}`;
+                }
+            }
+        } else {
+            try {
+                await navigator.clipboard.writeText(window.location.origin);
+                nativeStatusMsg.textContent = 'Web Share API not supported on desktop. URL copied to clipboard!';
+            } catch {
+                nativeStatusMsg.textContent = 'Web Share API not supported.';
+            }
+        }
+        setTimeout(() => { nativeStatusMsg.textContent = ''; }, 3500);
+    });
+
+    btnBgfetchStatus?.addEventListener('click', () => {
+        const supported = typeof self !== 'undefined' && 'BackgroundFetchManager' in self;
+        nativeStatusMsg.textContent = supported
+            ? 'Background Fetch API is supported on this browser (large-file background transfers active)!'
+            : 'Background Fetch API not supported on this browser engine (available in Chromium & Android).';
+        setTimeout(() => { nativeStatusMsg.textContent = ''; }, 4500);
+    });
+
+    function renderPlugins() {
+        if (badgeSupportedBadge && client) {
+            const sup = client.isBadgingSupported?.() ?? false;
+            badgeSupportedBadge.textContent = sup ? 'Supported' : 'API Mock';
+            badgeSupportedBadge.className = 'badge ' + (sup ? '' : 'is-muted');
+        }
+        updatePushPermission();
+        updateSyncOutbox();
+    }
+
     /* ---------- Init ---------- */
     selectStrategy(STRATEGIES[0]);
     renderBars();
     renderLog();
+    fetchServerVersion();
+    renderManifest();
+    updatePinStatus();
+    renderStorage();
+    renderPlugins();
 })();

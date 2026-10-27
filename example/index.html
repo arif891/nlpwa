@@ -30,6 +30,7 @@
           <a class="link btn active" href="#playground" aria-current="page">Playground</a>
           <a class="link btn" href="#updates">Updates</a>
           <a class="link btn" href="#storage">Storage</a>
+          <a class="link btn" href="#plugins">Plugins</a>
         </nav>
       </div>
     </header>
@@ -108,11 +109,98 @@
       <!-- Updates -->
       <section class="window" id="updates" aria-label="Updates">
         <main class="layout">
-          <div class="card card-wide">
+          <!-- Card 1: OTA Release & Delta Staging -->
+          <div class="card card-col-7" id="ota-card">
             <div class="header">
-              <h1 class="heading">Updates</h1>
+              <h1 class="heading">OTA Updates</h1>
+              <span class="badge" id="ota-status-badge">Idle</span>
             </div>
-            <p class="hint">Coming next: publish a new version and watch only the changed files download.</p>
+
+            <div class="stats-row">
+              <div class="stat-box">
+                <span class="stat-label">Active Version</span>
+                <span class="stat-value" id="ota-active-version">v1.0.0</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Server Version</span>
+                <span class="stat-value" id="ota-server-version">v1.0.0</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Staged Delta</span>
+                <span class="stat-value" id="ota-staged-version">None</span>
+              </div>
+            </div>
+
+            <div class="progress-container" id="ota-progress-box" hidden>
+              <div class="progress-header">
+                <span class="progress-title">Staging Delta Update</span>
+                <span class="progress-value" id="ota-progress-text">0%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" id="ota-progress-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div class="action-row">
+              <button class="btn" type="button" id="btn-check-update">Check For Update</button>
+              <button class="btn primary" type="button" id="btn-bump-version">Release v1.0.x (Bump)</button>
+              <button class="btn primary" type="button" id="btn-apply-update" disabled>Apply Staged Update</button>
+              <button class="btn" type="button" id="btn-reset-version">Reset to v1.0.0</button>
+            </div>
+            <p class="hint" id="ota-hint">Two-tier protocol checks lightweight version.json (~20B) before fetching hash-verified info.json delta manifests into an isolated staging cache.</p>
+          </div>
+
+          <!-- Card 2: Client Pinning & Coherence -->
+          <div class="card card-col-5" id="pin-card">
+            <div class="header">
+              <h1 class="heading">Client Pinning</h1>
+              <span class="other-text" id="pin-tab-role">Tab Leader</span>
+            </div>
+
+            <div class="stats-row">
+              <div class="stat-box">
+                <span class="stat-label">Pinned Cache</span>
+                <span class="stat-value text-mono text-sm" id="pin-cache-name">offline@1.0.0</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Dirty Guard</span>
+                <span class="stat-value" id="pin-dirty-state">Clean</span>
+              </div>
+            </div>
+
+            <p class="hint">Tabs remain pinned to their boot version so dynamic chunks never 404 mid-session. Dirty forms prevent unexpected reloads.</p>
+
+            <div class="action-row">
+              <button class="btn" type="button" id="btn-toggle-dirty">Toggle Dirty Guard</button>
+              <button class="btn" type="button" id="btn-check-consensus">Tab Consensus</button>
+            </div>
+            <p class="status-msg" id="pin-status-msg" aria-live="polite"></p>
+          </div>
+
+          <!-- Card 3: Boot Watchdog & Probation -->
+          <div class="card card-col-6" id="watchdog-card">
+            <div class="header">
+              <h1 class="heading">Boot Watchdog</h1>
+              <span class="other-text" id="watchdog-state">Healthy</span>
+            </div>
+
+            <p class="hint">New releases undergo multi-boot probation. If an unhandled crash or boot watchdog timeout occurs, NLPWA rolls back to the fallback cache.</p>
+
+            <div class="action-row">
+              <button class="btn" type="button" id="btn-mark-healthy">Mark Healthy</button>
+              <button class="btn" type="button" id="btn-report-crash">Simulate Crash</button>
+              <button class="btn" type="button" id="btn-trigger-rollback">Emergency Rollback</button>
+            </div>
+            <p class="status-msg" id="watchdog-msg" aria-live="polite"></p>
+          </div>
+
+          <!-- Card 4: Manifest Delta Inspector -->
+          <div class="card card-col-6" id="manifest-card">
+            <div class="header">
+              <h1 class="heading">Update Manifest</h1>
+              <button class="btn" type="button" id="btn-refresh-manifest">Refresh</button>
+            </div>
+            <div class="viewport" id="manifest-viewport" tabindex="0" aria-label="Manifest output"></div>
           </div>
         </main>
       </section>
@@ -120,18 +208,200 @@
       <!-- Storage -->
       <section class="window" id="storage" aria-label="Storage">
         <main class="layout">
-          <div class="card card-wide">
+          <!-- Card 1: Quota & Usage -->
+          <div class="card card-col-7" id="storage-quota-card">
             <div class="header">
-              <h1 class="heading">Storage</h1>
+              <h1 class="heading">Storage Quota</h1>
+              <span class="other-text" id="storage-percent-used">0% used</span>
             </div>
-            <p class="hint">Coming next: see what is saved on this device and clean it up.</p>
+
+            <div class="stats-row">
+              <div class="stat-box">
+                <span class="stat-label">Used</span>
+                <span class="stat-value" id="storage-used-bytes">0 KB</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Available Quota</span>
+                <span class="stat-value" id="storage-total-quota">0 MB</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-label">Runtime Cached</span>
+                <span class="stat-value" id="storage-runtime-entries">0 items</span>
+              </div>
+            </div>
+
+            <div class="progress-track" style="margin-top: var(--space);">
+              <div class="progress-fill" id="storage-quota-fill" style="width: 0%"></div>
+            </div>
+            <p class="hint">Monitors origin disk quota via <code>navigator.storage.estimate()</code> and tracks active cache allocations.</p>
+          </div>
+
+          <!-- Card 2: Persistence & Eviction Shield -->
+          <div class="card card-col-5" id="storage-persist-card">
+            <div class="header">
+              <h1 class="heading">Persistence</h1>
+              <span class="badge" id="storage-persist-badge">Best Effort</span>
+            </div>
+
+            <p class="hint">Browsers may evict cached data under disk pressure. Persistent storage protects offline assets from eviction.</p>
+
+            <div class="action-row">
+              <button class="btn primary" type="button" id="btn-request-persist">Request Persistence</button>
+              <button class="btn" type="button" id="btn-refresh-storage">Refresh Quota</button>
+            </div>
+            <p class="status-msg" id="storage-persist-msg" aria-live="polite"></p>
+          </div>
+
+          <!-- Card 3: Cache Partitions & Maintenance -->
+          <div class="card card-wide" id="storage-partitions-card">
+            <div class="header">
+              <h1 class="heading">Cache Partitions</h1>
+              <div class="action-row">
+                <button class="btn" type="button" id="btn-lru-cleanup">Evict LRU (Keep 5)</button>
+                <button class="btn primary" type="button" id="btn-clear-runtime">Clear Runtime Cache</button>
+              </div>
+            </div>
+
+            <div class="partitions-grid" id="partitions-grid">
+              <!-- Partition boxes rendered by JS -->
+            </div>
+            <p class="status-msg" id="storage-cleanup-msg" aria-live="polite"></p>
+          </div>
+        </main>
+      </section>
+
+      <!-- Plugins -->
+      <section class="window" id="plugins" aria-label="Plugins">
+        <main class="layout">
+          <!-- Card 1: App Badging Plugin -->
+          <div class="card card-col-6" id="plugin-badge-card">
+            <div class="header">
+              <h1 class="heading">App Badging</h1>
+              <span class="badge" id="badge-supported-badge">Supported</span>
+            </div>
+
+            <div class="badge-mockup-wrapper">
+              <div class="badge-app-icon" id="badge-icon-preview">
+                <svg viewBox="0 0 594 400" role="img" aria-label="NLPWA">
+                  <path d="M0 400V0H78.8951L277.276 258.286V0H355.6V400H282.422L78.3234 133.143V400H0Z" />
+                  <path d="M291.569 400V0H375.038V326.286H593.428V400H291.569Z" />
+                  <path d="M499.097 2.72478e-05H594V305.143H499.097V2.72478e-05Z" />
+                </svg>
+                <div class="badge-bubble" id="badge-bubble" hidden>1</div>
+              </div>
+              <div class="badge-info">
+                <span class="text-sm">Native OS icon counter via <code>nlpwa/badge</code>. Updates dock / taskbar badge on Windows, macOS, Android, and iOS.</span>
+              </div>
+            </div>
+
+            <div class="action-row">
+              <button class="btn" type="button" id="btn-badge-1">Count: 1</button>
+              <button class="btn" type="button" id="btn-badge-5">Count: 5</button>
+              <button class="btn" type="button" id="btn-badge-dot">Dot Badge</button>
+              <button class="btn" type="button" id="btn-badge-clear">Clear</button>
+            </div>
+            <p class="status-msg" id="badge-status-msg" aria-live="polite"></p>
+          </div>
+
+          <!-- Card 2: Background Sync Plugin -->
+          <div class="card card-col-6" id="plugin-sync-card">
+            <div class="header">
+              <h1 class="heading">Background Sync</h1>
+              <span class="other-text" id="sync-outbox-count">Outbox: 0</span>
+            </div>
+
+            <p class="hint">Queues offline mutations in an IndexedDB FIFO queue with automatic <code>Idempotency-Key</code> assignment and replays them when back online.</p>
+
+            <form class="field" id="sync-form" autocomplete="off">
+              <label class="sr-only" for="sync-note-input">Offline note</label>
+              <input id="sync-note-input" name="note" type="text" placeholder="Type offline note..." value="Ship delta update release">
+              <button class="btn primary" type="submit">Queue Note</button>
+            </form>
+
+            <div class="action-row">
+              <button class="btn" type="button" id="btn-sync-replay">Replay Outbox Now</button>
+              <button class="btn" type="button" id="btn-sync-clear">Clear Outbox</button>
+            </div>
+            <p class="status-msg" id="sync-status-msg" aria-live="polite"></p>
+          </div>
+
+          <!-- Card 3: Web Push Plugin -->
+          <div class="card card-col-6" id="plugin-push-card">
+            <div class="header">
+              <h1 class="heading">Web Push</h1>
+              <span class="badge" id="push-permission-badge">Checking</span>
+            </div>
+
+            <p class="hint">Zero-boilerplate Web Push via <code>nlpwa/push</code>. Manages base64 VAPID keys, interactive action routing, and OS notification clicks.</p>
+
+            <div class="action-row">
+              <button class="btn primary" type="button" id="btn-push-request">Request Permission</button>
+              <button class="btn" type="button" id="btn-push-test">Show Notification</button>
+            </div>
+            <p class="status-msg" id="push-status-msg" aria-live="polite"></p>
+          </div>
+
+          <!-- Card 4: Web Share Target & Native OS -->
+          <div class="card card-col-6" id="plugin-native-card">
+            <div class="header">
+              <h1 class="heading">Native OS Plugins</h1>
+              <span class="other-text">Share & Bg-Fetch</span>
+            </div>
+
+            <p class="hint">Native OS integrations: <code>nlpwa/share</code> captures incoming mobile share sheets offline, while <code>nlpwa/bg-fetch</code> manages background large-file transfers.</p>
+
+            <div class="action-row">
+              <button class="btn primary" type="button" id="btn-share-trigger">Test Web Share API</button>
+              <button class="btn" type="button" id="btn-bgfetch-status">Check Bg-Fetch Support</button>
+            </div>
+            <p class="status-msg" id="native-status-msg" aria-live="polite"></p>
           </div>
         </main>
       </section>
 
     </div>
 
+    <!-- Floating Mobile Bottom Switcher (<800px) -->
+    <nav class="floating-tabs" aria-label="Mobile View Switcher">
+      <a class="tab-item active" href="#playground" aria-current="page" title="Playground" aria-label="Playground">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="4" y1="21" x2="4" y2="14"></line>
+          <line x1="4" y1="10" x2="4" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12" y2="3"></line>
+          <line x1="20" y1="21" x2="20" y2="16"></line>
+          <line x1="20" y1="12" x2="20" y2="3"></line>
+          <line x1="1" y1="14" x2="7" y2="14"></line>
+          <line x1="9" y1="8" x2="15" y2="8"></line>
+          <line x1="17" y1="16" x2="23" y2="16"></line>
+        </svg>
+      </a>
+      <a class="tab-item" href="#updates" title="Updates" aria-label="Updates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.5 2v6h-6"></path>
+          <path d="M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+        </svg>
+      </a>
+      <a class="tab-item" href="#storage" title="Storage" aria-label="Storage">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+        </svg>
+      </a>
+      <a class="tab-item" href="#plugins" title="Plugins" aria-label="Plugins">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 22v-5"></path>
+          <path d="M9 8V2"></path>
+          <path d="M15 8V2"></path>
+          <path d="M18 8v5a6 6 0 0 1-12 0V8z"></path>
+        </svg>
+      </a>
+    </nav>
+
     <script src="/assets/js/client.js"></script>
+    <script src="/plugins/sync.client.js"></script>
+    <script src="/plugins/push.client.js"></script>
     <script src="/assets/js/app.js"></script>
   </body>
 

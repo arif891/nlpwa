@@ -44,6 +44,10 @@
     {
       "match": "/api/live/*",
       "strategy": "network-only"
+    },
+    {
+      "match": "/api/sync/*",
+      "strategy": "network-only"
     }
   ],
   "defaultStrategy": "network-first",

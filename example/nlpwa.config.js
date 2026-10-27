@@ -31,6 +31,7 @@ export default {
     { match: '/demo/network-only.json', strategy: 'network-only', throwOnFailure: true },
     { match: '/demo/cache-only.json', strategy: 'cache-only' },
     { match: '/api/live/*', strategy: 'network-only' },
+    { match: '/api/sync/*', strategy: 'network-only' },
   ],
   defaultStrategy: 'network-first',
 };

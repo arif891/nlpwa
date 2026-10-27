@@ -3,28 +3,28 @@
   "files": [
     {
       "path": "/api/update/config.json",
-      "hash": "2e4761d8e57e953e6e0bcaeb53193c1d",
-      "size": 1245
+      "hash": "ad5ad16cdf9f816c247dea3152edee1f",
+      "size": 1321
     },
     {
       "path": "/",
-      "hash": "9939406ecfe80704dd27cb3c4f0dded3",
-      "size": 5412
+      "hash": "eb88c603eaff44ba7d8af2d5e70d7f35",
+      "size": 19338
     },
     {
       "path": "/index.html",
-      "hash": "9939406ecfe80704dd27cb3c4f0dded3",
-      "size": 5412
+      "hash": "eb88c603eaff44ba7d8af2d5e70d7f35",
+      "size": 19338
     },
     {
       "path": "/assets/css/app.css",
-      "hash": "0131870c3b3b1bfca835068e8aea7dc7",
-      "size": 13670
+      "hash": "efe97bd3d48d35ad9b7f9f90d2514fa9",
+      "size": 20647
     },
     {
       "path": "/assets/js/app.js",
-      "hash": "44870f09c838d47a090a52378e6a3f48",
-      "size": 16595
+      "hash": "5ceacc8acbfc199bf8ae0912b1e047b7",
+      "size": 44065
     },
     {
       "path": "/assets/js/client.js",

@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "cleanUrls": true,
   "outputDirectory": "example",
   "headers": [
     {
@@ -51,18 +50,6 @@
     {
       "source": "/api/live/time.json",
       "destination": "/api/live/time"
-    },
-    {
-      "source": "/api/update/version.json",
-      "destination": "/api/update/version"
-    },
-    {
-      "source": "/api/update/info.json",
-      "destination": "/api/update/info"
-    },
-    {
-      "source": "/api/update/config.json",
-      "destination": "/api/update/config"
     }
   ]
 }

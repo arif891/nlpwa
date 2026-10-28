@@ -74,67 +74,49 @@ To explicitly configure the Service Worker path, custom scope, or disable auto-r
 <!-- Custom scope -->
 <script src="/client.js" data-scope="/my-app/"></script>
 
-<!-- Disable auto-registration (e.g. for purely manual register() calls) -->
+<!-- Disable auto-registration (e.g. during development or for purely manual register() calls) -->
 <script src="/client.js" data-auto-register="false"></script>
-
-<!-- Enable Development / UI Design Mode -->
-<script src="/client.js" data-dev="true"></script>
 ```
 
 Alternatively, set runtime globals prior to script load:
 ```javascript
 window.NLPWA_SW_URL = '/custom/sw.js';
 window.NLPWA_SW_SCOPE = '/my-app/';
-window.NLPWA_DEV = true; // Enables Development Mode
+window.NLPWA_NO_AUTO_REGISTER = true;
 ```
 
 ---
 
-## Development & UI Design Mode
+## Development Workflow
 
-When developing or iterating on UI designs, styling, or CSS animations, active Service Workers and cached assets can prevent immediate visibility of changes. NLPWA provides first-class Dev Mode support to completely bypass caching without requiring manual DevTools manipulation.
+During local development and UI styling, active Service Workers and precached app shells can interfere with live edits or HMR.
 
-### Enabling Dev Mode
+### Recommended Approaches
 
-Dev Mode can be enabled locally in two ways (evaluated in order):
-1. **Global runtime flag**:
-   ```javascript
-   window.NLPWA_DEV = true;
-   ```
-2. **Script tag attribute**:
+1. **Omit or disable `client.js` in development**:
+   Simply do not include or comment out `/client.js` in your development environment:
    ```html
-   <!-- Valueless attribute or data-dev="true" -->
-   <script src="/client.js" data-dev></script>
-   <!-- or -->
-   <script src="/client.js" data-dev="true"></script>
+   <!-- Development: comment out or omit client.js -->
+   <!-- <script src="/client.js"></script> -->
    ```
-   > **Note:** Only `""` (valueless attribute) and `"true"` turn Dev Mode on. Values such as `data-dev="false"` keep Dev Mode off.
-   > Dev detection operates 100% locally with **zero network overhead**, ensuring production page loads and Service Worker registrations never wait on network requests.
+   Or disable auto-registration:
+   ```html
+   <script src="/client.js" data-auto-register="false"></script>
+   ```
 
-### Dev Mode Behavior
-When Dev Mode is detected:
-- Existing Service Worker registrations for the current scope are immediately unregistered via `registration.unregister()`.
-- Active CacheStorage stores (`offline`, `runtime`, `meta`) are completely flushed via `caches.delete()`.
-- Service Worker registration is skipped, allowing all HTTP requests and asset updates to hit the network or local dev server directly.
-- Full support for Vite, Webpack, and bundler Hot Module Replacement (HMR).
+2. **Unregister via DevTools**:
+   If a Service Worker was previously installed on `localhost`:
+   - Open Chrome DevTools (`F12`) → **Application** tab → **Service Workers**.
+   - Click **Unregister**.
+   - Check **"Update on reload"** or **"Bypass for network"** during development.
 
-### Dev Mode Helpers
-The Client SDK exports helper functions for checking and enforcing Dev Mode:
+3. **Programmatic unregister**:
+   You can unregister the worker programmatically at any time:
+   ```javascript
+   import { unregister } from 'nlpwa/client';
 
-```javascript
-import { isDevMode, enforceDevMode, isDevFlag } from 'nlpwa/client';
-
-// Check if dev mode is currently active (checks window.NLPWA_DEV and script data-dev attribute):
-const devActive = await isDevMode();
-
-// Programmatically enforce dev mode (unregisters SW and wipes caches):
-if (devActive) {
-  await enforceDevMode();
-}
-```
-
-### Automatic Recovery
-When Dev Mode is deactivated (e.g. removing `data-dev` / `data-dev="true"` or deleting `window.NLPWA_DEV`), the SDK automatically restores normal Service Worker registration on the next page visit with no stale residue.
+   await unregister();
+   ```
 
 ---
 

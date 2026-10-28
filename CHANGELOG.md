@@ -2,6 +2,11 @@
 
 All notable changes to `nlpwa` will be documented in this file.
 
+## [0.2.32] - 2026-10-28
+
+### Refactoring & Simplification
+- **Removed Dev Mode Magic**: Completely removed `data-dev`, `window.NLPWA_DEV`, `isDevMode()`, and `enforceDevMode()`. Because Service Workers intercept and serve precached application shells (`/index.html`) cache-first, client-side HTML attributes cannot bypass active Service Workers without developer intervention. Standardized on omitting `client.js` or using `data-auto-register="false"` during development, and unregistering via DevTools or `unregister()`.
+
 ## [0.2.31] - 2026-10-28
 
 ### Features & Developer Experience

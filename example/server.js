@@ -144,31 +144,6 @@ const server = createServer(async (req, res) => {
     }
   }
 
-  // ── Dynamic config.json serving (syncs dev flag from nlpwa.config.js) ──
-  if (pathname === '/api/update/config.json') {
-    try {
-      const configFile = join(__dirname, 'api/update/config.json');
-      const nlpwaConfigFile = join(__dirname, 'nlpwa.config.js');
-      let configData = existsSync(configFile) ? JSON.parse(readFileSync(configFile, 'utf8')) : {};
-      if (existsSync(nlpwaConfigFile)) {
-        const source = readFileSync(nlpwaConfigFile, 'utf8');
-        const hasDevTrue = /\bdev\s*:\s*true\b/.test(source);
-        if (hasDevTrue) {
-          configData.dev = true;
-        } else if (configData.dev) {
-          delete configData.dev;
-        }
-      }
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store, no-cache',
-      });
-      return res.end(JSON.stringify(configData, null, 2));
-    } catch {
-      // Fall through to normal static serve
-    }
-  }
-
   // ── Static File Serving ──────────────────────────────────────────────────
   if (pathname === '/' || pathname.endsWith('/')) {
     pathname += 'index.html';

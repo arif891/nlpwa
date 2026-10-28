@@ -164,27 +164,6 @@ export function register(swUrl?: string, options?: RegisterOptions): Promise<Reg
 export function unregister(scope?: string, options?: { purgeCaches?: boolean }): Promise<boolean>;
 
 /**
- * Evaluates whether a flag value indicates development mode.
- * Accepts boolean true, 'true', or '' (for valueless boolean HTML attribute <script data-dev>).
- */
-export function isDevFlag(value: unknown): boolean;
-
-/**
- * Checks whether a hostname qualifies as a local development host.
- */
-export function isDevHost(hostname?: string | null): boolean;
-
-/**
- * Check if development / UI design mode is active (via window.NLPWA_DEV, <script data-dev>, or ?nlpwa_dev=1 on dev hosts).
- */
-export function isDevMode(script?: HTMLScriptElement | null): boolean;
-
-/**
- * Enforce development mode: unregister active Service Workers, clear caches, and reload once if controlled.
- */
-export function enforceDevMode(options?: { reload?: boolean }): Promise<boolean>;
-
-/**
  * Register a handler to be called when the SW signals an update is ready.
  *
  * @param callback Callback receiving version
@@ -634,8 +613,6 @@ export interface NLPWAClientAPI {
   onLeaderChange: typeof onLeaderChange;
   getDiagnostics: typeof getDiagnostics;
   getPinStatus: typeof getPinStatus;
-  isDevMode: typeof isDevMode;
-  enforceDevMode: typeof enforceDevMode;
 }
 
 export declare const nlpwa: NLPWAClientAPI;

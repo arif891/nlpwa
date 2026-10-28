@@ -35,12 +35,6 @@ Base public path where the application is hosted (e.g. `'/my-app/'` for subpath 
 
 ---
 
-## Development & UI Design Mode
-
-Development mode is controlled client-side via `<script src="/client.js" data-dev></script>` or `window.NLPWA_DEV = true` rather than Service Worker configuration. When active, Service Worker registration is bypassed and caches are cleared. See [Client Registration & Dev Mode](../client/REGISTRATION.md#development--ui-design-mode) for complete details.
-
----
-
 ## Caching & Storage Names
 
 ### `caches` · `object`

@@ -40,17 +40,13 @@ The Client SDK documentation is organized into modular guides:
 </div>
 ```
 
-> **Note on Service Worker Placement & Dev Mode (`data-sw`, `data-dev`):**
+> **Note on Service Worker Placement (`data-sw`):**
 > When using the drop-in `/client.js` bundle, it automatically registers `/sw.js` at the application root.
 > To prevent fragile directory guessing that can accidentally restrict your Service Worker scope, specify any custom Service Worker location or scope explicitly via `data-sw` and `data-scope` (or `window.NLPWA_SW_URL` and `window.NLPWA_SW_SCOPE`):
 > ```html
 > <script src="/static/js/client.js" data-sw="/custom/sw.js" data-scope="/"></script>
 > ```
-> To enable Development / UI Design mode (unregisters SW and flushes caches for live CSS/UI editing):
-> ```html
-> <script src="/client.js" data-dev></script>
-> ```
-> To disable auto-registration entirely (e.g. if you prefer manual registration):
+> To disable auto-registration entirely (e.g. during development or if you prefer manual registration):
 > ```html
 > <script src="/client.js" data-auto-register="false"></script>
 > ```

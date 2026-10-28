@@ -94,18 +94,6 @@ export default function handler(req, res) {
         if (cookieVer) {
           data.version = cookieVer;
         }
-        // Sync dev mode flag if nlpwa.config.js has dev: true
-        try {
-          const nlpwaConfigFile = resolve(__dirname, '../../nlpwa.config.js');
-          if (existsSync(nlpwaConfigFile)) {
-            const src = readFileSync(nlpwaConfigFile, 'utf8');
-            if (/\bdev\s*:\s*true\b/.test(src)) {
-              data.dev = true;
-            } else if (data.dev) {
-              delete data.dev;
-            }
-          }
-        } catch {}
         return res.status(200).json(data);
       }
     } catch {}

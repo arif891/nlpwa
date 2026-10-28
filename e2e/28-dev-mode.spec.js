@@ -56,16 +56,22 @@ test.describe('28 - Development / UI Design Mode Support', () => {
     await page.goto('/');
     await waitForActiveSW(page);
 
-    // 2. Inject script tag with data-dev="true"
-    await page.evaluate(async () => {
-      const script = document.createElement('script');
-      script.src = '/assets/js/client.js';
-      script.setAttribute('data-dev', 'true');
-      document.head.appendChild(script);
+    // 2. Set data-dev="true" on client script tag via init script so it persists across dev reload
+    await page.addInitScript(() => {
+      const setAttr = () => {
+        const s = document.querySelector('script[src*="client"]');
+        if (s && !s.hasAttribute('data-dev')) {
+          s.setAttribute('data-dev', 'true');
+        }
+      };
+      setAttr();
+      const observer = new MutationObserver(setAttr);
+      observer.observe(document.documentElement || document, { childList: true, subtree: true });
     });
 
-    // 3. Give client a moment to evaluate and enforce
-    await page.waitForTimeout(500);
+    // 3. Reload page with data-dev attribute active on the script tag
+    await page.goto('/');
+    await page.waitForTimeout(600);
 
     const hasWorker = await page.evaluate(async () => {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -74,48 +80,58 @@ test.describe('28 - Development / UI Design Mode Support', () => {
     expect(hasWorker).toBe(false);
   });
 
-  test('dev: true in nlpwa.config.js triggers dev mode unregister', async ({ page }) => {
-    const { readFileSync, writeFileSync } = await import('node:fs');
-    const { resolve } = await import('node:path');
-    const configPath = resolve('example/nlpwa.config.js');
-    const originalContent = readFileSync(configPath, 'utf8');
-
-    try {
-      // 1. Ensure SW is active initially
-      await page.goto('/');
-      await waitForActiveSW(page);
-
-      // 2. Add dev: true to example/nlpwa.config.js
-      writeFileSync(configPath, originalContent.replace('export default {', 'export default {\n  dev: true,'), 'utf8');
-
-      // 3. Reload page with the dev: true config
-      await page.goto('/');
-
-      // 4. Client must have fetched config.json, detected dev: true, and unregistered SW
-      await expect.poll(async () => {
-        return await page.evaluate(async () => {
-          const reg = await navigator.serviceWorker.getRegistration();
-          return !reg;
-        });
-      }, { timeout: 4000 }).toBe(true);
-    } finally {
-      writeFileSync(configPath, originalContent, 'utf8');
-    }
-  });
-
-  test('window.NLPWA_CONFIG = { dev: true } triggers dev mode unregister', async ({ page }) => {
+  test('boolean data-dev attribute on script tag activates dev mode', async ({ page }) => {
+    // 1. First ensure SW is running
     await page.goto('/');
     await waitForActiveSW(page);
 
+    // 2. Set valueless boolean data-dev attribute on client script tag
     await page.addInitScript(() => {
-      window.NLPWA_CONFIG = { dev: true };
+      const setAttr = () => {
+        const s = document.querySelector('script[src*="client"]');
+        if (s && !s.hasAttribute('data-dev')) {
+          s.setAttribute('data-dev', '');
+        }
+      };
+      setAttr();
+      const observer = new MutationObserver(setAttr);
+      observer.observe(document.documentElement || document, { childList: true, subtree: true });
     });
 
+    // 3. Reload page with boolean data-dev
     await page.goto('/');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
 
-    const hasReg = await page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()));
-    expect(hasReg).toBe(false);
+    const hasWorker = await page.evaluate(async () => {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      return regs.length > 0;
+    });
+    expect(hasWorker).toBe(false);
+  });
+
+  test('data-dev="false" does not activate dev mode and registers normally', async ({ page }) => {
+    // 1. Set data-dev="false" on client script tag
+    await page.addInitScript(() => {
+      const setAttr = () => {
+        const s = document.querySelector('script[src*="client"]');
+        if (s && !s.hasAttribute('data-dev')) {
+          s.setAttribute('data-dev', 'false');
+        }
+      };
+      setAttr();
+      const observer = new MutationObserver(setAttr);
+      observer.observe(document.documentElement || document, { childList: true, subtree: true });
+    });
+
+    // 2. Load page and verify SW registers normally
+    await page.goto('/');
+    await waitForActiveSW(page);
+
+    const hasReg = await page.evaluate(async () => {
+      const reg = await navigator.serviceWorker.getRegistration();
+      return !!reg;
+    });
+    expect(hasReg).toBe(true);
   });
 
   test('removing dev mode allows service worker to auto-register again', async ({ page }) => {

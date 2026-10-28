@@ -63,13 +63,7 @@ export async function register(swUrl = '/sw.js', options = {}) {
   }
 
   const executeRegister = async () => {
-    if (
-      isDevFlag(options.dev) ||
-      (typeof window !== 'undefined' && (
-        isDevFlag(window.NLPWA_DEV) ||
-        isDevFlag(window.NLPWA_CONFIG?.dev)
-      ))
-    ) {
+    if (typeof window !== 'undefined' && isDevFlag(window.NLPWA_DEV)) {
       logger.info('[NLPWA] Dev mode: Service Worker registration bypassed.');
       await unregister(options.scope);
       return null;

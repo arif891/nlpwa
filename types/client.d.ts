@@ -164,17 +164,14 @@ export function unregister(scope?: string): Promise<boolean>;
 
 /**
  * Evaluates whether a flag value indicates development mode.
- * Accepts boolean true, 'true', 1, '1', or '' (for valueless boolean HTML attributes).
+ * Accepts boolean true, 'true', or '' (for valueless boolean HTML attribute <script data-dev>).
  */
 export function isDevFlag(value: unknown): boolean;
 
 /**
- * Check if development / UI design mode is active (via window.NLPWA_DEV, <script data-dev>, or options).
+ * Check if development / UI design mode is active (via window.NLPWA_DEV or <script data-dev>).
  */
-export function isDevMode(
-  script?: HTMLScriptElement | null,
-  options?: { dev?: boolean | string | number; probeRemote?: boolean; probeTimeoutMs?: number }
-): Promise<boolean>;
+export function isDevMode(script?: HTMLScriptElement | null): Promise<boolean>;
 
 /**
  * Enforce development mode: unregister all active Service Workers and clear caches.

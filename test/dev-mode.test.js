@@ -56,19 +56,12 @@ describe('Dev Mode & UI Design Support', () => {
     }
   });
 
-  test('isDevMode: detects options.dev = true', async () => {
-    const result = await isDevMode(null, { dev: true });
-    assert.strictEqual(result, true);
-  });
 
-  test('isDevMode: detects window.NLPWA_DEV = true (boolean, string, number)', async () => {
+  test('isDevMode: detects window.NLPWA_DEV = true (boolean, string)', async () => {
     globalThis.window.NLPWA_DEV = true;
     assert.strictEqual(await isDevMode(), true);
 
     globalThis.window.NLPWA_DEV = 'true';
-    assert.strictEqual(await isDevMode(), true);
-
-    globalThis.window.NLPWA_DEV = 1;
     assert.strictEqual(await isDevMode(), true);
 
     globalThis.window.NLPWA_DEV = false;
@@ -78,10 +71,10 @@ describe('Dev Mode & UI Design Support', () => {
   test('isDevFlag: evaluates dev truthy vs falsy values', () => {
     assert.strictEqual(isDevFlag(true), true);
     assert.strictEqual(isDevFlag('true'), true);
-    assert.strictEqual(isDevFlag(1), true);
-    assert.strictEqual(isDevFlag('1'), true);
     assert.strictEqual(isDevFlag(''), true);
 
+    assert.strictEqual(isDevFlag(1), false);
+    assert.strictEqual(isDevFlag('1'), false);
     assert.strictEqual(isDevFlag(false), false);
     assert.strictEqual(isDevFlag('false'), false);
     assert.strictEqual(isDevFlag(0), false);
@@ -98,17 +91,17 @@ describe('Dev Mode & UI Design Support', () => {
     };
     assert.strictEqual(await isDevMode(scriptWithDevTrue), true);
 
-    const scriptWithDev1 = {
-      getAttribute: (name) => (name === 'data-dev' ? '1' : null),
-      hasAttribute: (name) => name === 'data-dev',
-    };
-    assert.strictEqual(await isDevMode(scriptWithDev1), true);
-
     const scriptWithBooleanDev = {
       getAttribute: (name) => (name === 'data-dev' ? '' : null),
       hasAttribute: (name) => name === 'data-dev',
     };
     assert.strictEqual(await isDevMode(scriptWithBooleanDev), true);
+
+    const scriptWithDev1 = {
+      getAttribute: (name) => (name === 'data-dev' ? '1' : null),
+      hasAttribute: (name) => name === 'data-dev',
+    };
+    assert.strictEqual(await isDevMode(scriptWithDev1), false);
 
     const scriptWithDevFalse = {
       getAttribute: (name) => (name === 'data-dev' ? 'false' : null),
@@ -129,39 +122,15 @@ describe('Dev Mode & UI Design Support', () => {
     assert.strictEqual(await isDevMode(scriptWithoutDev), false);
   });
 
-  test('isDevMode: detects window.NLPWA_CONFIG.dev = true', async () => {
-    globalThis.window.NLPWA_CONFIG = { dev: true };
-    assert.strictEqual(await isDevMode(), true);
-
-    globalThis.window.NLPWA_CONFIG = { dev: false };
-    assert.strictEqual(await isDevMode(), false);
-  });
-
-  test('isDevMode: does NOT fetch runtime config by default on normal page load', async () => {
+  test('isDevMode: never calls fetch and operates purely locally', async () => {
     let fetchCalled = false;
     globalThis.fetch = async () => {
       fetchCalled = true;
       return { ok: true, json: async () => ({ dev: true }) };
     };
 
-    const isDev = await isDevMode();
-    assert.strictEqual(isDev, false);
+    assert.strictEqual(await isDevMode(), false);
     assert.strictEqual(fetchCalled, false);
-  });
-
-  test('isDevMode: detects dev: true when probeRemote is explicitly enabled', async () => {
-    globalThis.fetch = async (url) => {
-      if (String(url).startsWith('/api/update/config.json')) {
-        return {
-          ok: true,
-          json: async () => ({ version: '1.0.0', dev: true }),
-        };
-      }
-      return { ok: false };
-    };
-
-    const isDev = await isDevMode(null, { probeRemote: true });
-    assert.strictEqual(isDev, true);
   });
 
   test('enforceDevMode: unregisters active service worker registrations and purges caches', async () => {
@@ -205,15 +174,10 @@ describe('Dev Mode & UI Design Support', () => {
       writable: true,
     });
 
-    // 1. With options.dev = true
-    const handle1 = await register('/sw.js', { dev: true });
-    assert.strictEqual(handle1, null);
-    assert.strictEqual(swRegistered, false);
-
-    // 2. With window.NLPWA_DEV = true
+    // With window.NLPWA_DEV = true
     globalThis.window.NLPWA_DEV = true;
-    const handle2 = await register('/sw.js');
-    assert.strictEqual(handle2, null);
+    const handle = await register('/sw.js');
+    assert.strictEqual(handle, null);
     assert.strictEqual(swRegistered, false);
   });
 

@@ -64,6 +64,10 @@ export async function register(swUrl = '/sw.js', options = {}) {
 
   const executeRegister = async () => {
     if (isDevMode(options.script)) {
+      const host = (typeof window !== 'undefined' && window.location?.hostname) || (typeof location !== 'undefined' && location.hostname);
+      if (host && host !== 'localhost' && host !== '127.0.0.1') {
+        console.warn(`[NLPWA] Dev mode is active on non-localhost domain: ${host}`);
+      }
       logger.info('[NLPWA] Dev mode: Service Worker registration bypassed.');
       await unregister(options.scope, { purgeCaches: true });
       return null;

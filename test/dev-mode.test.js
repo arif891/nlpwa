@@ -196,6 +196,72 @@ describe('Dev Mode & UI Design Support', () => {
     assert.strictEqual(reloaded, 1);
   });
 
+  test('enforceDevMode: reloads even if sessionStorage throws (e.g. sandboxed iframe or blocked)', async () => {
+    let reloaded = 0;
+    globalThis.sessionStorage = {
+      getItem: () => { throw new Error('Access denied'); },
+      setItem: () => { throw new Error('Access denied'); },
+    };
+    globalThis.window.location = {
+      reload: () => { reloaded++; },
+    };
+
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+      value: {
+        controller: { scriptURL: '/sw.js' },
+        getRegistrations: async () => [{ unregister: async () => true }],
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    globalThis.caches = {
+      keys: async () => [],
+      delete: async () => true,
+    };
+
+    await enforceDevMode({ reload: true });
+    assert.strictEqual(reloaded, 1);
+  });
+
+  test('enforceDevMode: warns when dev mode is active on non-localhost domain', async () => {
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(' '));
+
+    try {
+      globalThis.window.location = { hostname: 'app.example.com' };
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          getRegistrations: async () => [],
+        },
+        configurable: true,
+        writable: true,
+      });
+      globalThis.caches = {
+        keys: async () => [],
+        delete: async () => true,
+      };
+
+      await enforceDevMode({ reload: false });
+      assert.strictEqual(warnings.length, 1);
+      assert.ok(warnings[0].includes('app.example.com'));
+
+      // Should not warn on localhost
+      warnings.length = 0;
+      globalThis.window.location = { hostname: 'localhost' };
+      await enforceDevMode({ reload: false });
+      assert.strictEqual(warnings.length, 0);
+
+      // Should not warn on 127.0.0.1
+      globalThis.window.location = { hostname: '127.0.0.1' };
+      await enforceDevMode({ reload: false });
+      assert.strictEqual(warnings.length, 0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   test('unregister: does not delete caches by default unless purgeCaches is true', async () => {
     let unregisterCalled = 0;
     let cacheDeleted = 0;

@@ -14,6 +14,10 @@ export { isDevFlag, isDevMode };
  * @returns {Promise<boolean>}
  */
 export async function enforceDevMode({ reload = true } = {}) {
+  const host = (typeof window !== 'undefined' && window.location?.hostname) || (typeof location !== 'undefined' && location.hostname);
+  if (host && host !== 'localhost' && host !== '127.0.0.1') {
+    console.warn(`[NLPWA] Dev mode is active on non-localhost domain: ${host}`);
+  }
   logger.info('[NLPWA] Dev mode active: Service Worker unregistered and caching disabled.');
   if (typeof window !== 'undefined') {
     window.NLPWA_DEV_ACTIVE = true;
@@ -21,13 +25,20 @@ export async function enforceDevMode({ reload = true } = {}) {
   const hadController = typeof navigator !== 'undefined' && Boolean(navigator.serviceWorker?.controller);
   const unregSuccess = await unregister(undefined, { purgeCaches: true });
 
-  if (reload && hadController && typeof window !== 'undefined' && typeof sessionStorage !== 'undefined') {
+  if (reload && hadController && typeof window !== 'undefined') {
     const reloadKey = 'nlpwa_dev_reloaded';
-    if (!sessionStorage.getItem(reloadKey)) {
-      sessionStorage.setItem(reloadKey, '1');
-      if (window.location?.reload) {
-        window.location.reload();
+    let alreadyReloaded = false;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        alreadyReloaded = Boolean(sessionStorage.getItem(reloadKey));
+        if (!alreadyReloaded) {
+          sessionStorage.setItem(reloadKey, '1');
+        }
       }
+    } catch {}
+
+    if (!alreadyReloaded && window.location?.reload) {
+      window.location.reload();
     }
   }
 

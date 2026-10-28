@@ -44,6 +44,7 @@ nlpwa.subscribe((state) => {
 | Export | Type | Description |
 |---|---|---|
 | `register(swUrl, options)` | `Function` | Registers the Service Worker, sets up lifecycle listeners, and configures background polling. |
+| `unregister(scope, options)` | `Function` | Unregisters the Service Worker. Supports `{ purgeCaches: true }` to also flush all origin CacheStorage stores. |
 | `applyUpdate(options)` | `Function` | Signals the Service Worker to commit staged updates into the active cache. |
 | `requestUpdateCheck(options)` | `Function` | Manually triggers an update check (supports `{ force: true }`). |
 | `onStagingProgress(callback)` | `Function` | Subscribes to granular file staging progress events. Returns unsubscribe function. |

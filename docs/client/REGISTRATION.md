@@ -89,34 +89,66 @@ window.NLPWA_NO_AUTO_REGISTER = true;
 
 ## Development Workflow
 
-During local development and UI styling, active Service Workers and precached app shells can interfere with live edits or HMR.
+During local development and UI styling, active Service Workers and precached app shells can interfere with live edits or HMR because `/index.html` is served **cache-first** directly from CacheStorage.
+
+> [!IMPORTANT]
+> Omitting `<script src="/client.js">` or setting `data-auto-register="false"` only prevents a **first** registration. If a Service Worker was already installed from a previous visit, it continues controlling the origin and serving the cached application shell.
 
 ### Recommended Approaches
 
-1. **Omit or disable `client.js` in development**:
-   Simply do not include or comment out `/client.js` in your development environment:
-   ```html
-   <!-- Development: comment out or omit client.js -->
-   <!-- <script src="/client.js"></script> -->
-   ```
-   Or disable auto-registration:
-   ```html
-   <script src="/client.js" data-auto-register="false"></script>
-   ```
-
-2. **Unregister via DevTools**:
-   If a Service Worker was previously installed on `localhost`:
-   - Open Chrome DevTools (`F12`) → **Application** tab → **Service Workers**.
+1. **Unregister + Clear Site Data (DevTools → Application)**:
+   If a Service Worker is already running on `localhost`:
+   - Open DevTools (`F12`) → **Application** tab → **Service Workers**.
    - Click **Unregister**.
-   - Check **"Update on reload"** or **"Bypass for network"** during development.
+   - Under **Application → Storage**, click **Clear site data** to flush precached HTML and assets.
+   - Alternatively, check **"Bypass for network"** (note: this applies only while DevTools remains open).
 
-3. **Programmatic unregister**:
-   You can unregister the worker programmatically at any time:
+2. **Develop on a Dedicated Port or Origin**:
+   > [!TIP]
+   > Service Workers are scoped strictly per origin (protocol + hostname + port). Running your local development server on a different port from your production preview (e.g. `localhost:5173` for dev vs. `localhost:3000` for preview) completely isolates the two environments so the Service Worker never touches your development session.
+
+3. **Prevent Registration During Development**:
+   Once uninstalled (or before the first visit), keep the Service Worker from registering during local development:
+   - Omit or comment out `/client.js`:
+     ```html
+     <!-- <script src="/client.js"></script> -->
+     ```
+   - Or disable auto-registration:
+     ```html
+     <script src="/client.js" data-auto-register="false"></script>
+     ```
+
+4. **Programmatic Unregistration (`unregister`)**:
+   Unregister the Service Worker and optionally wipe all caches from JavaScript:
    ```javascript
    import { unregister } from 'nlpwa/client';
 
+   // Standard unregister
    await unregister();
+
+   // Full reset: unregister worker AND purge all CacheStorage stores
+   await unregister(undefined, { purgeCaches: true });
    ```
+
+---
+
+## Unregistering: `unregister(scope, options)`
+
+Programmatically removes active Service Worker registrations:
+
+```javascript
+import { unregister } from 'nlpwa/client';
+
+// Unregister default scope
+const success = await unregister();
+
+// Target a specific custom scope
+await unregister('/my-app/');
+
+// When a full reset is needed (e.g. user logout, app reset):
+// Pass { purgeCaches: true } to unregister and wipe all CacheStorage stores origin-wide
+await unregister(undefined, { purgeCaches: true });
+```
 
 ---
 

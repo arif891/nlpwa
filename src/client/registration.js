@@ -353,7 +353,7 @@ export async function unregister(scope, options = {}) {
         unregSuccess = await registration.unregister();
       }
     }
-    // Only purge caches if explicitly requested (e.g. when enforcing dev mode)
+    // Only purge caches if explicitly requested (e.g. when a full reset is needed)
     if (purgeCaches && typeof caches !== 'undefined') {
       try {
         const keys = await caches.keys();

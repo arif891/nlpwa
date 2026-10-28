@@ -35,14 +35,9 @@ Base public path where the application is hosted (e.g. `'/my-app/'` for subpath 
 
 ---
 
-## Development & Debugging
+## Development & UI Design Mode
 
-### `dev` · `boolean` · default: `false`
-Toggles Development / UI Design Mode.
-- When `true`, NLPWA bypasses Service Worker registration, cleanly unregisters any active workers under the scope, and flushes active CacheStorage stores.
-- Enables friction-free UI design, CSS tweaking, and bundler Hot Module Replacement (HMR) without stale cache interference.
-- Can also be toggled at runtime via `<script data-dev>`, `<script data-dev="true">`, or `window.NLPWA_DEV = true`.
-- When set back to `false` (or attribute removed), the Client SDK automatically restores normal Service Worker registration without manual browser cache clearing.
+Development mode is controlled client-side via `<script src="/client.js" data-dev></script>` or `window.NLPWA_DEV = true` rather than Service Worker configuration. When active, Service Worker registration is bypassed and caches are cleared. See [Client Registration & Dev Mode](../client/REGISTRATION.md#development--ui-design-mode) for complete details.
 
 ---
 

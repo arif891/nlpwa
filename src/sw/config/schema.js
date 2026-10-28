@@ -61,8 +61,6 @@ const ALLOWED_CONFIG_KEYS = new Set([
   'cacheOpaque',
   'fallbackOn5xx',
   'throwOnFailure',
-  'dev',
-  'devBypass',
   'navigationPreload',
   'navigationAllowlist',
   'navigationDenylist',

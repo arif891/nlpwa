@@ -245,10 +245,6 @@ export interface NLPWAConfig {
   clearRuntimeOnUpdate?: boolean;
   /** Whether to cache opaque cross-origin responses in runtime cache (default: false) */
   cacheOpaque?: boolean;
-  /** Development & UI design mode: unregisters Service Worker, clears caches, and prevents auto-registration. Default: false */
-  dev?: boolean;
-  /** Development bypass mode flag. Default: false */
-  devBypass?: boolean;
   /** Whether fetch failures should throw/reject instead of returning a synthetic 503 response */
   throwOnFailure?: boolean;
   /** Global plugins attached to all route strategies */

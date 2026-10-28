@@ -32,6 +32,6 @@ export {
   configureTelemetry,
   sendTelemetryReport,
 } from './telemetry.js';
-export { isDevMode, enforceDevMode } from './dev-mode.js';
+export { isDevMode, enforceDevMode, isDevFlag } from './dev-mode.js';
 
 

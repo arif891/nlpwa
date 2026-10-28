@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { isDevMode, enforceDevMode } from '../src/client/dev-mode.js';
+import { isDevMode, enforceDevMode, isDevFlag } from '../src/client/dev-mode.js';
 import { register } from '../src/client/registration.js';
 import { initConfig } from '../src/sw/config/index.js';
 import { resolveStrategy } from '../src/sw/fetch/router.js';
@@ -75,6 +75,22 @@ describe('Dev Mode & UI Design Support', () => {
     assert.strictEqual(await isDevMode(), false);
   });
 
+  test('isDevFlag: evaluates dev truthy vs falsy values', () => {
+    assert.strictEqual(isDevFlag(true), true);
+    assert.strictEqual(isDevFlag('true'), true);
+    assert.strictEqual(isDevFlag(1), true);
+    assert.strictEqual(isDevFlag('1'), true);
+    assert.strictEqual(isDevFlag(''), true);
+
+    assert.strictEqual(isDevFlag(false), false);
+    assert.strictEqual(isDevFlag('false'), false);
+    assert.strictEqual(isDevFlag(0), false);
+    assert.strictEqual(isDevFlag('0'), false);
+    assert.strictEqual(isDevFlag(null), false);
+    assert.strictEqual(isDevFlag(undefined), false);
+    assert.strictEqual(isDevFlag('no'), false);
+  });
+
   test('isDevMode: detects data-dev attribute on client script tag', async () => {
     const scriptWithDevTrue = {
       getAttribute: (name) => (name === 'data-dev' ? 'true' : null),
@@ -82,11 +98,29 @@ describe('Dev Mode & UI Design Support', () => {
     };
     assert.strictEqual(await isDevMode(scriptWithDevTrue), true);
 
+    const scriptWithDev1 = {
+      getAttribute: (name) => (name === 'data-dev' ? '1' : null),
+      hasAttribute: (name) => name === 'data-dev',
+    };
+    assert.strictEqual(await isDevMode(scriptWithDev1), true);
+
     const scriptWithBooleanDev = {
       getAttribute: (name) => (name === 'data-dev' ? '' : null),
       hasAttribute: (name) => name === 'data-dev',
     };
     assert.strictEqual(await isDevMode(scriptWithBooleanDev), true);
+
+    const scriptWithDevFalse = {
+      getAttribute: (name) => (name === 'data-dev' ? 'false' : null),
+      hasAttribute: (name) => name === 'data-dev',
+    };
+    assert.strictEqual(await isDevMode(scriptWithDevFalse), false);
+
+    const scriptWithDevZero = {
+      getAttribute: (name) => (name === 'data-dev' ? '0' : null),
+      hasAttribute: (name) => name === 'data-dev',
+    };
+    assert.strictEqual(await isDevMode(scriptWithDevZero), false);
 
     const scriptWithoutDev = {
       getAttribute: () => null,
@@ -103,7 +137,19 @@ describe('Dev Mode & UI Design Support', () => {
     assert.strictEqual(await isDevMode(), false);
   });
 
-  test('isDevMode: detects dev: true from runtime config.json fetch', async () => {
+  test('isDevMode: does NOT fetch runtime config by default on normal page load', async () => {
+    let fetchCalled = false;
+    globalThis.fetch = async () => {
+      fetchCalled = true;
+      return { ok: true, json: async () => ({ dev: true }) };
+    };
+
+    const isDev = await isDevMode();
+    assert.strictEqual(isDev, false);
+    assert.strictEqual(fetchCalled, false);
+  });
+
+  test('isDevMode: detects dev: true when probeRemote is explicitly enabled', async () => {
     globalThis.fetch = async (url) => {
       if (String(url).startsWith('/api/update/config.json')) {
         return {
@@ -114,7 +160,7 @@ describe('Dev Mode & UI Design Support', () => {
       return { ok: false };
     };
 
-    const isDev = await isDevMode();
+    const isDev = await isDevMode(null, { probeRemote: true });
     assert.strictEqual(isDev, true);
   });
 

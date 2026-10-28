@@ -9,6 +9,7 @@ import {
   setupPeriodicSync,
   setupPersistentStorage,
 } from './polling.js';
+import { isDevFlag } from './dev-flags.js';
 
 export { isUserEditing };
 
@@ -63,11 +64,11 @@ export async function register(swUrl = '/sw.js', options = {}) {
 
   const executeRegister = async () => {
     if (
-      options.dev === true ||
-      options.dev === 'true' ||
-      options.dev === 1 ||
-      (typeof window !== 'undefined' && (window.NLPWA_DEV === true || window.NLPWA_DEV === 'true' || window.NLPWA_DEV === 1)) ||
-      (typeof window !== 'undefined' && window.NLPWA_CONFIG && (window.NLPWA_CONFIG.dev === true || window.NLPWA_CONFIG.dev === 'true'))
+      isDevFlag(options.dev) ||
+      (typeof window !== 'undefined' && (
+        isDevFlag(window.NLPWA_DEV) ||
+        isDevFlag(window.NLPWA_CONFIG?.dev)
+      ))
     ) {
       logger.info('[NLPWA] Dev mode: Service Worker registration bypassed.');
       await unregister(options.scope);

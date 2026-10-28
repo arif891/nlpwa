@@ -286,7 +286,7 @@ export function resolveStrategy(request) {
   const configPath = config.configPath || '/api/update/config.json';
   if (
     requestUrl.pathname === configPath &&
-    (requestUrl.searchParams.has('nlpwa_dev') || request.headers.get('x-nlpwa-dev-check') === '1' || request.cache === 'no-store')
+    (request.cache === 'no-store' || requestUrl.searchParams.has('nlpwa_dev'))
   ) {
     const handler = (req, event) => networkOnly(req, event);
     handler.strategy = 'network-only';

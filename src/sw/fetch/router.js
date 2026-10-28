@@ -282,12 +282,9 @@ export function resolveStrategy(request) {
     return handler;
   }
 
-  // When checking for dev mode config or live update config, allow network bypass
+  // Live update config checks with cache: 'no-store' bypass the cache to hit the network
   const configPath = config.configPath || '/api/update/config.json';
-  if (
-    requestUrl.pathname === configPath &&
-    (request.cache === 'no-store' || requestUrl.searchParams.has('nlpwa_dev'))
-  ) {
+  if (requestUrl.pathname === configPath && request.cache === 'no-store') {
     const handler = (req, event) => networkOnly(req, event);
     handler.strategy = 'network-only';
     return handler;

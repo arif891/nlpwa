@@ -1,7 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { isDevMode, enforceDevMode, isDevFlag } from '../src/client/dev-mode.js';
-import { register } from '../src/client/registration.js';
+import { register, unregister } from '../src/client/registration.js';
 import { initConfig } from '../src/sw/config/index.js';
 import { resolveStrategy } from '../src/sw/fetch/router.js';
 
@@ -153,11 +153,75 @@ describe('Dev Mode & UI Design Support', () => {
       delete: async () => { cacheDeleted++; return true; },
     };
 
-    const res = await enforceDevMode();
+    const res = await enforceDevMode({ reload: false });
     assert.strictEqual(res, true);
     assert.strictEqual(unregisterCalled, 2);
     assert.strictEqual(cacheDeleted, 2);
     assert.strictEqual(globalThis.window.NLPWA_DEV_ACTIVE, true);
+  });
+
+  test('enforceDevMode: reloads once if active Service Worker controller was present', async () => {
+    let reloaded = 0;
+    const store = new Map();
+    globalThis.sessionStorage = {
+      getItem: (k) => store.get(k) || null,
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    globalThis.window.location = {
+      reload: () => { reloaded++; },
+    };
+
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+      value: {
+        controller: { scriptURL: '/sw.js' },
+        getRegistrations: async () => [{ unregister: async () => true }],
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    globalThis.caches = {
+      keys: async () => [],
+      delete: async () => true,
+    };
+
+    // First call: reloads once and sets sessionStorage guard
+    await enforceDevMode({ reload: true });
+    assert.strictEqual(reloaded, 1);
+    assert.strictEqual(store.get('nlpwa_dev_reloaded'), '1');
+
+    // Second call: guard prevents loop
+    await enforceDevMode({ reload: true });
+    assert.strictEqual(reloaded, 1);
+  });
+
+  test('unregister: does not delete caches by default unless purgeCaches is true', async () => {
+    let unregisterCalled = 0;
+    let cacheDeleted = 0;
+
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+      value: {
+        getRegistration: async () => ({ unregister: async () => { unregisterCalled++; return true; } }),
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    globalThis.caches = {
+      keys: async () => ['precache-v1'],
+      delete: async () => { cacheDeleted++; return true; },
+    };
+
+    // 1. Default unregister (e.g. on logout)
+    await unregister('/');
+    assert.strictEqual(unregisterCalled, 1);
+    assert.strictEqual(cacheDeleted, 0);
+
+    // 2. Unregister with purgeCaches: true
+    await unregister('/', { purgeCaches: true });
+    assert.strictEqual(unregisterCalled, 2);
+    assert.strictEqual(cacheDeleted, 1);
   });
 
   test('register: bypasses SW registration and returns null when dev is active', async () => {
@@ -174,14 +238,24 @@ describe('Dev Mode & UI Design Support', () => {
       writable: true,
     });
 
-    // With window.NLPWA_DEV = true
+    // 1. With window.NLPWA_DEV = true
     globalThis.window.NLPWA_DEV = true;
     const handle = await register('/sw.js');
     assert.strictEqual(handle, null);
     assert.strictEqual(swRegistered, false);
+
+    // 2. With script data-dev attribute
+    delete globalThis.window.NLPWA_DEV;
+    const devScript = {
+      getAttribute: (name) => (name === 'data-dev' ? 'true' : null),
+      hasAttribute: (name) => name === 'data-dev',
+    };
+    const handle2 = await register('/sw.js', { script: devScript });
+    assert.strictEqual(handle2, null);
+    assert.strictEqual(swRegistered, false);
   });
 
-  test('SW router: routes dev-check config query to network-only', () => {
+  test('SW router: routes no-store config request to network-only', () => {
     const swConfig = initConfig({
       version: '1.0.0',
       routes: [
@@ -190,7 +264,7 @@ describe('Dev Mode & UI Design Support', () => {
       updateAPI: { version: '/v', info: '/i' },
     });
 
-    const devCheckReq = new Request('http://localhost:3000/api/update/config.json?nlpwa_dev=1');
+    const devCheckReq = new Request('http://localhost:3000/api/update/config.json', { cache: 'no-store' });
     const devCheckHandler = resolveStrategy(devCheckReq, swConfig.routes);
     assert.strictEqual(devCheckHandler.strategy, 'network-only');
   });

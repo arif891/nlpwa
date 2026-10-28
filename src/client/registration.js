@@ -9,7 +9,7 @@ import {
   setupPeriodicSync,
   setupPersistentStorage,
 } from './polling.js';
-import { isDevFlag } from './dev-flags.js';
+import { isDevFlag, isDevMode } from './dev-flags.js';
 
 export { isUserEditing };
 
@@ -63,11 +63,17 @@ export async function register(swUrl = '/sw.js', options = {}) {
   }
 
   const executeRegister = async () => {
-    if (typeof window !== 'undefined' && isDevFlag(window.NLPWA_DEV)) {
+    if (isDevMode(options.script)) {
       logger.info('[NLPWA] Dev mode: Service Worker registration bypassed.');
-      await unregister(options.scope);
+      await unregister(options.scope, { purgeCaches: true });
       return null;
     }
+
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('nlpwa_dev_reloaded');
+      }
+    } catch {}
 
     _isRegisteredOrRegistering = true;
 
@@ -309,9 +315,12 @@ export async function register(swUrl = '/sw.js', options = {}) {
  * Unregister the NLPWA Service Worker.
  *
  * @param {string} [scope] Optional scope to target a specific registration
+ * @param {Object} [options]
+ * @param {boolean} [options.purgeCaches=false] Whether to also flush all CacheStorage stores
  * @returns {Promise<boolean>} Resolves to true if unregistration succeeded
  */
-export async function unregister(scope) {
+export async function unregister(scope, options = {}) {
+  const purgeCaches = Boolean(options.purgeCaches);
   _isRegisteredOrRegistering = false;
   if (_inFlightRegisterPromise) {
     try {
@@ -324,12 +333,10 @@ export async function unregister(scope) {
     try {
       _activeUnsubscribe();
     } catch (err) {
-      logger.debug('[NLPWA] Error unsubscribing during unregister:', err?.message || err);
+      logger.debug('[NLPWA] Error running active unsubscribe during unregister:', err?.message || err);
     }
     _activeUnsubscribe = null;
   }
-
-
 
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return false;
@@ -359,8 +366,8 @@ export async function unregister(scope) {
         unregSuccess = await registration.unregister();
       }
     }
-    // Also purge caches in dev/unregistered state to ensure fresh assets
-    if (typeof caches !== 'undefined') {
+    // Only purge caches if explicitly requested (e.g. when enforcing dev mode)
+    if (purgeCaches && typeof caches !== 'undefined') {
       try {
         const keys = await caches.keys();
         await Promise.all(keys.map(k => caches.delete(k)));

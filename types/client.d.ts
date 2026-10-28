@@ -159,8 +159,9 @@ export function register(swUrl?: string, options?: RegisterOptions): Promise<Reg
  * Unregister the NLPWA Service Worker.
  *
  * @param scope Optional scope of registration to unregister
+ * @param options Unregistration options (e.g. purgeCaches)
  */
-export function unregister(scope?: string): Promise<boolean>;
+export function unregister(scope?: string, options?: { purgeCaches?: boolean }): Promise<boolean>;
 
 /**
  * Evaluates whether a flag value indicates development mode.
@@ -171,12 +172,12 @@ export function isDevFlag(value: unknown): boolean;
 /**
  * Check if development / UI design mode is active (via window.NLPWA_DEV or <script data-dev>).
  */
-export function isDevMode(script?: HTMLScriptElement | null): Promise<boolean>;
+export function isDevMode(script?: HTMLScriptElement | null): boolean;
 
 /**
- * Enforce development mode: unregister all active Service Workers and clear caches.
+ * Enforce development mode: unregister active Service Workers, clear caches, and reload once if controlled.
  */
-export function enforceDevMode(): Promise<boolean>;
+export function enforceDevMode(options?: { reload?: boolean }): Promise<boolean>;
 
 /**
  * Register a handler to be called when the SW signals an update is ready.

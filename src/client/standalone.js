@@ -40,9 +40,9 @@ function autoRegister() {
   const tryRegister = async () => {
     const script = findClientScript();
 
-    // Check if dev mode is enabled via data-dev="true", window.NLPWA_DEV, or config
+    // Check if dev mode is enabled via data-dev or window.NLPWA_DEV
     try {
-      const devActive = await isDevMode(script);
+      const devActive = isDevMode(script);
       if (devActive) {
         await enforceDevMode();
         return;

@@ -1,8 +1,8 @@
 import { logger } from './logger.js';
 import { unregister } from './registration.js';
-import { isDevFlag, isDevMode } from './dev-flags.js';
+import { isDevFlag, isDevMode, isDevHost } from './dev-flags.js';
 
-export { isDevFlag, isDevMode };
+export { isDevFlag, isDevMode, isDevHost };
 
 /**
  * Enforce dev mode by unregistering active service workers and clearing caches.
@@ -15,7 +15,7 @@ export { isDevFlag, isDevMode };
  */
 export async function enforceDevMode({ reload = true } = {}) {
   const host = (typeof window !== 'undefined' && window.location?.hostname) || (typeof location !== 'undefined' && location.hostname);
-  if (host && host !== 'localhost' && host !== '127.0.0.1') {
+  if (host && !isDevHost(host)) {
     console.warn(`[NLPWA] Dev mode is active on non-localhost domain: ${host}`);
   }
   logger.info('[NLPWA] Dev mode active: Service Worker unregistered and caching disabled.');

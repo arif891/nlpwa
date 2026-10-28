@@ -153,4 +153,43 @@ test.describe('28 - Development / UI Design Mode Support', () => {
     hasReg = await cleanPage.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()));
     expect(hasReg).toBe(true);
   });
+
+  test('URL query parameter ?nlpwa_dev=1 toggles dev mode and persists across visits on localhost', async ({ page }) => {
+    // 1. Ensure SW is initially active
+    await page.goto('/');
+    await waitForActiveSW(page);
+
+    // 2. Visit with ?nlpwa_dev=1
+    await page.goto('/?nlpwa_dev=1');
+    await page.waitForTimeout(600);
+
+    let state = await page.evaluate(async () => ({
+      hasReg: Boolean(await navigator.serviceWorker.getRegistration()),
+      savedFlag: localStorage.getItem('nlpwa_dev'),
+    }));
+    expect(state.hasReg).toBe(false);
+    expect(state.savedFlag).toBe('1');
+
+    // 3. Later visit with no parameter and no file edits: dev mode remains active
+    await page.goto('/');
+    await page.waitForTimeout(400);
+
+    state = await page.evaluate(async () => ({
+      hasReg: Boolean(await navigator.serviceWorker.getRegistration()),
+      savedFlag: localStorage.getItem('nlpwa_dev'),
+    }));
+    expect(state.hasReg).toBe(false);
+    expect(state.savedFlag).toBe('1');
+
+    // 4. Visit with ?nlpwa_dev=0: clears saved flag and re-enables normal SW registration
+    await page.goto('/?nlpwa_dev=0');
+    await waitForActiveSW(page);
+
+    state = await page.evaluate(async () => ({
+      hasReg: Boolean(await navigator.serviceWorker.getRegistration()),
+      savedFlag: localStorage.getItem('nlpwa_dev'),
+    }));
+    expect(state.hasReg).toBe(true);
+    expect(state.savedFlag).toBe(null);
+  });
 });

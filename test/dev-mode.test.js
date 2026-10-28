@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { isDevMode, enforceDevMode, isDevFlag } from '../src/client/dev-mode.js';
+import { isDevMode, enforceDevMode, isDevFlag, isDevHost } from '../src/client/dev-mode.js';
 import { register, unregister } from '../src/client/registration.js';
 import { initConfig } from '../src/sw/config/index.js';
 import { resolveStrategy } from '../src/sw/fetch/router.js';
@@ -131,6 +131,77 @@ describe('Dev Mode & UI Design Support', () => {
 
     assert.strictEqual(await isDevMode(), false);
     assert.strictEqual(fetchCalled, false);
+  });
+
+  test('isDevHost: accurately detects local, mDNS, and private LAN IP hostnames', () => {
+    assert.strictEqual(isDevHost('localhost'), true);
+    assert.strictEqual(isDevHost('127.0.0.1'), true);
+    assert.strictEqual(isDevHost('127.0.0.8'), true);
+    assert.strictEqual(isDevHost('::1'), true);
+    assert.strictEqual(isDevHost('[::1]'), true);
+    assert.strictEqual(isDevHost('my-laptop.local'), true);
+    assert.strictEqual(isDevHost('device.LOCAL'), true);
+    assert.strictEqual(isDevHost('192.168.1.100'), true);
+    assert.strictEqual(isDevHost('10.0.0.1'), true);
+    assert.strictEqual(isDevHost('172.16.0.1'), true);
+    assert.strictEqual(isDevHost('172.24.1.1'), true);
+    assert.strictEqual(isDevHost('172.31.255.254'), true);
+
+    // Rejects non-dev hosts
+    assert.strictEqual(isDevHost('nlpwa.vercel.app'), false);
+    assert.strictEqual(isDevHost('example.com'), false);
+    assert.strictEqual(isDevHost('172.15.0.1'), false);
+    assert.strictEqual(isDevHost('172.32.0.1'), false);
+    assert.strictEqual(isDevHost('8.8.8.8'), false);
+    assert.strictEqual(isDevHost(''), false);
+    assert.strictEqual(isDevHost(null), false);
+  });
+
+  test('isDevMode: URL parameter ?nlpwa_dev=1 on dev host persists flag in localStorage', () => {
+    const store = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => store.get(k) || null,
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    globalThis.window.location = {
+      hostname: 'localhost',
+      search: '?nlpwa_dev=1',
+    };
+
+    // 1. Visit with ?nlpwa_dev=1: returns true and saves flag
+    assert.strictEqual(isDevMode(), true);
+    assert.strictEqual(store.get('nlpwa_dev'), '1');
+
+    // 2. Later visit with no query parameter: returns true from saved localStorage
+    globalThis.window.location.search = '';
+    assert.strictEqual(isDevMode(), true);
+
+    // 3. Visit with ?nlpwa_dev=0: clears saved flag and returns false
+    globalThis.window.location.search = '?nlpwa_dev=0';
+    assert.strictEqual(isDevMode(), false);
+    assert.strictEqual(store.get('nlpwa_dev'), undefined);
+
+    // 4. Subsequent visit after clearing: remains false
+    globalThis.window.location.search = '';
+    assert.strictEqual(isDevMode(), false);
+  });
+
+  test('isDevMode: URL parameter ?nlpwa_dev=1 is ignored on non-dev host', () => {
+    const store = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => store.get(k) || null,
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    globalThis.window.location = {
+      hostname: 'production-app.com',
+      search: '?nlpwa_dev=1',
+    };
+
+    // On non-dev host, ?nlpwa_dev=1 does NOT activate dev mode and does NOT set localStorage
+    assert.strictEqual(isDevMode(), false);
+    assert.strictEqual(store.get('nlpwa_dev'), undefined);
   });
 
   test('enforceDevMode: unregisters active service worker registrations and purges caches', async () => {

@@ -170,7 +170,12 @@ export function unregister(scope?: string, options?: { purgeCaches?: boolean }):
 export function isDevFlag(value: unknown): boolean;
 
 /**
- * Check if development / UI design mode is active (via window.NLPWA_DEV or <script data-dev>).
+ * Checks whether a hostname qualifies as a local development host.
+ */
+export function isDevHost(hostname?: string | null): boolean;
+
+/**
+ * Check if development / UI design mode is active (via window.NLPWA_DEV, <script data-dev>, or ?nlpwa_dev=1 on dev hosts).
  */
 export function isDevMode(script?: HTMLScriptElement | null): boolean;
 

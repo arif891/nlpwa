@@ -2,6 +2,16 @@
 
 All notable changes to `nlpwa` will be documented in this file.
 
+## [0.2.31] - 2026-10-28
+
+### Features & Developer Experience
+- **Dev Mode Cache Purge Isolation**: Moved CacheStorage purging out of standard `unregister()` into an explicit `purgeCaches: true` option invoked only by `enforceDevMode()`, preventing accidental cache eviction on production unregister calls (such as on user logout).
+- **Synchronous `isDevMode()`**: Streamlined `isDevMode()` into a synchronous check with zero network overhead.
+- **Manual Registration Dev Support**: Extended manual `register()` invocations to check `<script data-dev>` attributes via `isDevMode(options.script)`.
+- **First Dev Reload Stale Prevention**: Added automatic single-reload in `enforceDevMode()` when an active Service Worker controller is detected, guarded by `sessionStorage` with safe fallback when storage throws (sandboxed iframes, blocked storage).
+- **Accidental Production Dev Mode Warning**: Added warning when dev mode is active on non-localhost/non-127.0.0.1 hostnames.
+- **Cleaned Router Leftovers**: Removed dead `requestUrl.searchParams.has('nlpwa_dev')` checks and updated internal comments.
+
 ## [0.2.3] - 2026-10-28
 
 ### Features & Developer Experience

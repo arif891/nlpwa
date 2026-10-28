@@ -59,7 +59,7 @@ This generates:
 - **Health-Gated Boot Rollbacks**: If a newly deployed version crashes or fails to mark healthy, the Service Worker automatically rolls back to the previous fallback version.
 - **Canary & Phased Rollouts**: Target canary cohorts via `rolloutPercent: 20`, isolate release `channel` (`stable`/`beta`), or revoke bad releases origin-wide via `blockedVersions`.
 - **Precache Atomicity Guarantee**: App shell files in `config.precache` are strictly cache-first. Staging deltas never mutate active tabs mid-session.
-- **Development & UI Design Mode**: Friction-free UI styling and HMR with `dev: true`, `<script data-dev="true">`, or `window.NLPWA_DEV = true`. Automatically unregisters SWs, wipes caches, and seamlessly recovers when toggled back off.
+- **Development & UI Design Mode**: Friction-free UI styling and HMR with `<script data-dev>`, `<script data-dev="true">`, or `window.NLPWA_DEV = true`. Automatically unregisters SWs, wipes caches, and seamlessly recovers when toggled back off.
 - **Serverless & Edge Ready**: Zero-collision manifest routing for Vercel, Netlify, and Cloudflare Pages with simulated multi-instance coherence and deploy-hook controls.
 - **Modular Native OS Plugins**: Drop-in plugins for Web Push (`nlpwa/push`), Background Sync (`nlpwa/sync`), Periodic Sync (`nlpwa/sync/periodic`), App Badging (`nlpwa/badge`), Web Share Target (`nlpwa/share`), and Background Fetch (`nlpwa/bg-fetch`).
 

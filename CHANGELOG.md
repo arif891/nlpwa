@@ -6,9 +6,9 @@ All notable changes to `nlpwa` will be documented in this file.
 
 ### Features & Developer Experience
 - **Development & UI Design Mode**:
-  - Added first-class `dev: true` option in `nlpwa.config.js`, `register('/sw.js', { dev: true })`, `<script data-dev="true">`, and `window.NLPWA_DEV = true`.
+  - Added first-class Development Mode activated locally via `<script data-dev>`, `<script data-dev="true">`, or `window.NLPWA_DEV = true`.
   - When enabled, the Client SDK bypasses registration, unregisters existing Service Workers under the scope, and flushes CacheStorage stores so styles, HTML, and assets update live with zero caching interference.
-  - Added `isDevMode()` and `enforceDevMode()` client SDK exports with multi-source detection (options, DOM attributes, globals, and remote config probing).
+  - Added `isDevMode()`, `isDevFlag()`, and `enforceDevMode()` client SDK exports with zero production network overhead.
   - Implemented automatic recovery: toggling Dev Mode off cleanly re-registers the Service Worker on next load without manual cache or worker eviction.
 - **Framework-Agnostic SW Core**:
   - Removed all hardcoded bundler-specific paths (`/@vite/`, `/@fs/`, `.hot-update.json`) from `src/sw/fetch/router.js`, ensuring pure framework neutrality across Vite, Webpack, Turbopack, and vanilla setups.

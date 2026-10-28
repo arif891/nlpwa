@@ -48,7 +48,7 @@ The Client SDK documentation is organized into modular guides:
 > ```
 > To enable Development / UI Design mode (unregisters SW and flushes caches for live CSS/UI editing):
 > ```html
-> <script src="/client.js" data-dev="true"></script>
+> <script src="/client.js" data-dev></script>
 > ```
 > To disable auto-registration entirely (e.g. if you prefer manual registration):
 > ```html

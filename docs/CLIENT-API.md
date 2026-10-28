@@ -47,7 +47,8 @@ nlpwa.subscribe((state) => {
 | `applyUpdate(options)` | `Function` | Signals the Service Worker to commit staged updates into the active cache. |
 | `requestUpdateCheck(options)` | `Function` | Manually triggers an update check (supports `{ force: true }`). |
 | `onStagingProgress(callback)` | `Function` | Subscribes to granular file staging progress events. Returns unsubscribe function. |
-| `isDevMode(options)` | `Function` | Returns a Promise resolving to `true` if Dev Mode is active via options, DOM attributes, globals, or remote config probe. |
+| `isDevMode(script?)` | `Function` | Returns a Promise resolving to `true` if Dev Mode is active via `window.NLPWA_DEV` or `<script data-dev>`. |
+| `isDevFlag(value)` | `Function` | Evaluates whether a value indicates dev mode (`true`, `'true'`, or `''`). |
 | `enforceDevMode()` | `Function` | Unregisters Service Workers under scope and flushes CacheStorage stores for friction-free UI/CSS design. |
 | `getVersion()` | `Function` | Returns the currently active application version string. |
 | `getStatus()` | `Function` | Returns a snapshot of SW state, active version, staged version, and update status. |

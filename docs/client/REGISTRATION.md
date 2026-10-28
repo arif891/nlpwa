@@ -96,24 +96,20 @@ When developing or iterating on UI designs, styling, or CSS animations, active S
 
 ### Enabling Dev Mode
 
-Dev Mode can be enabled in any of four ways (evaluated in order):
-1. **Explicit registration option**:
+Dev Mode can be enabled locally in two ways (evaluated in order):
+1. **Global runtime flag**:
    ```javascript
-   import { register } from 'nlpwa/client';
-   register('/sw.js', { dev: true });
+   window.NLPWA_DEV = true;
    ```
 2. **Script tag attribute**:
    ```html
+   <!-- Valueless attribute or data-dev="true" -->
+   <script src="/client.js" data-dev></script>
+   <!-- or -->
    <script src="/client.js" data-dev="true"></script>
    ```
-3. **Global runtime flag**:
-   ```javascript
-   window.NLPWA_DEV = true;
-   // or
-   window.NLPWA_CONFIG = { dev: true };
-   ```
-4. **Deployed configuration**:
-   `dev: true` in `nlpwa.config.js` (emitted to `/api/update/config.json`).
+   > **Note:** Only `""` (valueless attribute) and `"true"` turn Dev Mode on. Values such as `data-dev="false"` keep Dev Mode off.
+   > Dev detection operates 100% locally with **zero network overhead**, ensuring production page loads and Service Worker registrations never wait on network requests.
 
 ### Dev Mode Behavior
 When Dev Mode is detected:
@@ -126,10 +122,10 @@ When Dev Mode is detected:
 The Client SDK exports helper functions for checking and enforcing Dev Mode:
 
 ```javascript
-import { isDevMode, enforceDevMode } from 'nlpwa/client';
+import { isDevMode, enforceDevMode, isDevFlag } from 'nlpwa/client';
 
-// Check if dev mode is currently active (checks options, DOM, globals, and probes config):
-const devActive = await isDevMode({ dev: false });
+// Check if dev mode is currently active (checks window.NLPWA_DEV and script data-dev attribute):
+const devActive = await isDevMode();
 
 // Programmatically enforce dev mode (unregisters SW and wipes caches):
 if (devActive) {
@@ -138,7 +134,7 @@ if (devActive) {
 ```
 
 ### Automatic Recovery
-When Dev Mode is deactivated (e.g. removing `data-dev="true"` or setting `dev: false`), the SDK automatically restores normal Service Worker registration on the next page visit with no stale residue.
+When Dev Mode is deactivated (e.g. removing `data-dev` / `data-dev="true"` or deleting `window.NLPWA_DEV`), the SDK automatically restores normal Service Worker registration on the next page visit with no stale residue.
 
 ---
 

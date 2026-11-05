@@ -36,6 +36,12 @@
     const clock = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     const formatBytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
+    function timeoutSignal(ms = 3000) {
+        return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+            ? AbortSignal.timeout(ms)
+            : undefined;
+    }
+
     function el(tag, className, text) {
         const node = document.createElement(tag);
         if (className) node.className = className;
@@ -134,10 +140,7 @@
 
             // 2. If not found in CacheStorage, fetch info.json with a timeout guard so stalled network never blocks status rendering
             if (!info) {
-                const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-                    ? AbortSignal.timeout(3000)
-                    : undefined;
-                const res = await fetch('/api/update/info.json', { signal });
+                const res = await fetch('/api/update/info.json', { signal: timeoutSignal(3000) });
                 if (res.ok) {
                     info = await res.json();
                 }
@@ -354,7 +357,7 @@
         try {
             // 'no-cache' makes the browser revalidate with the server instead of answering from its own
             // HTTP cache, so what the log shows is the service worker's strategy and nothing else.
-            const response = await fetch(url, { cache: 'no-cache' });
+            const response = await fetch(url, { cache: 'no-cache', signal: timeoutSignal(5000) });
             const body = await response.text();
             entry.ms = Math.round(performance.now() - started);
             entry.status = response.status;
@@ -435,7 +438,7 @@
     async function renderConfig() {
         viewport.replaceChildren(el('div', 'empty', 'Loading…'));
         try {
-            const config = await (await fetch('/api/update/config.json')).json();
+            const config = await (await fetch('/api/update/config.json', { signal: timeoutSignal(3000) })).json();
             const routes = (config.routes || []).map((r) => `${r.match}  →  ${r.strategy}${r.throwOnFailure ? ' (throws offline)' : ''}`);
             configText = [
                 `version        ${config.version}`,
@@ -565,7 +568,7 @@
 
     async function fetchServerVersion() {
         try {
-            const res = await fetch('/api/update/version.json', { cache: 'no-cache' });
+            const res = await fetch('/api/update/version.json', { cache: 'no-cache', signal: timeoutSignal(3000) });
             if (res.ok) {
                 const data = await res.json();
                 if (data.version) {
@@ -581,9 +584,26 @@
         if (!manifestViewport) return;
         manifestViewport.replaceChildren(el('div', 'empty', 'Loading manifest…'));
         try {
-            const res = await fetch('/api/update/info.json', { cache: 'no-cache' });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const info = await res.json();
+            let info = null;
+            // 1. Read cached snapshot directly from CacheStorage (instant offline display)
+            const names = await offlineCacheNames();
+            for (const name of names) {
+                try {
+                    const cache = await caches.open(name);
+                    const snap = await cache.match('/_nlpwa/snapshot.json');
+                    if (snap) {
+                        info = await snap.json();
+                        break;
+                    }
+                } catch {}
+            }
+
+            // 2. Fall back to network fetch with timeout guard
+            if (!info) {
+                const res = await fetch('/api/update/info.json', { cache: 'no-cache', signal: timeoutSignal(3000) });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                info = await res.json();
+            }
             manifestViewport.replaceChildren();
 
             const headerRow = el('div', 'group', `Manifest v${info.version || '—'} · ${(info.files || []).length} tracked files`);
@@ -629,7 +649,7 @@
         btnBumpVersion.disabled = true;
         pinStatusMsg.textContent = 'Releasing new version on server…';
         try {
-            const res = await fetch('/api/update/bump', { method: 'POST' });
+            const res = await fetch('/api/update/bump', { method: 'POST', signal: timeoutSignal(5000) });
             const data = await res.json();
             if (data.success) {
                 document.cookie = `nlpwa_version=${data.version}; path=/; max-age=86400; SameSite=Lax`;
@@ -660,7 +680,7 @@
         btnResetVersion.disabled = true;
         pinStatusMsg.textContent = 'Resetting server to v1.0.0…';
         try {
-            const res = await fetch('/api/update/reset', { method: 'POST' });
+            const res = await fetch('/api/update/reset', { method: 'POST', signal: timeoutSignal(5000) });
             const data = await res.json();
             if (data.success) {
                 document.cookie = 'nlpwa_version=; path=/; max-age=0; SameSite=Lax';

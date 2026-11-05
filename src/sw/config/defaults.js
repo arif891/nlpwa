@@ -196,9 +196,9 @@ export const DEFAULTS = {
   /**
    * Timeout in milliseconds for network requests before falling back to cache in network-first strategy.
    * A value of 0 means no timeout (wait indefinitely for network before fallback).
-   * Default: 0
+   * Default: 3000
    */
-  networkTimeoutMs: 0,
+  networkTimeoutMs: 3000,
 
   /**
    * Fallback URL for navigation requests when offline.

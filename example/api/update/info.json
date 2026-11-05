@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "/api/update/config.json",
-      "hash": "08e6978147b4554f98135b73f134053f",
-      "size": 1432
+      "hash": "11618962edcfd366d52a038259c7dc3a",
+      "size": 1460
     },
     {
       "path": "/",
@@ -23,8 +23,8 @@
     },
     {
       "path": "/assets/js/app.js",
-      "hash": "1487620bf0baad7881fec33b1bea2215",
-      "size": 47300
+      "hash": "db2e42cef7016b6b870b4830239b5ecb",
+      "size": 48170
     },
     {
       "path": "/assets/js/client.js",

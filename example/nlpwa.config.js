@@ -35,4 +35,5 @@ export default {
     { match: '/api/sync/*', strategy: 'network-only' },
   ],
   defaultStrategy: 'network-first',
+  networkTimeoutMs: 3000,
 };

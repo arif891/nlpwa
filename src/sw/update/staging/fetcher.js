@@ -118,6 +118,7 @@ export async function fetchWithActivityTimeout(url, {
  * delegation to Background Fetch (if supported) for native background downloading.
  *
  * @param {Object} params
+ * @param {number} [params.timeoutMs=DEFAULT_STAGING_FETCH_TIMEOUT_MS] Governs Background Fetch responseReady readiness race
  * @returns {Promise<Response>}
  */
 export async function fetchVerified({

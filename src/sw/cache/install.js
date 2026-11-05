@@ -5,6 +5,30 @@ import { fetchServerInfo, loadCachedSnapshot } from '../update/manifest.js';
 import { stageUpdate } from '../update/stage.js';
 import { commitStaged } from '../update/commit.js';
 import { resolvePathWithBase } from '../../shared/url.js';
+import { fetchWithActivityTimeout } from '../update/staging/fetcher.js';
+
+/**
+ * Perform a fetch with activity timeout (header & idle stream chunks) and retry on network failure.
+ *
+ * @param {string|Request} url
+ * @param {Object} [options]
+ * @param {number} [retries=2]
+ * @returns {Promise<Response>}
+ */
+async function fetchWithActivityRetry(url, options = {}, retries = 2) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fetchWithActivityTimeout(url, options);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
 
 /**
  * Install-time caching, called from the SW `install` event.
@@ -63,7 +87,11 @@ async function precacheWithoutManifest() {
   const offlineCache = await openActive(config.caches.offline);
 
   try {
-    const configRes = await fetch(configPath, { cache: 'no-store', headers: { Accept: 'application/json' } });
+    const configRes = await fetchWithActivityRetry(
+      configPath,
+      { cache: 'no-store', headers: { Accept: 'application/json' } },
+      2
+    );
     if (configRes.ok) {
       const text = await configRes.text();
       let data;
@@ -102,7 +130,7 @@ async function precacheWithoutManifest() {
     precache.map(async (url) => {
       const resolved = resolvePathWithBase(url, config.base);
       const req = new Request(new URL(resolved, self.location.href), { cache: 'reload' });
-      const res = await fetch(req);
+      const res = await fetchWithActivityRetry(req.url, { cache: 'reload' }, 2);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }

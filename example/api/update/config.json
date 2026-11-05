@@ -56,5 +56,6 @@
     }
   ],
   "defaultStrategy": "network-first",
+  "networkTimeoutMs": 3000,
   "configPath": "/api/update/config.json"
 }

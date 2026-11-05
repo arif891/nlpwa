@@ -92,7 +92,7 @@ export const CACHING_CAPABLE_STRATEGIES = new Set([
  */
 export const MAX_RETRY_ATTEMPTS = 5;
 
-/** Default network timeout for single-file staging fetch (30 seconds) */
+/** Default timeout for Background Fetch responseReady resolution during staging (30 seconds) */
 export const DEFAULT_STAGING_FETCH_TIMEOUT_MS = 30000;
 
 /** Default TTFB / Header timeout before server starts answering (15 seconds) */

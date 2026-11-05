@@ -118,9 +118,32 @@
 
     async function countCached() {
         try {
-            const res = await fetch('/api/update/info.json');
-            const info = await res.json();
-            if (info.version && !status.version) {
+            let info = null;
+            // 1. First attempt to read cached snapshot directly from CacheStorage (zero network, instant offline)
+            const names = await offlineCacheNames();
+            for (const name of names) {
+                try {
+                    const cache = await caches.open(name);
+                    const snap = await cache.match('/_nlpwa/snapshot.json');
+                    if (snap) {
+                        info = await snap.json();
+                        break;
+                    }
+                } catch {}
+            }
+
+            // 2. If not found in CacheStorage, fetch info.json with a timeout guard so stalled network never blocks status rendering
+            if (!info) {
+                const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+                    ? AbortSignal.timeout(3000)
+                    : undefined;
+                const res = await fetch('/api/update/info.json', { signal });
+                if (res.ok) {
+                    info = await res.json();
+                }
+            }
+
+            if (info?.version && !status.version) {
                 status.version = info.version;
             }
             if (client && typeof client.getVersion === 'function') {
@@ -129,8 +152,7 @@
                     status.version = v.activeVersion || v.version;
                 }
             }
-            const paths = (info.files || []).map((f) => f.path);
-            const names = await offlineCacheNames();
+            const paths = (info?.files || []).map((f) => f.path);
             let cached = 0;
             for (const path of paths) {
                 for (const name of names) {
@@ -141,7 +163,7 @@
             status.cached = cached;
             status.total = paths.length;
         } catch {
-            // Offline with no cached manifest: keep the last known numbers.
+            // Offline or timed out with no cached manifest: keep the last known numbers.
         }
         renderStatus();
     }

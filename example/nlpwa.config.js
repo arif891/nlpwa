@@ -30,6 +30,7 @@ export default {
     { match: '/demo/swr.json', strategy: 'stale-while-revalidate' },
     { match: '/demo/network-only.json', strategy: 'network-only', throwOnFailure: true },
     { match: '/demo/cache-only.json', strategy: 'cache-only' },
+    { match: '/api/update/*', strategy: 'network-first', networkTimeoutMs: 3000 },
     { match: '/api/live/*', strategy: 'network-only' },
     { match: '/api/sync/*', strategy: 'network-only' },
   ],

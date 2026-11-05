@@ -2,6 +2,14 @@
 
 All notable changes to `nlpwa` will be documented in this file.
 
+## [0.2.33] - 2026-11-05
+
+### Bug Fixes & Resilience
+- **Activity Timeout on Precache & Update**: Wrapped precache and update fetches with header (TTFB) and idle stream timeouts, preventing silent hangs on stalled mobile data connections.
+- **Skip 4xx Retries in Precache**: Precache fetches now immediately fail without retrying on HTTP 4xx client errors (e.g. 404, 403) and captive portal HTML responses, while preserving retries for network drops, timeouts, and 5xx errors.
+- **Redirect URL Preservation**: `fetchWithActivityTimeout` preserves `response.url` on the constructed streaming response to support redirect-aware asset validation.
+- **RFC 7233 Range Streaming Fix**: Resolved stream reader deadlock during partial content streaming by eliminating redundant clone tees and avoiding blocking cancel promises.
+
 ## [0.2.32] - 2026-10-28
 
 ### Refactoring & Simplification

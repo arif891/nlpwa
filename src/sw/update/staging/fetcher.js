@@ -101,11 +101,24 @@ export async function fetchWithActivityTimeout(url, {
       },
     });
 
-    return new Response(stream, {
+    const activityResponse = new Response(stream, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,
     });
+
+    if (response && response.url) {
+      try {
+        Object.defineProperty(activityResponse, 'url', {
+          value: response.url,
+          configurable: true,
+          enumerable: true,
+          writable: false,
+        });
+      } catch {}
+    }
+
+    return activityResponse;
   } catch (err) {
     clearActiveTimer();
     throw err;

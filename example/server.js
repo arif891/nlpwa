@@ -169,13 +169,51 @@ const server = createServer(async (req, res) => {
     const ext = extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     const content = readFileSync(filePath);
+    const rangeHeader = req.headers.range;
 
-    res.writeHead(200, {
+    const baseHeaders = {
       'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
       // For sw.js and api/update endpoints, prevent browser HTTP caching so updates are instantaneous
       'Cache-Control': (filePath.endsWith('sw.js') || pathname.includes('/api/update/'))
         ? 'no-cache, no-store'
         : 'public, max-age=3600',
+    };
+
+    if (rangeHeader && rangeHeader.startsWith('bytes=')) {
+      const parts = rangeHeader.replace('bytes=', '').split('-');
+      const total = content.length;
+      let start = parts[0] ? parseInt(parts[0], 10) : NaN;
+      let end = parts[1] ? parseInt(parts[1], 10) : NaN;
+
+      if (isNaN(start)) {
+        start = total - end;
+        end = total - 1;
+      } else if (isNaN(end)) {
+        end = total - 1;
+      }
+
+      if (isNaN(start) || isNaN(end) || start > end || start >= total) {
+        res.writeHead(416, {
+          ...baseHeaders,
+          'Content-Range': `bytes */${total}`,
+        });
+        return res.end();
+      }
+
+      end = Math.min(end, total - 1);
+      const chunk = content.subarray(start, end + 1);
+      res.writeHead(206, {
+        ...baseHeaders,
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Content-Length': chunk.length,
+      });
+      return res.end(chunk);
+    }
+
+    res.writeHead(200, {
+      ...baseHeaders,
+      'Content-Length': content.length,
     });
     return res.end(content);
   }

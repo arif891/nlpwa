@@ -87,13 +87,12 @@ export async function createRangeResponse(request, response) {
 
     let stream = null;
     try {
-      const clonedResponse = response.clone();
       let activeReader = null;
       stream = new ReadableStream({
         async start(controller) {
           let bytesRead = 0;
           try {
-            activeReader = clonedResponse.body?.getReader();
+            activeReader = response.body?.getReader();
             if (!activeReader) {
               controller.close();
               return;
@@ -110,7 +109,7 @@ export async function createRangeResponse(request, response) {
                 continue;
               }
               if (chunkStart > end) {
-                await activeReader.cancel().catch(() => {});
+                activeReader.cancel().catch(() => {});
                 break;
               }
 
@@ -120,7 +119,7 @@ export async function createRangeResponse(request, response) {
               controller.enqueue(slice);
 
               if (bytesRead > end) {
-                await activeReader.cancel().catch(() => {});
+                activeReader.cancel().catch(() => {});
                 break;
               }
             }
@@ -137,7 +136,7 @@ export async function createRangeResponse(request, response) {
         },
         async cancel() {
           try {
-            await activeReader?.cancel();
+            activeReader?.cancel().catch(() => {});
           } catch (err) {
             logger.debug('[NLPWA] Error cancelling reader in range slice:', err?.message || err);
           }

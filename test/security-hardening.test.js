@@ -220,6 +220,33 @@ test('fetchWithActivityTimeout: completes successfully when chunks arrive steadi
   }
 });
 
+test('fetchWithActivityTimeout: preserves response.url on wrapped response stream', async () => {
+  const origFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data'));
+          controller.close();
+        },
+      });
+      const res = new Response(stream, { status: 200 });
+      Object.defineProperty(res, 'url', { value: 'https://example.com/redirected-path.js' });
+      return res;
+    };
+
+    const res = await fetchWithActivityTimeout('https://example.com/initial', {
+      headerTimeoutMs: 1000,
+      idleTimeoutMs: 1000,
+    });
+
+    assert.equal(res.url, 'https://example.com/redirected-path.js');
+    assert.equal(await res.text(), 'data');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
 test('soft-404 guard: fetchVerified strictly rejects text/html response for script/asset chunks', async () => {
   // Simulate captive portal returning 200 OK with text/html for /app.js
   const htmlPortalResponse = new Response('<html><body>Login to WiFi</body></html>', {

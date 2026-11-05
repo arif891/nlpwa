@@ -11,6 +11,7 @@ import { fetchWithActivityTimeout } from '../update/staging/fetcher.js';
  * Retry an async operation up to `retries` times with backoff on failure.
  * Retrying the entire fetch-and-store step ensures that both header stalls (TTFB)
  * and body stream stalls during res.text() or offlineCache.put() are retried.
+ * Retries are bypassed immediately for nonRetryable errors (e.g. HTTP 4xx).
  *
  * @param {() => Promise<any>} fn
  * @param {number} [retries=2]
@@ -23,9 +24,10 @@ async function retryOperation(fn, retries = 2) {
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (attempt < retries) {
-        await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+      if (err?.nonRetryable || attempt >= retries) {
+        break;
       }
+      await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
     }
   }
   throw lastErr;
@@ -93,6 +95,9 @@ async function precacheWithoutManifest() {
         configPath,
         { cache: 'no-store', headers: { Accept: 'application/json' } }
       );
+      if (configRes.status >= 500) {
+        throw new Error(`HTTP ${configRes.status}`);
+      }
       if (configRes.ok) {
         const text = await configRes.text();
         let data;
@@ -135,13 +140,20 @@ async function precacheWithoutManifest() {
         const req = new Request(new URL(resolved, self.location.href), { cache: 'reload' });
         const res = await fetchWithActivityTimeout(req.url, { cache: 'reload' });
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+          const err = new Error(`HTTP ${res.status}`);
+          // Skip retrying client errors (4xx) like 404 Not Found or 403 Forbidden
+          if (res.status >= 400 && res.status < 500) {
+            err.nonRetryable = true;
+          }
+          throw err;
         }
         const pathname = new URL(res.url || resolved, self.location.href).pathname;
         const isHtmlExpected = pathname.endsWith('.html') || pathname.endsWith('/') || !pathname.includes('.');
         const contentType = res.headers.get('content-type') || '';
         if (!isHtmlExpected && contentType.includes('text/html')) {
-          throw new Error(`Received HTML content-type for non-HTML asset: ${url} (possible soft-404)`);
+          const err = new Error(`Received HTML content-type for non-HTML asset: ${url} (possible soft-404)`);
+          err.nonRetryable = true;
+          throw err;
         }
         await offlineCache.put(req, res.clone());
         if (resolved !== url) {

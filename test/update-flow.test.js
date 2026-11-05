@@ -525,4 +525,62 @@ test('update: 304 on version check preserves staged update and does not discard 
   assert.ok(!messages.some((m) => m.type === 'NO_UPDATE'));
 });
 
+test('install: precacheWithoutManifest retries on body stream stall and succeeds on second attempt', async () => {
+  const server = makeServer('1.0.0', v1);
+  fakeSelf();
+
+  let appJsAttempts = 0;
+  setupEnv(async (r) => {
+    const p = new URL(r.url).pathname;
+    if (p.includes('/version') || p.includes('/info')) {
+      return new Response('', { status: 404 });
+    }
+    if (p === '/app.js') {
+      appJsAttempts++;
+      if (appJsAttempts === 1) {
+        // First attempt: body stream errors / terminates mid-stream
+        const brokenStream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('partial'));
+            controller.error(new Error('Connection terminated mid-stream'));
+          },
+        });
+        return new Response(brokenStream, {
+          status: 200,
+          headers: { 'Content-Type': 'application/javascript' },
+        });
+      }
+    }
+    return server.fetch(r);
+  }, { precache: ['/app.js'] });
+
+  const result = await precacheFiles();
+  assert.equal(result.status, 'ready');
+  assert.equal(appJsAttempts, 2, 'app.js was retried after first stream failure');
+
+  const cache = await caches.open('offline');
+  const storedApp = await cache.match(req('/app.js'));
+  assert.ok(storedApp, 'app.js successfully cached after retry');
+});
+
+test('install: precacheWithoutManifest does not retry 4xx errors', async () => {
+  fakeSelf();
+  let missingAttempts = 0;
+  setupEnv(async (r) => {
+    const p = new URL(r.url).pathname;
+    if (p.includes('/version') || p.includes('/info')) return new Response('', { status: 404 });
+    if (p === '/missing.js') {
+      missingAttempts++;
+      return new Response('Not Found', { status: 404 });
+    }
+    return new Response('ok');
+  }, { precache: ['/missing.js'] });
+
+  await assert.rejects(
+    () => precacheFiles(),
+    /Precache failed on first install/
+  );
+  assert.equal(missingAttempts, 1, '404 was not retried');
+});
+
 

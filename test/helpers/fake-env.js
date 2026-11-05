@@ -22,7 +22,21 @@ class FakeCache {
     }
     return undefined;
   }
-  async put(req, res) { this.map.set(keyOf(req), res.clone()); }
+  async put(req, res) {
+    if (res && typeof res.clone === 'function') {
+      const cloned = res.clone();
+      if (cloned.body && typeof cloned.arrayBuffer === 'function') {
+        const buf = await cloned.arrayBuffer();
+        this.map.set(keyOf(req), new Response(buf, {
+          status: res.status,
+          statusText: res.statusText,
+          headers: res.headers,
+        }));
+        return;
+      }
+    }
+    this.map.set(keyOf(req), res.clone());
+  }
   async add(req) {
     const res = await globalThis.fetch(req);
     if (!res.ok) throw new TypeError(`Cache.add failed: HTTP ${res.status}`);

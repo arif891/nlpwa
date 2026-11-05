@@ -95,6 +95,12 @@ export const MAX_RETRY_ATTEMPTS = 5;
 /** Default network timeout for single-file staging fetch (30 seconds) */
 export const DEFAULT_STAGING_FETCH_TIMEOUT_MS = 30000;
 
+/** Default TTFB / Header timeout before server starts answering (15 seconds) */
+export const DEFAULT_HEADER_TIMEOUT_MS = 15000;
+
+/** Default Idle timeout between stream chunks during download (25 seconds) */
+export const DEFAULT_IDLE_TIMEOUT_MS = 25000;
+
 /** Default interval between staging progress broadcasts (250 ms) */
 export const DEFAULT_PROGRESS_THROTTLE_MS = 250;
 

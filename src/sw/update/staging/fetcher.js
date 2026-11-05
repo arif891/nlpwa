@@ -1,6 +1,116 @@
 import { logger } from '../../logger.js';
 import { sha256Hex, hashMatches } from '../../../shared/hash.js';
-import { DEFAULT_STAGING_FETCH_TIMEOUT_MS } from '../../../shared/constants.js';
+import {
+  DEFAULT_STAGING_FETCH_TIMEOUT_MS,
+  DEFAULT_HEADER_TIMEOUT_MS,
+  DEFAULT_IDLE_TIMEOUT_MS,
+} from '../../../shared/constants.js';
+
+/**
+ * Perform a network fetch with a header timeout (TTFB) and a body idle timeout.
+ * - Header timeout: if the server hasn't answered with headers within `headerTimeoutMs`, abort.
+ * - Idle timeout: reset every time a body chunk arrives; abort if no bytes arrive for `idleTimeoutMs`.
+ * - No total deadline, allowing slow but steady downloads of any size to finish.
+ *
+ * @param {string} url
+ * @param {Object} [options]
+ * @param {number} [options.headerTimeoutMs]
+ * @param {number} [options.idleTimeoutMs]
+ * @param {RequestInit} [options.fetchOptions]
+ * @returns {Promise<Response>}
+ */
+export async function fetchWithActivityTimeout(url, {
+  headerTimeoutMs = DEFAULT_HEADER_TIMEOUT_MS,
+  idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
+  ...fetchOptions
+} = {}) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timerId = null;
+
+  const resetTimer = (ms, reason) => {
+    if (timerId) clearTimeout(timerId);
+    if (!controller || !ms || ms <= 0) return;
+    timerId = setTimeout(() => {
+      timerId = null;
+      try {
+        controller.abort(new Error(reason));
+      } catch {}
+      if (activeStreamController) {
+        try {
+          activeStreamController.error(new Error(reason));
+        } catch {}
+      }
+    }, ms);
+  };
+
+  const clearActiveTimer = () => {
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+  };
+
+  let activeStreamController = null;
+
+  try {
+    resetTimer(headerTimeoutMs, `Header timeout: no response within ${headerTimeoutMs}ms`);
+
+    const options = {
+      ...fetchOptions,
+      ...(controller ? { signal: controller.signal } : {}),
+    };
+
+    const response = await fetch(url, options);
+
+    // Headers received; clear the initial header timer
+    clearActiveTimer();
+
+    // If body streaming isn't available or response has no body, return directly
+    if (!response || !response.body || typeof response.body.getReader !== 'function') {
+      return response;
+    }
+
+    // Wrap the response body in a ReadableStream that monitors chunk arrival times
+    const reader = response.body.getReader();
+
+    const stream = new ReadableStream({
+      start(streamController) {
+        activeStreamController = streamController;
+      },
+      async pull(streamController) {
+        resetTimer(idleTimeoutMs, `Idle timeout: no bytes received for ${idleTimeoutMs}ms`);
+        try {
+          const { done, value } = await reader.read();
+          clearActiveTimer();
+          if (done) {
+            activeStreamController = null;
+            streamController.close();
+          } else {
+            streamController.enqueue(value);
+          }
+        } catch (err) {
+          clearActiveTimer();
+          activeStreamController = null;
+          streamController.error(err);
+        }
+      },
+      cancel(reason) {
+        clearActiveTimer();
+        activeStreamController = null;
+        return reader.cancel(reason);
+      },
+    });
+
+    return new Response(stream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  } catch (err) {
+    clearActiveTimer();
+    throw err;
+  }
+}
 
 /**
  * Fetch a file fresh from the network and check it against its manifest hash.
@@ -20,6 +130,8 @@ export async function fetchVerified({
   allowOversizedUnverified = true,
   skipVerify = false,
   timeoutMs = DEFAULT_STAGING_FETCH_TIMEOUT_MS,
+  headerTimeoutMs = DEFAULT_HEADER_TIMEOUT_MS,
+  idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
 } = {}) {
   let response = null;
   const isLarge = (fileSize && fileSize > largeFileThresholdBytes);
@@ -69,11 +181,11 @@ export async function fetchVerified({
   }
 
   if (!response) {
-    // Crucial: create a fresh AbortSignal with timeoutMs so the fallback fetch does not inherit an expired timer
-    const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(timeoutMs)
-      : undefined;
-    response = await fetch(path, { cache: 'no-store', signal });
+    response = await fetchWithActivityTimeout(path, {
+      cache: 'no-store',
+      headerTimeoutMs,
+      idleTimeoutMs,
+    });
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 

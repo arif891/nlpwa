@@ -10,7 +10,7 @@ import {
   verifyManifestSignature,
 } from '../src/shared/crypto.js';
 import { signManifestSync } from '../src/cli/core/signing.js';
-import { fetchVerified } from '../src/sw/update/staging/fetcher.js';
+import { fetchVerified, fetchWithActivityTimeout } from '../src/sw/update/staging/fetcher.js';
 import {
   syncBlockedVersions,
   isVersionBlocked,
@@ -125,6 +125,99 @@ test('replay protection: rejects update manifest when sequence is older than sto
   const res = await checkForUpdate();
   assert.equal(res.updated, false);
   assert.equal(res.errorCode, 'REPLAY_DETECTED');
+});
+
+test('fetchWithActivityTimeout: aborts on header timeout if server does not respond in time', async () => {
+  const origFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (_url, { signal }) => {
+      return new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(signal.reason || new Error('Aborted'));
+        });
+      });
+    };
+
+    await assert.rejects(
+      async () => {
+        await fetchWithActivityTimeout('https://example.com/slow', {
+          headerTimeoutMs: 50,
+        });
+      },
+      /Header timeout/
+    );
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('fetchWithActivityTimeout: aborts on idle timeout if stream stalls mid-download', async () => {
+  const origFetch = globalThis.fetch;
+  try {
+    let pullCount = 0;
+    const stalledStream = new ReadableStream({
+      async pull(controller) {
+        pullCount++;
+        if (pullCount === 1) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+        }
+        // After first chunk, stall indefinitely without closing or enqueuing
+      },
+    });
+
+    globalThis.fetch = async () => new Response(stalledStream, { status: 200 });
+
+    const res = await fetchWithActivityTimeout('https://example.com/stalling', {
+      headerTimeoutMs: 1000,
+      idleTimeoutMs: 50,
+    });
+
+    assert.equal(res.status, 200);
+
+    const reader = res.body.getReader();
+    const firstChunk = await reader.read();
+    assert.deepEqual(Array.from(firstChunk.value), [1, 2, 3]);
+
+    // Next read will wait for pull and hit idle timeout
+    await assert.rejects(
+      async () => {
+        await reader.read();
+      },
+      /Idle timeout/
+    );
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('fetchWithActivityTimeout: completes successfully when chunks arrive steadily', async () => {
+  const origFetch = globalThis.fetch;
+  try {
+    let chunksSent = 0;
+    const steadyStream = new ReadableStream({
+      async pull(controller) {
+        if (chunksSent < 3) {
+          chunksSent++;
+          controller.enqueue(new Uint8Array([chunksSent]));
+        } else {
+          controller.close();
+        }
+      },
+    });
+
+    globalThis.fetch = async () => new Response(steadyStream, { status: 200 });
+
+    const res = await fetchWithActivityTimeout('https://example.com/steady', {
+      headerTimeoutMs: 500,
+      idleTimeoutMs: 500,
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.arrayBuffer();
+    assert.deepEqual(Array.from(new Uint8Array(body)), [1, 2, 3]);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
 });
 
 test('soft-404 guard: fetchVerified strictly rejects text/html response for script/asset chunks', async () => {

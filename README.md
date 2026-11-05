@@ -1,7 +1,5 @@
 # NLPWA — Native-like PWA Framework
 
-> Prototype stage: this project is currently in an early prototype phase and may evolve significantly before a stable release.
-
 [![npm version](https://img.shields.io/npm/v/nlpwa.svg?color=0284c7&style=flat-square)](https://www.npmjs.com/package/nlpwa)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Zero Runtime Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-success.svg?style=flat-square)](https://github.com/arif891/nlpwa)
@@ -12,6 +10,8 @@
 A lightweight, zero-dependency Service Worker engine and client SDK that makes Progressive Web Apps feel truly native. It delivers **atomic over-the-air (OTA) delta updates**, **per-tab client version pinning**, and **background sync** with an API designed for native-like app experiences.
 
 👉 **[Experience Live Showcase](https://nlpwa.vercel.app)** — Test live delta updates, tab version pinning, and offline caching in real time.
+
+> Prototype stage: this project is currently in an early prototype phase and may evolve significantly before a stable release.
 
 ---
 

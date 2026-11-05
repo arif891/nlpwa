@@ -16,18 +16,19 @@ test.describe('26 - Plugins Showcase Tab UI', () => {
     await page.goto('/');
     await waitForActiveSW(page);
     await page.click('a[href="#plugins"]');
+    await expect(page.locator('#sync-form')).toBeVisible();
   });
 
   test('app badging UI sets count and clears badge with live feedback', async ({ page }) => {
     // Click button to set badge to 5
-    await page.locator('#btn-badge-5').click({ force: true });
+    await page.locator('#btn-badge-5').click();
     await expect(page.locator('#badge-status-msg')).toContainText('App badge count set to 5');
 
     const state5 = await page.evaluate(() => window._badgeHistory);
     expect(state5).toContainEqual({ action: 'set', val: 5 });
 
     // Click button to clear badge
-    await page.locator('#btn-badge-clear').click({ force: true });
+    await page.locator('#btn-badge-clear').click();
     await expect(page.locator('#badge-status-msg')).toContainText('App badge cleared');
 
     const stateClear = await page.evaluate(() => window._badgeHistory);
@@ -38,13 +39,13 @@ test.describe('26 - Plugins Showcase Tab UI', () => {
     const noteInput = page.locator('#sync-note-input');
     await noteInput.fill('E2E Test Note from Showcase');
 
-    await page.locator('#sync-form button[type="submit"]').click({ force: true });
+    await page.locator('#sync-form button[type="submit"]').click();
     await expect(page.locator('#sync-status-msg')).toBeVisible();
     await expect(page.locator('#sync-status-msg')).toContainText(/Queued|Synced/);
   });
 
   test('native share trigger invokes navigator.share safely', async ({ page }) => {
-    await page.locator('#btn-share-trigger').click({ force: true });
+    await page.locator('#btn-share-trigger').click();
     await expect(page.locator('#native-status-msg')).toContainText(/share sheet launched|successfully/i);
 
     const shareData = await page.evaluate(() => window._sharedData);

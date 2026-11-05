@@ -8,18 +8,19 @@ import { resolvePathWithBase } from '../../shared/url.js';
 import { fetchWithActivityTimeout } from '../update/staging/fetcher.js';
 
 /**
- * Perform a fetch with activity timeout (header & idle stream chunks) and retry on network failure.
+ * Retry an async operation up to `retries` times with backoff on failure.
+ * Retrying the entire fetch-and-store step ensures that both header stalls (TTFB)
+ * and body stream stalls during res.text() or offlineCache.put() are retried.
  *
- * @param {string|Request} url
- * @param {Object} [options]
+ * @param {() => Promise<any>} fn
  * @param {number} [retries=2]
- * @returns {Promise<Response>}
+ * @returns {Promise<any>}
  */
-async function fetchWithActivityRetry(url, options = {}, retries = 2) {
+async function retryOperation(fn, retries = 2) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await fetchWithActivityTimeout(url, options);
+      return await fn();
     } catch (err) {
       lastErr = err;
       if (attempt < retries) {
@@ -87,36 +88,37 @@ async function precacheWithoutManifest() {
   const offlineCache = await openActive(config.caches.offline);
 
   try {
-    const configRes = await fetchWithActivityRetry(
-      configPath,
-      { cache: 'no-store', headers: { Accept: 'application/json' } },
-      2
-    );
-    if (configRes.ok) {
-      const text = await configRes.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(`Invalid JSON in ${configPath} (HTML or non-JSON returned)`);
+    await retryOperation(async () => {
+      const configRes = await fetchWithActivityTimeout(
+        configPath,
+        { cache: 'no-store', headers: { Accept: 'application/json' } }
+      );
+      if (configRes.ok) {
+        const text = await configRes.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`Invalid JSON in ${configPath} (HTML or non-JSON returned)`);
+        }
+        if (!data || typeof data !== 'object') {
+          throw new Error(`Expected JSON object in ${configPath}`);
+        }
+        const responseToStore = new Response(text, {
+          status: configRes.status,
+          statusText: configRes.statusText,
+          headers: configRes.headers,
+        });
+        await offlineCache.put(configPath, responseToStore.clone());
+        if (configPath !== rawConfigPath) {
+          await offlineCache.put(rawConfigPath, responseToStore);
+        }
+        updateActiveConfig(data);
+      } else {
+        logger.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
+        await loadConfigFromCache();
       }
-      if (!data || typeof data !== 'object') {
-        throw new Error(`Expected JSON object in ${configPath}`);
-      }
-      const responseToStore = new Response(text, {
-        status: configRes.status,
-        statusText: configRes.statusText,
-        headers: configRes.headers,
-      });
-      await offlineCache.put(configPath, responseToStore.clone());
-      if (configPath !== rawConfigPath) {
-        await offlineCache.put(rawConfigPath, responseToStore);
-      }
-      updateActiveConfig(data);
-    } else {
-      logger.warn(`[NLPWA] Could not fetch ${configPath} (HTTP ${configRes.status})`);
-      await loadConfigFromCache();
-    }
+    }, 2);
   } catch (err) {
     logger.warn(`[NLPWA] Network error fetching ${configPath}:`, err.message);
     await loadConfigFromCache();
@@ -127,23 +129,25 @@ async function precacheWithoutManifest() {
     .filter((u) => u && !u.includes('*') && !u.includes('?') && !u.includes(':'));
   // cache: 'reload' skips the HTTP cache so stale bytes are never stored
   const results = await Promise.allSettled(
-    precache.map(async (url) => {
-      const resolved = resolvePathWithBase(url, config.base);
-      const req = new Request(new URL(resolved, self.location.href), { cache: 'reload' });
-      const res = await fetchWithActivityRetry(req.url, { cache: 'reload' }, 2);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const pathname = new URL(res.url || resolved, self.location.href).pathname;
-      const isHtmlExpected = pathname.endsWith('.html') || pathname.endsWith('/') || !pathname.includes('.');
-      const contentType = res.headers.get('content-type') || '';
-      if (!isHtmlExpected && contentType.includes('text/html')) {
-        throw new Error(`Received HTML content-type for non-HTML asset: ${url} (possible soft-404)`);
-      }
-      await offlineCache.put(req, res.clone());
-      if (resolved !== url) {
-        await offlineCache.put(url, res);
-      }
+    precache.map((url) => {
+      return retryOperation(async () => {
+        const resolved = resolvePathWithBase(url, config.base);
+        const req = new Request(new URL(resolved, self.location.href), { cache: 'reload' });
+        const res = await fetchWithActivityTimeout(req.url, { cache: 'reload' });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const pathname = new URL(res.url || resolved, self.location.href).pathname;
+        const isHtmlExpected = pathname.endsWith('.html') || pathname.endsWith('/') || !pathname.includes('.');
+        const contentType = res.headers.get('content-type') || '';
+        if (!isHtmlExpected && contentType.includes('text/html')) {
+          throw new Error(`Received HTML content-type for non-HTML asset: ${url} (possible soft-404)`);
+        }
+        await offlineCache.put(req, res.clone());
+        if (resolved !== url) {
+          await offlineCache.put(url, res);
+        }
+      }, 2);
     })
   );
   const failed = [];

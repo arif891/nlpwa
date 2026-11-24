@@ -198,7 +198,10 @@ export function collectTrackedFiles(runtimeConfig, targetDir) {
         relPath += 'index.html';
       }
 
-      const diskPath = resolve(targetDir, relPath);
+      let diskPath = resolve(targetDir, relPath);
+      if (existsSync(diskPath) && statSync(diskPath).isDirectory()) {
+        diskPath = resolve(diskPath, 'index.html');
+      }
       if (existsSync(diskPath)) {
         const fileSize = statSync(diskPath).size;
         const skipVerify = shouldSkipVerify(urlPath, fileSize);
